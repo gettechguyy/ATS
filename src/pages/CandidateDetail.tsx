@@ -15,30 +15,41 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, Plus, FileText, Calendar } from "lucide-react";
+import { ArrowLeft, Plus, FileText, Calendar, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import ResumeUpload from "@/components/ResumeUpload";
 import { fetchCandidateById, updateCandidateStatus, updateCandidate as updateCandidateFn } from "../../dbscripts/functions/candidates";
 import { fetchSubmissionsByCandidate, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
 import { fetchProfileName } from "../../dbscripts/functions/profiles";
+import { fetchProfilesBySelect } from "../../dbscripts/functions/profiles";
 
 const CANDIDATE_STATUSES = ["New", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
+const VISA_STATUSES = ["OPT", "H1B", "GC", "Citizen", "Other"] as const;
+
+const MASK = "*******";
 
 export default function CandidateDetail() {
   const { id } = useParams<{ id: string }>();
-  const { user, isAdmin, isCandidate } = useAuth();
+  const { user, profile, isAdmin, isRecruiter, isCandidate } = useAuth();
   const queryClient = useQueryClient();
   const [subDialogOpen, setSubDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editVisa, setEditVisa] = useState("Other");
 
-  if (isCandidate) return <Navigate to="/" replace />;
+  const isOwnProfile = isCandidate && profile?.linked_candidate_id === id;
+  if (isCandidate && !isOwnProfile) return <Navigate to="/" replace />;
 
   const { data: candidate, isLoading } = useQuery({
     queryKey: ["candidate", id],
     queryFn: () => fetchCandidateById(id!),
     enabled: !!id,
   });
+
+  useEffect(() => {
+    if (candidate) setEditVisa(candidate.visa_status || "Other");
+  }, [candidate?.visa_status]);
 
   const { data: submissions } = useQuery({
     queryKey: ["candidate-submissions", id],
@@ -50,6 +61,12 @@ export default function CandidateDetail() {
     queryKey: ["recruiter-profile", candidate?.recruiter_id],
     queryFn: () => fetchProfileName(candidate!.recruiter_id!),
     enabled: !!candidate?.recruiter_id,
+  });
+
+  const { data: recruiters } = useQuery({
+    queryKey: ["recruiters"],
+    queryFn: () => fetchProfilesBySelect("user_id, full_name, email"),
+    enabled: isAdmin && !!candidate,
   });
 
   const updateStatus = useMutation({
@@ -95,28 +112,113 @@ export default function CandidateDetail() {
     return <div className="text-center text-muted-foreground py-12">Candidate not found</div>;
   }
 
+  const canSeePersonalDetails = isAdmin || isOwnProfile;
+  const displayEmail = canSeePersonalDetails ? (candidate.email || "—") : (candidate.email ? MASK : "—");
+  const displayPhone = canSeePersonalDetails ? (candidate.phone || "—") : (candidate.phone ? MASK : "—");
+  const showVisaStatus = isAdmin || isRecruiter || isOwnProfile;
+
   return (
     <div>
       <Button variant="ghost" size="sm" asChild className="mb-4">
-        <Link to="/candidates"><ArrowLeft className="mr-2 h-4 w-4" />Back to Candidates</Link>
+        <Link to={isCandidate ? "/" : "/candidates"}><ArrowLeft className="mr-2 h-4 w-4" />{isCandidate ? "Back to Dashboard" : "Back to Candidates"}</Link>
       </Button>
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-1">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-start justify-between gap-2">
             <CardTitle className="text-lg">{candidate.first_name} {candidate.last_name || ""}</CardTitle>
+            {isAdmin && (
+              <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm"><Pencil className="h-3 w-3 mr-1" />Edit</Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader><DialogTitle>Edit candidate</DialogTitle></DialogHeader>
+                  <form
+                    className="space-y-4"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const fd = new FormData(e.currentTarget);
+                      updateCandidate.mutate(
+                        {
+                          first_name: fd.get("first_name") as string,
+                          last_name: (fd.get("last_name") as string) || null,
+                          email: (fd.get("email") as string) || null,
+                          phone: (fd.get("phone") as string) || null,
+                          visa_status: editVisa,
+                        },
+                        { onSuccess: () => setEditDialogOpen(false) }
+                      );
+                    }}
+                  >
+                    <div className="space-y-2">
+                      <Label>First name *</Label>
+                      <Input name="first_name" defaultValue={candidate.first_name} required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Last name</Label>
+                      <Input name="last_name" defaultValue={candidate.last_name || ""} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Email</Label>
+                      <Input name="email" type="email" defaultValue={candidate.email || ""} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Phone</Label>
+                      <Input name="phone" defaultValue={candidate.phone || ""} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Visa status</Label>
+                      <Select value={editVisa} onValueChange={setEditVisa}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          {VISA_STATUSES.map((v) => (
+                            <SelectItem key={v} value={v}>{v}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <Button type="submit" className="w-full" disabled={updateCandidate.isPending}>Save</Button>
+                  </form>
+                </DialogContent>
+              </Dialog>
+            )}
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div><span className="text-muted-foreground">Email:</span> {candidate.email || "—"}</div>
-            <div><span className="text-muted-foreground">Phone:</span> {candidate.phone || "—"}</div>
-            <div><span className="text-muted-foreground">Recruiter:</span> {recruiterProfile?.full_name || "—"}</div>
+            <div><span className="text-muted-foreground">Email:</span> {displayEmail}</div>
+            <div><span className="text-muted-foreground">Phone:</span> {displayPhone}</div>
+            {isAdmin && recruiters && (
+              <div className="space-y-1">
+                <Label className="text-muted-foreground">Assign recruiter</Label>
+                <Select
+                  value={candidate.recruiter_id || "unassigned"}
+                  onValueChange={(v) => updateCandidate.mutate({ recruiter_id: v === "unassigned" ? null : v })}
+                >
+                  <SelectTrigger className="h-9"><SelectValue placeholder="Select recruiter" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {recruiters.map((r: any) => (
+                      <SelectItem key={r.user_id} value={r.user_id}>{r.full_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {!isAdmin && (
+              <div><span className="text-muted-foreground">Recruiter:</span> {recruiterProfile?.full_name || "—"}</div>
+            )}
+            {showVisaStatus && (
+              <div><span className="text-muted-foreground">Visa status:</span> {candidate.visa_status || "—"}</div>
+            )}
             <div>
               <span className="text-muted-foreground">Resume:</span>
-              <ResumeUpload
-                candidateId={candidate.id}
-                currentUrl={candidate.resume_url}
-                onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
-              />
+              {(isAdmin || isRecruiter || isOwnProfile) && (
+                <ResumeUpload
+                  candidateId={candidate.id}
+                  currentUrl={candidate.resume_url}
+                  onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
+                />
+              )}
             </div>
             {isAdmin && (
               <div className="pt-2">
@@ -145,6 +247,7 @@ export default function CandidateDetail() {
             <CardTitle className="flex items-center gap-2 text-base">
               <FileText className="h-4 w-4" /> Submissions ({submissions?.length || 0})
             </CardTitle>
+            {(isAdmin || isRecruiter) && (
             <Dialog open={subDialogOpen} onOpenChange={setSubDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm"><Plus className="mr-1 h-3 w-3" />Add</Button>
@@ -169,6 +272,7 @@ export default function CandidateDetail() {
                 </form>
               </DialogContent>
             </Dialog>
+            )}
           </CardHeader>
           <CardContent className="p-0">
             <Table>

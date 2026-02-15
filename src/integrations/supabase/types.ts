@@ -49,6 +49,7 @@ export type Database = {
           recruiter_id: string | null
           resume_url: string | null
           status: Database["public"]["Enums"]["candidate_status"] | null
+          visa_status: string | null
         }
         Insert: {
           created_at?: string | null
@@ -60,6 +61,7 @@ export type Database = {
           recruiter_id?: string | null
           resume_url?: string | null
           status?: Database["public"]["Enums"]["candidate_status"] | null
+          visa_status?: string | null
         }
         Update: {
           created_at?: string | null
@@ -71,6 +73,7 @@ export type Database = {
           recruiter_id?: string | null
           resume_url?: string | null
           status?: Database["public"]["Enums"]["candidate_status"] | null
+          visa_status?: string | null
         }
         Relationships: []
       }

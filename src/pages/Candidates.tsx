@@ -98,6 +98,10 @@ export default function Candidates() {
   const getRecruiterName = (id: string) =>
     recruiters?.find((r: any) => r.user_id === id)?.full_name || "Unassigned";
 
+  const maskPersonal = isRecruiter;
+  const displayEmail = (c: any) => (maskPersonal && c.email ? "*******" : (c.email || "—"));
+  const displayPhone = (c: any) => (maskPersonal && c.phone ? "*******" : (c.phone || "—"));
+
   return (
     <div>
       <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -184,6 +188,7 @@ export default function Candidates() {
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Phone</TableHead>
+                  <TableHead>Visa Status</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Recruiter</TableHead>
                   <TableHead className="w-20"></TableHead>
@@ -192,14 +197,15 @@ export default function Candidates() {
               <TableBody>
                 {filtered?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">No candidates found</TableCell>
+                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">No candidates found</TableCell>
                   </TableRow>
                 ) : (
                   filtered?.map((c: any) => (
                     <TableRow key={c.id}>
                       <TableCell className="font-medium">{c.first_name} {c.last_name || ""}</TableCell>
-                      <TableCell className="text-muted-foreground">{c.email || "—"}</TableCell>
-                      <TableCell className="text-muted-foreground">{c.phone || "—"}</TableCell>
+                      <TableCell className="text-muted-foreground">{displayEmail(c)}</TableCell>
+                      <TableCell className="text-muted-foreground">{displayPhone(c)}</TableCell>
+                      <TableCell className="text-muted-foreground">{c.visa_status || "—"}</TableCell>
                       <TableCell><Badge className={statusColors[c.status] || ""}>{c.status}</Badge></TableCell>
                       <TableCell className="text-muted-foreground">{getRecruiterName(c.recruiter_id)}</TableCell>
                       <TableCell>

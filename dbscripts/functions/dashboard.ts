@@ -4,6 +4,9 @@ export type DashboardStatsOptions = {
   role: "admin" | "recruiter" | "candidate" | "manager";
   userId?: string;
   linkedCandidateId?: string | null;
+  /** ISO date strings; filter stats to items within this range (inclusive). */
+  fromDate?: string | null;
+  toDate?: string | null;
 };
 
 export async function fetchDashboardStats(options?: DashboardStatsOptions) {
@@ -28,10 +31,21 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
 
   if (role === "candidate" && !candidateId) return emptyStats();
 
-  let candidatesQuery = supabase.from("candidates").select("id, status, recruiter_id");
-  let submissionsQuery = supabase.from("submissions").select("id, status, candidate_id, recruiter_id");
+  const fromDate = options?.fromDate ?? null;
+  const toDate = options?.toDate ?? null;
+  const hasDateFilter = !!fromDate && !!toDate;
+
+  let candidatesQuery = supabase.from("candidates").select("id, status, recruiter_id, created_at");
+  let submissionsQuery = supabase.from("submissions").select("id, status, candidate_id, recruiter_id, created_at");
   let interviewsQuery = supabase.from("interviews").select("id, scheduled_at, status, submission_id, candidate_id");
-  let offersQuery = supabase.from("offers").select("id, status, candidate_id");
+  let offersQuery = supabase.from("offers").select("id, status, offered_at, candidate_id");
+
+  if (hasDateFilter) {
+    candidatesQuery = candidatesQuery.gte("created_at", fromDate).lte("created_at", toDate);
+    submissionsQuery = submissionsQuery.gte("created_at", fromDate).lte("created_at", toDate);
+    interviewsQuery = interviewsQuery.gte("scheduled_at", fromDate).lte("scheduled_at", toDate);
+    offersQuery = offersQuery.gte("offered_at", fromDate).lte("offered_at", toDate);
+  }
 
   if (isRecruiterScoped) {
     candidatesQuery = candidatesQuery.eq("recruiter_id", recruiterId);
@@ -54,10 +68,13 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
     s = submissionsRes.data || [];
     const submissionIds = s.map((x: any) => x.id);
     if (submissionIds.length > 0) {
-      const [intRes, offRes] = await Promise.all([
-        supabase.from("interviews").select("id, scheduled_at, status").in("submission_id", submissionIds),
-        supabase.from("offers").select("id, status").in("submission_id", submissionIds),
-      ]);
+      let intQ = supabase.from("interviews").select("id, scheduled_at, status").in("submission_id", submissionIds);
+      let offQ = supabase.from("offers").select("id, status, offered_at").in("submission_id", submissionIds);
+      if (hasDateFilter) {
+        intQ = intQ.gte("scheduled_at", fromDate!).lte("scheduled_at", toDate!);
+        offQ = offQ.gte("offered_at", fromDate!).lte("offered_at", toDate!);
+      }
+      const [intRes, offRes] = await Promise.all([intQ, offQ]);
       i = intRes.data || [];
       o = offRes.data || [];
     } else {

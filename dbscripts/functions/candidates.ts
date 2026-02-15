@@ -37,6 +37,8 @@ export async function fetchCandidatesBasic() {
   return data || [];
 }
 
+const VISA_STATUSES = ["OPT", "H1B", "GC", "Citizen", "Other"] as const;
+
 export async function createCandidate(candidate: {
   first_name: string;
   last_name?: string | null;
@@ -44,6 +46,7 @@ export async function createCandidate(candidate: {
   phone?: string | null;
   recruiter_id: string;
   status?: string;
+  visa_status?: string | null;
 }) {
   const { error } = await supabase.from("candidates").insert({
     first_name: candidate.first_name,
@@ -52,6 +55,7 @@ export async function createCandidate(candidate: {
     phone: candidate.phone || null,
     recruiter_id: candidate.recruiter_id,
     status: (candidate.status || "New") as any,
+    visa_status: candidate.visa_status || "Other",
   });
   if (error) throw error;
 }

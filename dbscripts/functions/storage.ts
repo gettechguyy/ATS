@@ -1,8 +1,9 @@
 import { supabase } from "../../src/integrations/supabase/client";
 
+/** Upload path: candidate resume/<candidate_id>/<filename> for clean bucket structure */
 export async function uploadResume(candidateId: string, file: File) {
-  const ext = file.name.split(".").pop();
-  const path = `resumes/${candidateId}/${Date.now()}.${ext}`;
+  const ext = file.name.split(".").pop() || "pdf";
+  const path = `candidate resume/${candidateId}/${Date.now()}.${ext}`;
 
   const { error: uploadError } = await supabase.storage
     .from("documents")
