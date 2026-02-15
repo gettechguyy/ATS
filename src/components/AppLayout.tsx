@@ -15,6 +15,12 @@ import {
   Shield,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -46,7 +52,7 @@ export default function AppLayout() {
   const navItems = allNavItems.filter((item) => item.roles.includes(role || "recruiter"));
 
   return (
-    <div className="flex min-h-screen bg-background">
+    <div className="flex min-h-screen w-full min-w-0 bg-background overflow-x-hidden">
       {mobileOpen && (
         <div
           className="fixed inset-0 z-40 bg-foreground/20 backdrop-blur-sm lg:hidden"
@@ -56,76 +62,134 @@ export default function AppLayout() {
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex flex-col bg-sidebar text-sidebar-foreground transition-all duration-200 lg:relative",
-          collapsed ? "w-16" : "w-60",
+          "fixed top-0 bottom-0 left-0 z-50 flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-xl transition-[width] duration-300 ease-in-out lg:relative lg:shrink-0",
+          collapsed ? "w-[72px]" : "w-64",
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
       >
-        <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
-          <Briefcase className="h-5 w-5 shrink-0 text-sidebar-primary" />
+        {/* Header */}
+        <div
+          className={cn(
+            "flex h-16 shrink-0 items-center border-b border-sidebar-border px-3 transition-[padding] duration-300",
+            collapsed ? "justify-center px-0" : "gap-3"
+          )}
+        >
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sidebar-accent/80 text-sidebar-primary">
+            <Briefcase className="h-5 w-5" />
+          </div>
           {!collapsed && (
-            <span className="text-sm font-semibold text-sidebar-primary">RecruiterTrack</span>
+            <span className="text-base font-semibold tracking-tight text-sidebar-primary">
+              RecruiterTrack
+            </span>
           )}
           <Button
             variant="ghost"
             size="icon"
-            className="ml-auto hidden h-7 w-7 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground lg:flex"
+            className={cn(
+              "ml-auto hidden h-9 w-9 rounded-lg text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-primary lg:flex",
+              collapsed && "ml-0"
+            )}
             onClick={() => setCollapsed(!collapsed)}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            <ChevronLeft className={cn("h-4 w-4 transition-transform", collapsed && "rotate-180")} />
+            <ChevronLeft
+              className={cn("h-4 w-4 transition-transform duration-300", collapsed && "rotate-180")}
+            />
           </Button>
           <Button
             variant="ghost"
             size="icon"
-            className="ml-auto h-7 w-7 text-sidebar-foreground hover:bg-sidebar-accent lg:hidden"
+            className="ml-auto h-9 w-9 rounded-lg text-sidebar-foreground hover:bg-sidebar-accent lg:hidden"
             onClick={() => setMobileOpen(false)}
           >
             <X className="h-4 w-4" />
           </Button>
         </div>
 
-        <nav className="flex-1 space-y-1 p-2">
-          {navItems.map((item) => {
-            const active = location.pathname === item.to || (item.to !== "/" && location.pathname.startsWith(item.to));
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  active
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground"
-                )}
-              >
-                <item.icon className="h-4 w-4 shrink-0" />
-                {!collapsed && <span>{item.label}</span>}
-              </Link>
-            );
-          })}
+        {/* Nav */}
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden p-2 pt-4">
+          <ul className="space-y-1">
+            {navItems.map((item) => {
+              const active =
+                location.pathname === item.to ||
+                (item.to !== "/" && location.pathname.startsWith(item.to));
+              const link = (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setMobileOpen(false)}
+                  data-active={active}
+                  className={cn(
+                    "sidebar-nav-link flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium",
+                    collapsed ? "justify-center px-0 py-3" : "",
+                    !active && "text-sidebar-foreground/90"
+                  )}
+                >
+                  <item.icon className="h-5 w-5 shrink-0" />
+                  {!collapsed && <span className="truncate">{item.label}</span>}
+                </Link>
+              );
+              return (
+                <li key={item.to}>
+                  {collapsed ? (
+                    <TooltipProvider delayDuration={0}>
+                      <Tooltip>
+                        <TooltipTrigger asChild>{link}</TooltipTrigger>
+                        <TooltipContent side="right" sideOffset={8} className="font-medium">
+                          {item.label}
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  ) : (
+                    link
+                  )}
+                </li>
+              );
+            })}
+          </ul>
         </nav>
 
-        <div className="border-t border-sidebar-border p-3">
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sidebar-accent text-xs font-semibold text-sidebar-accent-foreground">
+        {/* Footer / User */}
+        <div
+          className={cn(
+            "border-t border-sidebar-border p-3",
+            collapsed && "flex flex-col items-center gap-2 px-0"
+          )}
+        >
+          <div
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-2 py-2 transition-colors hover:bg-sidebar-accent/50",
+              collapsed && "justify-center px-0"
+            )}
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sidebar-accent to-sidebar-primary/30 text-sm font-semibold text-sidebar-primary">
               {profile?.full_name?.charAt(0)?.toUpperCase() || "U"}
             </div>
             {!collapsed && (
               <div className="min-w-0 flex-1">
-                <p className="truncate text-xs font-medium text-sidebar-primary">{profile?.full_name}</p>
-                <p className="truncate text-[10px] capitalize text-sidebar-foreground">{role}</p>
+                <p className="truncate text-sm font-medium text-sidebar-primary">
+                  {profile?.full_name}
+                </p>
+                <p className="truncate text-xs capitalize text-sidebar-foreground/80">{role}</p>
               </div>
             )}
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 shrink-0 text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-              onClick={signOut}
-              title="Sign out"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-            </Button>
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-9 w-9 shrink-0 rounded-lg text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-primary"
+                    onClick={signOut}
+                  >
+                    <LogOut className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right" sideOffset={8}>
+                  Sign out
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           </div>
         </div>
       </aside>

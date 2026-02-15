@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "../../src/integrations/supabase/client";
 
 export type DashboardStatsOptions = {
   role: "admin" | "recruiter" | "candidate" | "manager";

@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "../../src/integrations/supabase/client";
 
 export async function fetchAllUserRoles() {
   const { data } = await supabase.from("user_roles").select("*");

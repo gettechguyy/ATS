@@ -1,4 +1,4 @@
-import { supabase } from "@/integrations/supabase/client";
+import { supabase } from "../../src/integrations/supabase/client";
 
 export async function uploadResume(candidateId: string, file: File) {
   const ext = file.name.split(".").pop();
