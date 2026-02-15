@@ -23,7 +23,6 @@ export default defineConfig(({ mode }) => ({
     },
   },
 
-  // 👇 ADD THIS SECTION
   build: {
     chunkSizeWarningLimit: 1000,
     rollupOptions: {
@@ -37,3 +36,4 @@ export default defineConfig(({ mode }) => ({
     },
   },
 }));
+//comment
