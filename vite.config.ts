@@ -23,17 +23,13 @@ export default defineConfig(({ mode }) => ({
     },
   },
 
+  // 👇 ADD THIS SECTION
   build: {
-    chunkSizeWarningLimit: 1000, // optional (removes warning)
-
+    chunkSizeWarningLimit: 1000,
     rollupOptions: {
       output: {
         manualChunks(id: string) {
           if (id.includes("node_modules")) {
-            // Separate big libraries
-            if (id.includes("react")) return "react-vendor";
-            if (id.includes("react-dom")) return "react-vendor";
-            if (id.includes("react-router")) return "router";
             return "vendor";
           }
         },
