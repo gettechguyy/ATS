@@ -21,6 +21,7 @@ import { ArrowLeft, Plus, Calendar, Gift, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchSubmissionById } from "../../dbscripts/functions/submissions";
+import { getStateName } from "@/lib/usStates";
 import {
   fetchInterviewsBySubmission,
   createInterview as createInterviewFn,
@@ -28,6 +29,8 @@ import {
   updateInterviewFeedback as updateInterviewFeedbackFn,
   rescheduleInterview as rescheduleInterviewFn,
 } from "../../dbscripts/functions/interviews";
+import { uploadOfferFile } from "../../dbscripts/functions/storage";
+import { updateSubmissionStatus } from "../../dbscripts/functions/submissions";
 import { fetchRescheduleLogsByInterviewIds } from "../../dbscripts/functions/rescheduleLogs";
 import {
   fetchOffersBySubmission,
@@ -134,18 +137,46 @@ export default function SubmissionDetail() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const [offerJobDescText, setOfferJobDescText] = useState("");
+  const [offerJobDescUrl, setOfferJobDescUrl] = useState<string | null>(null);
+  const [offerFileUploading, setOfferFileUploading] = useState(false);
+
+  const handleOfferFileUpload = async (file: File) => {
+    if (!id) return;
+    setOfferFileUploading(true);
+    try {
+      const url = await uploadOfferFile(id, file);
+      setOfferJobDescUrl(url);
+      toast.success("Offer document uploaded");
+    } catch (err: any) {
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setOfferFileUploading(false);
+    }
+  };
+
   const createOffer = useMutation({
-    mutationFn: async (fd: FormData) => {
+    mutationFn: async (payload: { salary: number; job_description?: string | null; job_description_url?: string | null }) => {
       await createOfferFn({
         submission_id: id!,
         candidate_id: submission!.candidate_id,
-        salary: parseFloat(fd.get("salary") as string) || 0,
+        salary: payload.salary,
+        job_description: payload.job_description ?? null,
+        job_description_url: payload.job_description_url ?? null,
       });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       queryClient.invalidateQueries({ queryKey: ["submission-offers", id] });
       setOfferDialogOpen(false);
       toast.success("Offer created");
+      // set submission status to Offered
+      try {
+        await updateSubmissionStatus(id!, "Offered");
+        queryClient.invalidateQueries({ queryKey: ["submission", id] });
+      } catch (err) {
+        // ignore but notify
+        toast.error("Offer saved but couldn't update submission status");
+      }
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -190,6 +221,31 @@ export default function SubmissionDetail() {
             <div><span className="text-muted-foreground">Candidate:</span> {(submission as any).candidates?.first_name} {(submission as any).candidates?.last_name || ""}</div>
             <div><span className="text-muted-foreground">Status:</span> <Badge variant="outline">{submission.status}</Badge></div>
             <div><span className="text-muted-foreground">Created:</span> {new Date(submission.created_at!).toLocaleDateString()}</div>
+            {submission.status === "Vendor Responded" && (
+              <>
+                <div><span className="text-muted-foreground">Rate:</span> {submission.rate ? `$${Number(submission.rate).toLocaleString()}` : "—"} {submission.rate_type ? `(${submission.rate_type})` : ""}</div>
+                <div><span className="text-muted-foreground">Job Type:</span> {submission.job_type || "—"}</div>
+                {submission.job_type && submission.job_type !== "Remote" && (
+                  <div><span className="text-muted-foreground">Location:</span> {submission.city || "—"}, {submission.state ? getStateName(submission.state) : "—"}</div>
+                )}
+                <div><span className="text-muted-foreground">Job Description:</span> <div className="mt-1 whitespace-pre-wrap">{submission.job_description || "—"}</div></div>
+              </>
+            )}
+            {submission.status === "Screen Call" && (
+              <>
+                <div><span className="text-muted-foreground">Scheduled:</span> {submission.screen_scheduled_at ? new Date(submission.screen_scheduled_at).toLocaleString() : "—"}</div>
+                <div><span className="text-muted-foreground">Mode:</span> {submission.screen_mode || "—"}</div>
+                {submission.screen_link_or_phone && (
+                  <div><span className="text-muted-foreground">{submission.screen_mode === "Virtual" ? "Link" : "Phone"}:</span> {submission.screen_link_or_phone}</div>
+                )}
+                <div><span className="text-muted-foreground">Resume (Screen Call):</span> {submission.screen_resume_url ? <a href={submission.screen_resume_url} target="_blank" rel="noreferrer" className="ml-2 text-xs text-info underline">View</a> : "—"}</div>
+                <div><span className="text-muted-foreground">Interview Questions:</span> {submission.screen_questions_url ? <a href={submission.screen_questions_url} target="_blank" rel="noreferrer" className="ml-2 text-xs text-info underline">View</a> : "—"}</div>
+                <div><span className="text-muted-foreground">Screen Response:</span> {submission.screen_response_status || "—"}</div>
+                {submission.screen_response_status === "No" && (
+                  <div><span className="text-muted-foreground">Rejection Note:</span> <div className="mt-1 whitespace-pre-wrap">{submission.screen_rejection_note || "—"}</div></div>
+                )}
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -208,7 +264,38 @@ export default function SubmissionDetail() {
                 </DialogTrigger>
                 <DialogContent className="max-h-[80vh] overflow-y-auto">
                   <DialogHeader><DialogTitle>Schedule Interview Round {nextRound}</DialogTitle></DialogHeader>
-                  <form onSubmit={(e) => { e.preventDefault(); createInterview.mutate(new FormData(e.currentTarget)); }} className="space-y-4">
+                  <form onSubmit={(e) => {
+                      e.preventDefault();
+                      const fd = new FormData(e.currentTarget);
+                      const date = fd.get("date") as string | null;
+                      const time = fd.get("time") as string | null;
+                      const mode = fd.get("mode") as string | null;
+                      const link = (fd.get("virtual_link") as string) || "";
+                      if (!date || !time) {
+                        toast.error("Date and time are required");
+                        return;
+                      }
+                      if (!mode) {
+                        toast.error("Mode is required");
+                        return;
+                      }
+                      if (mode === "Virtual") {
+                        try {
+                          new URL(link);
+                        } catch {
+                          toast.error("Please enter a valid meeting link for Virtual mode");
+                          return;
+                        }
+                      } else if (mode === "Phone") {
+                        const phone = link.trim();
+                        const phoneRe = /^\+?[0-9\-\s()]{7,}$/;
+                        if (!phoneRe.test(phone)) {
+                          toast.error("Please enter a valid phone number for Phone mode");
+                          return;
+                        }
+                      }
+                      createInterview.mutate(new FormData(e.currentTarget));
+                    }} className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Date *</Label>
@@ -271,7 +358,17 @@ export default function SubmissionDetail() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Select value={iv.status} onValueChange={(v) => updateInterviewStatus.mutate({ interviewId: iv.id, status: v })}>
+                          <Select value={iv.status} onValueChange={async (v) => {
+                            // update status, then if passed open offer dialog
+                            try {
+                              await updateInterviewStatus.mutateAsync({ interviewId: iv.id, status: v });
+                              if (v === "Passed") {
+                                setOfferDialogOpen(true);
+                              }
+                            } catch (err: any) {
+                              toast.error(err.message || "Failed to update interview status");
+                            }
+                          }}>
                             <SelectTrigger className="h-7 w-auto border-0 p-0">
                               <Badge variant="secondary">{iv.status}</Badge>
                             </SelectTrigger>
@@ -379,10 +476,44 @@ export default function SubmissionDetail() {
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader><DialogTitle>Create Offer</DialogTitle></DialogHeader>
-                  <form onSubmit={(e) => { e.preventDefault(); createOffer.mutate(new FormData(e.currentTarget)); }} className="space-y-4">
+                  <form onSubmit={async (e) => {
+                    e.preventDefault();
+                    const fd = new FormData(e.currentTarget);
+                    const salary = parseFloat(fd.get("salary") as string) || 0;
+                    // require salary and either job description text or uploaded doc
+                    if (!salary || salary <= 0) {
+                      toast.error("Please enter a valid salary");
+                      return;
+                    }
+                    if (!offerJobDescText && !offerJobDescUrl) {
+                      toast.error("Please provide a job description (text or upload)");
+                      return;
+                    }
+                    await createOffer.mutateAsync({
+                      salary,
+                      job_description: offerJobDescText || null,
+                      job_description_url: offerJobDescUrl || null,
+                    });
+                    setOfferJobDescText("");
+                    setOfferJobDescUrl(null);
+                  }} className="space-y-4">
                     <div className="space-y-2">
                       <Label>Salary *</Label>
                       <Input name="salary" type="number" required placeholder="120000" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Job Description (text)</Label>
+                      <Textarea value={offerJobDescText} onChange={(e) => setOfferJobDescText(e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Or upload Job Description document</Label>
+                      <input type="file" accept=".pdf,.doc,.docx" onChange={(ev) => {
+                        const f = ev.target.files?.[0];
+                        if (!f) return;
+                        handleOfferFileUpload(f);
+                      }} />
+                      {offerFileUploading && <div className="text-xs">Uploading...</div>}
+                      {offerJobDescUrl && <a href={offerJobDescUrl} target="_blank" rel="noreferrer" className="text-xs text-info underline">View uploaded doc</a>}
                     </div>
                     <Button type="submit" className="w-full" disabled={createOffer.isPending}>
                       Create Offer

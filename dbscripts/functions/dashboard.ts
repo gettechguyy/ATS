@@ -4,9 +4,9 @@ export type DashboardStatsOptions = {
   role: "admin" | "recruiter" | "candidate" | "manager";
   userId?: string;
   linkedCandidateId?: string | null;
-  /** ISO date strings; filter stats to items within this range (inclusive). */
-  fromDate?: string | null;
-  toDate?: string | null;
+  // Optional date range (inclusive). Can be Date or ISO string.
+  startDate?: string | Date | null;
+  endDate?: string | Date | null;
 };
 
 export async function fetchDashboardStats(options?: DashboardStatsOptions) {
@@ -31,22 +31,30 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
 
   if (role === "candidate" && !candidateId) return emptyStats();
 
-  const fromDate = options?.fromDate ?? null;
-  const toDate = options?.toDate ?? null;
-  const hasDateFilter = !!fromDate && !!toDate;
-
-  let candidatesQuery = supabase.from("candidates").select("id, status, recruiter_id, created_at");
-  let submissionsQuery = supabase.from("submissions").select("id, status, candidate_id, recruiter_id, created_at");
+  let candidatesQuery = supabase.from("candidates").select("id, status, recruiter_id");
+  let submissionsQuery = supabase.from("submissions").select("id, status, candidate_id, recruiter_id");
   let interviewsQuery = supabase.from("interviews").select("id, scheduled_at, status, submission_id, candidate_id");
-  let offersQuery = supabase.from("offers").select("id, status, offered_at, candidate_id");
+  let offersQuery = supabase.from("offers").select("id, status, candidate_id");
 
-  if (hasDateFilter) {
-    candidatesQuery = candidatesQuery.gte("created_at", fromDate).lte("created_at", toDate);
-    submissionsQuery = submissionsQuery.gte("created_at", fromDate).lte("created_at", toDate);
-    interviewsQuery = interviewsQuery.gte("scheduled_at", fromDate).lte("scheduled_at", toDate);
-    offersQuery = offersQuery.gte("offered_at", fromDate).lte("offered_at", toDate);
+  // Apply optional date filters to submissions/interviews/offers.
+  const toISO = (d?: string | Date | null) => {
+    if (!d) return null;
+    return d instanceof Date ? d.toISOString() : new Date(d).toISOString();
+  };
+  const startISO = toISO(options?.startDate);
+  const endISO = toISO(options?.endDate);
+
+  if (startISO) {
+    // submissions and offers use created_at, interviews use scheduled_at
+    submissionsQuery = submissionsQuery.gte("created_at", startISO);
+    offersQuery = offersQuery.gte("created_at", startISO);
+    interviewsQuery = interviewsQuery.gte("scheduled_at", startISO);
   }
-
+  if (endISO) {
+    submissionsQuery = submissionsQuery.lte("created_at", endISO);
+    offersQuery = offersQuery.lte("created_at", endISO);
+    interviewsQuery = interviewsQuery.lte("scheduled_at", endISO);
+  }
   if (isRecruiterScoped) {
     candidatesQuery = candidatesQuery.eq("recruiter_id", recruiterId);
     submissionsQuery = submissionsQuery.eq("recruiter_id", recruiterId);
@@ -68,13 +76,21 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
     s = submissionsRes.data || [];
     const submissionIds = s.map((x: any) => x.id);
     if (submissionIds.length > 0) {
-      let intQ = supabase.from("interviews").select("id, scheduled_at, status").in("submission_id", submissionIds);
-      let offQ = supabase.from("offers").select("id, status, offered_at").in("submission_id", submissionIds);
-      if (hasDateFilter) {
-        intQ = intQ.gte("scheduled_at", fromDate!).lte("scheduled_at", toDate!);
-        offQ = offQ.gte("offered_at", fromDate!).lte("offered_at", toDate!);
-      }
-      const [intRes, offRes] = await Promise.all([intQ, offQ]);
+      const [intRes, offRes] = await Promise.all([
+        // apply date filters when querying by submission ids as well
+        (() => {
+          let q = supabase.from("interviews").select("id, scheduled_at, status").in("submission_id", submissionIds);
+          if (startISO) q = q.gte("scheduled_at", startISO);
+          if (endISO) q = q.lte("scheduled_at", endISO);
+          return q;
+        })(),
+        (() => {
+          let q = supabase.from("offers").select("id, status").in("submission_id", submissionIds);
+          if (startISO) q = q.gte("created_at", startISO);
+          if (endISO) q = q.lte("created_at", endISO);
+          return q;
+        })(),
+      ]);
       i = intRes.data || [];
       o = offRes.data || [];
     } else {

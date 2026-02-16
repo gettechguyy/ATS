@@ -4,9 +4,11 @@ import type { Database } from './types';
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const SUPABASE_STORAGE_BUCKET = import.meta.env.VITE_SUPABASE_BUCKET ?? "documents";
 
 // Import the supabase client like this:
 // import { supabase } from "@/integrations/supabase/client";
 
 // Custom auth: session is stored in localStorage via AuthContext (app_session). No Supabase Auth.
 export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+export const STORAGE_BUCKET = SUPABASE_STORAGE_BUCKET;

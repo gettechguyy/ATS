@@ -63,3 +63,21 @@ export async function updateSubmissionStatus(id: string, status: string) {
     .eq("id", id);
   if (error) throw error;
 }
+
+export async function updateSubmission(id: string, fields: Record<string, any>) {
+  // Only include keys that are explicitly provided (avoid overwriting unrelated columns with null)
+  const updateObj: Record<string, any> = {};
+  for (const key of Object.keys(fields)) {
+    if (fields[key] !== undefined) {
+      updateObj[key] = fields[key];
+    }
+  }
+
+  if (Object.keys(updateObj).length === 0) return;
+
+  const { error } = await supabase
+    .from("submissions")
+    .update(updateObj)
+    .eq("id", id);
+  if (error) throw error;
+}

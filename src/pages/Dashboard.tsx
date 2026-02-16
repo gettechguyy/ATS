@@ -1,166 +1,96 @@
-import { useState, useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, FileText, Calendar as CalendarIcon, Gift, TrendingUp, Briefcase, CalendarDays } from "lucide-react";
+import { Users, FileText, Calendar as CalendarIcon, Gift, TrendingUp, Briefcase } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Calendar } from "@/components/ui/calendar";
-import type { DateRange } from "react-day-picker";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import { fetchDashboardStats } from "../../dbscripts/functions/dashboard";
-
-type DatePreset = "all" | "today" | "yesterday" | "this_week" | "last_week" | "custom";
-
-function startOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0);
-}
-function endOfDay(d: Date): Date {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate(), 23, 59, 59, 999);
-}
-
-function getRangeForPreset(
-  preset: DatePreset,
-  customRange: DateRange | undefined
-): { from: Date; to: Date } | null {
-  const now = new Date();
-  if (preset === "all") return null;
-  if (preset === "custom" && customRange?.from && customRange?.to)
-    return { from: customRange.from, to: customRange.to };
-  if (preset === "today") {
-    return { from: startOfDay(now), to: endOfDay(now) };
-  }
-  if (preset === "yesterday") {
-    const y = new Date(now);
-    y.setDate(y.getDate() - 1);
-    return { from: startOfDay(y), to: endOfDay(y) };
-  }
-  if (preset === "this_week") {
-    const day = now.getDay();
-    const sun = new Date(now);
-    sun.setDate(now.getDate() - day);
-    const sat = new Date(sun);
-    sat.setDate(sun.getDate() + 6);
-    return { from: startOfDay(sun), to: endOfDay(sat) };
-  }
-  if (preset === "last_week") {
-    const day = now.getDay();
-    const lastSun = new Date(now);
-    lastSun.setDate(now.getDate() - day - 7);
-    const lastSat = new Date(lastSun);
-    lastSat.setDate(lastSun.getDate() + 6);
-    return { from: startOfDay(lastSun), to: endOfDay(lastSat) };
-  }
-  return null;
-}
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, subDays } from "date-fns";
 
 export default function Dashboard() {
   const { user, isAdmin, isRecruiter, isCandidate, isManager, role, profile } = useAuth();
-  const [datePreset, setDatePreset] = useState<DatePreset>("all");
-  const [customRange, setCustomRange] = useState<DateRange | undefined>(undefined);
-  const [customOpen, setCustomOpen] = useState(false);
-
-  const dateRange = useMemo(
-    () => getRangeForPreset(datePreset, customRange),
-    [datePreset, customRange]
-  );
-  const fromDate = dateRange ? dateRange.from.toISOString() : null;
-  const toDate = dateRange ? dateRange.to.toISOString() : null;
+  const [dateRange, setDateRange] = useState<{ from?: Date | null; to?: Date | null } | undefined>(undefined);
 
   const { data: stats, isLoading } = useQuery({
-    queryKey: ["dashboard-stats", user?.id, role, profile?.linked_candidate_id, fromDate, toDate],
+    queryKey: [
+      "dashboard-stats",
+      user?.id,
+      role,
+      profile?.linked_candidate_id,
+      dateRange?.from ? dateRange.from.toISOString() : null,
+      dateRange?.to ? dateRange.to.toISOString() : null,
+    ],
     queryFn: () =>
       fetchDashboardStats({
         role: role ?? "recruiter",
         userId: user?.id,
         linkedCandidateId: profile?.linked_candidate_id ?? null,
-        fromDate: fromDate ?? undefined,
-        toDate: toDate ?? undefined,
+        startDate: dateRange?.from ?? null,
+        endDate: dateRange?.to ?? null,
       }),
     enabled: !!user,
   });
 
-  const dateFilterEl = (
-    <div className="flex flex-wrap items-center gap-2">
-      <Select
-        value={datePreset}
-        onValueChange={(v) => {
-          setDatePreset(v as DatePreset);
-          if (v !== "custom") setCustomOpen(false);
-        }}
-      >
-        <SelectTrigger className="w-[160px]">
-          <CalendarDays className="mr-2 h-4 w-4 text-muted-foreground" />
-          <SelectValue placeholder="Date filter" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="all">All time</SelectItem>
-          <SelectItem value="today">Today</SelectItem>
-          <SelectItem value="yesterday">Yesterday</SelectItem>
-          <SelectItem value="this_week">This Week</SelectItem>
-          <SelectItem value="last_week">Last Week</SelectItem>
-          <SelectItem value="custom">Custom range</SelectItem>
-        </SelectContent>
-      </Select>
-      {datePreset === "custom" && (
-        <Dialog open={customOpen} onOpenChange={setCustomOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm" className="min-w-[200px] justify-start text-left font-normal">
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {customRange?.from && customRange?.to
-                ? `${customRange.from.toLocaleDateString()} – ${customRange.to.toLocaleDateString()}`
-                : "Pick From and To dates"}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-fit border rounded-lg p-0 gap-0 overflow-hidden">
-            <DialogHeader className="p-4 pb-0">
-              <DialogTitle className="text-base">Select date range</DialogTitle>
-            </DialogHeader>
-            <div className="p-4 pt-2">
-              <Calendar
-                mode="range"
-                selected={customRange}
-                onSelect={setCustomRange}
-                numberOfMonths={1}
-                defaultMonth={customRange?.from ?? new Date()}
-                classNames={{
-                  day_today: "bg-muted text-muted-foreground font-medium",
-                  day_selected: "bg-primary text-primary-foreground hover:bg-primary hover:text-primary-foreground",
-                  day_range_middle: "bg-muted/70 text-foreground",
-                }}
-              />
-              <p className="text-xs text-muted-foreground text-center mt-2">From → To (selected range)</p>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-    </div>
-  );
+  const selectPreset = (preset: "today" | "yesterday" | "thisWeek" | "lastWeek") => {
+    const now = new Date();
+    let from: Date | undefined;
+    let to: Date | undefined;
+    if (preset === "today") {
+      from = startOfDay(now);
+      to = endOfDay(now);
+    } else if (preset === "yesterday") {
+      const yesterday = subDays(now, 1);
+      from = startOfDay(yesterday);
+      to = endOfDay(yesterday);
+    } else if (preset === "thisWeek") {
+      from = startOfWeek(now, { weekStartsOn: 1 });
+      to = endOfWeek(now, { weekStartsOn: 1 });
+    } else if (preset === "lastWeek") {
+      const lastWeekStart = subDays(startOfWeek(now, { weekStartsOn: 1 }), 7);
+      from = startOfWeek(lastWeekStart, { weekStartsOn: 1 });
+      to = endOfWeek(lastWeekStart, { weekStartsOn: 1 });
+    }
+    setDateRange({ from, to });
+  };
+
+  const rangeLabel = useMemo(() => {
+    if (!dateRange?.from || !dateRange?.to) return "All time";
+    const f = format(dateRange.from, "MMM d, yyyy");
+    const t = format(dateRange.to, "MMM d, yyyy");
+    return f === t ? f : `${f} — ${t}`;
+  }, [dateRange]);
 
   // Candidate-specific dashboard
   if (isCandidate) {
     return (
       <div>
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">My Dashboard</h1>
-            <p className="text-sm text-muted-foreground">Your recruitment progress</p>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-foreground">My Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Your recruitment progress</p>
+        </div>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => selectPreset("today")}>Today</Button>
+            <Button variant="outline" size="sm" onClick={() => selectPreset("yesterday")}>Yesterday</Button>
+            <Button variant="outline" size="sm" onClick={() => selectPreset("thisWeek")}>This Week</Button>
+            <Button variant="outline" size="sm" onClick={() => selectPreset("lastWeek")}>Last Week</Button>
           </div>
-          {dateFilterEl}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="ghost" size="sm">{rangeLabel}</Button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-auto">
+              <Calendar
+                mode="range"
+                selected={dateRange as any}
+                onSelect={(r: any) => setDateRange(r)}
+              />
+            </PopoverContent>
+          </Popover>
         </div>
         {isLoading ? (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -182,8 +112,8 @@ export default function Dashboard() {
     { title: "Total Candidates", value: stats?.totalCandidates, icon: Users, color: "text-info" },
     { title: "In Marketing", value: stats?.candidatesByStatus?.["In Marketing"], icon: TrendingUp, color: "text-success" },
     { title: "Total Submissions", value: stats?.totalSubmissions, icon: FileText, color: "text-info" },
-    { title: "Interviews Scheduled", value: stats?.scheduledInterviews, icon: Calendar, color: "text-warning" },
-    { title: "Interviews Passed", value: stats?.passedInterviews, icon: Calendar, color: "text-success" },
+    { title: "Interviews Scheduled", value: stats?.scheduledInterviews, icon: CalendarIcon, color: "text-warning" },
+    { title: "Interviews Passed", value: stats?.passedInterviews, icon: CalendarIcon, color: "text-success" },
     { title: "Total Offers", value: stats?.totalOffers, icon: Gift, color: "text-success" },
     { title: "Pending Offers", value: stats?.pendingOffers, icon: Gift, color: "text-warning" },
     { title: "Placements", value: stats?.candidatesByStatus?.Placed, icon: Briefcase, color: "text-success" },
@@ -191,16 +121,34 @@ export default function Dashboard() {
 
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">
-            {isAdmin ? "Admin Dashboard" : isManager ? "Manager Dashboard" : "My Dashboard"}
-          </h1>
-          <p className="text-sm text-muted-foreground">
-            {isAdmin ? "Overview of all activity" : isManager ? "Read-only overview" : "Your recruiting progress"}
-          </p>
+      <div className="mb-6">
+        <h1 className="text-2xl font-bold text-foreground">
+          {isAdmin ? "Admin Dashboard" : isManager ? "Manager Dashboard" : "My Dashboard"}
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          {isAdmin ? "Overview of all activity" : isManager ? "Read-only overview" : "Your recruiting progress"}
+        </p>
+      </div>
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => selectPreset("today")}>Today</Button>
+          <Button variant="outline" size="sm" onClick={() => selectPreset("yesterday")}>Yesterday</Button>
+          <Button variant="outline" size="sm" onClick={() => selectPreset("thisWeek")}>This Week</Button>
+          <Button variant="outline" size="sm" onClick={() => selectPreset("lastWeek")}>Last Week</Button>
         </div>
-        {dateFilterEl}
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="ghost" size="sm">{rangeLabel}</Button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-auto">
+            <Calendar
+              mode="range"
+              selected={dateRange as any}
+              onSelect={(r: any) => setDateRange(r)}
+            />
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

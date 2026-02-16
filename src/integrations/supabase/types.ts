@@ -174,6 +174,8 @@ export type Database = {
           salary: number | null
           status: Database["public"]["Enums"]["offer_status"] | null
           submission_id: string
+          job_description: string | null
+          job_description_url: string | null
         }
         Insert: {
           candidate_id: string
@@ -182,6 +184,8 @@ export type Database = {
           salary?: number | null
           status?: Database["public"]["Enums"]["offer_status"] | null
           submission_id: string
+          job_description?: string | null
+          job_description_url?: string | null
         }
         Update: {
           candidate_id?: string
@@ -190,6 +194,8 @@ export type Database = {
           salary?: number | null
           status?: Database["public"]["Enums"]["offer_status"] | null
           submission_id?: string
+          job_description?: string | null
+          job_description_url?: string | null
         }
         Relationships: [
           {
@@ -258,6 +264,21 @@ export type Database = {
           position: string
           recruiter_id: string | null
           status: Database["public"]["Enums"]["submission_status"] | null
+          rate: number | null
+          rate_type: string | null
+          job_description: string | null
+          job_description_url: string | null
+          job_type: string | null
+          city: string | null
+          state: string | null
+          screen_scheduled_at: string | null
+          screen_mode: string | null
+          screen_link_or_phone: string | null
+          screen_resume_url: string | null
+          screen_questions_url: string | null
+          screen_response_status: string | null
+          screen_rejection_note: string | null
+          screen_next_step: string | null
         }
         Insert: {
           candidate_id: string
@@ -267,6 +288,21 @@ export type Database = {
           position: string
           recruiter_id?: string | null
           status?: Database["public"]["Enums"]["submission_status"] | null
+          rate?: number | null
+          rate_type?: string | null
+          job_description?: string | null
+          job_description_url?: string | null
+          job_type?: string | null
+          city?: string | null
+          state?: string | null
+          screen_scheduled_at?: string | null
+          screen_mode?: string | null
+          screen_link_or_phone?: string | null
+          screen_resume_url?: string | null
+          screen_questions_url?: string | null
+          screen_response_status?: string | null
+          screen_rejection_note?: string | null
+          screen_next_step?: string | null
         }
         Update: {
           candidate_id?: string
@@ -276,6 +312,21 @@ export type Database = {
           position?: string
           recruiter_id?: string | null
           status?: Database["public"]["Enums"]["submission_status"] | null
+          rate?: number | null
+          rate_type?: string | null
+          job_description?: string | null
+          job_description_url?: string | null
+          job_type?: string | null
+          city?: string | null
+          state?: string | null
+          screen_scheduled_at?: string | null
+          screen_mode?: string | null
+          screen_link_or_phone?: string | null
+          screen_resume_url?: string | null
+          screen_questions_url?: string | null
+          screen_response_status?: string | null
+          screen_rejection_note?: string | null
+          screen_next_step?: string | null
         }
         Relationships: [
           {
@@ -355,6 +406,7 @@ export type Database = {
       offer_status: "Pending" | "Accepted" | "Declined"
       submission_status:
         | "Applied"
+        | "Vendor Responded"
         | "Screen Call"
         | "Interview"
         | "Rejected"
@@ -500,6 +552,7 @@ export const Constants = {
       offer_status: ["Pending", "Accepted", "Declined"],
       submission_status: [
         "Applied",
+        "Vendor Responded",
         "Screen Call",
         "Interview",
         "Rejected",

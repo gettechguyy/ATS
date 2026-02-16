@@ -8,6 +8,11 @@ import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -15,9 +20,11 @@ import { Search, Eye } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { fetchSubmissions, fetchSubmissionsByRecruiter, fetchSubmissionsByCandidate, updateSubmissionStatus } from "../../dbscripts/functions/submissions";
+import { fetchSubmissions, fetchSubmissionsByRecruiter, fetchSubmissionsByCandidate, updateSubmissionStatus, updateSubmission } from "../../dbscripts/functions/submissions";
+import { uploadScreenCallFile, uploadVendorJobDescription } from "../../dbscripts/functions/storage";
+import { US_STATES } from "@/lib/usStates";
 
-const SUBMISSION_STATUSES = ["Applied", "Screen Call", "Interview", "Rejected", "Offered"] as const;
+const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Screen Call", "Interview", "Rejected", "Offered"] as const;
 
 const statusColors: Record<string, string> = {
   Applied: "bg-secondary text-secondary-foreground",
@@ -25,11 +32,34 @@ const statusColors: Record<string, string> = {
   Interview: "bg-warning/10 text-warning",
   Rejected: "bg-destructive/10 text-destructive",
   Offered: "bg-success/10 text-success",
+  "Vendor Responded": "bg-info/10 text-info",
 };
 
 export default function Submissions() {
   const { user, profile, role, isCandidate, isRecruiter } = useAuth();
   const queryClient = useQueryClient();
+  const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
+  const [vendorSubmission, setVendorSubmission] = useState<any | null>(null);
+  const [rate, setRate] = useState<number | "">("");
+  const [rateType, setRateType] = useState<"W2" | "C2C" | "1099">("W2");
+  const [jobDescription, setJobDescription] = useState("");
+  const [jobType, setJobType] = useState<"Remote" | "Hybrid" | "On-site">("Remote");
+  const [city, setCity] = useState("");
+  const [stateValue, setStateValue] = useState("");
+  const [screenDialogOpen, setScreenDialogOpen] = useState(false);
+  const [screenSubmission, setScreenSubmission] = useState<any | null>(null);
+  const [screenDate, setScreenDate] = useState<string>("");
+  const [screenTime, setScreenTime] = useState<string>("");
+  const [screenMode, setScreenMode] = useState<"Virtual" | "Phone">("Virtual");
+  const [screenLinkOrPhone, setScreenLinkOrPhone] = useState("");
+  const [screenResumeUrl, setScreenResumeUrl] = useState<string | null>(null);
+  const [screenQuestionsUrl, setScreenQuestionsUrl] = useState<string | null>(null);
+  const [screenResponse, setScreenResponse] = useState<"None" | "Yes" | "No">("None");
+  const [screenRejectionNote, setScreenRejectionNote] = useState<string>("");
+  const [vendorJobDescUrl, setVendorJobDescUrl] = useState<string | null>(null);
+  const [vendorUploading, setVendorUploading] = useState(false);
+
+ 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -56,6 +86,68 @@ export default function Submissions() {
       toast.success("Status updated");
     },
   });
+
+  const updateSubmissionMutation = useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
+      await updateSubmission(id, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["submissions"] });
+      toast.success("Submission updated");
+      setVendorDialogOpen(false);
+      setVendorSubmission(null);
+      setRate("");
+      setJobDescription("");
+      setJobType("Remote");
+      setCity("");
+      setStateValue("");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const handleScreenFileUpload = async (submissionId: string, file: File, folder?: "resume" | "questions") => {
+    try {
+      const publicUrl = await uploadScreenCallFile(submissionId, file, folder);
+      if (folder === "questions") setScreenQuestionsUrl(publicUrl);
+      else setScreenResumeUrl(publicUrl);
+      toast.success("Uploaded");
+      // persist uploaded file URL immediately to the submission row
+      try {
+        const payload: any = {};
+        if (folder === "questions") payload.screen_questions_url = publicUrl;
+        else payload.screen_resume_url = publicUrl;
+        await updateSubmissionMutation.mutateAsync({ id: submissionId, payload });
+      } catch (err: any) {
+        // show helpful error about RLS if it occurs
+        if (err?.message && /row-level security/i.test(err.message)) {
+          toast.error("Uploaded but saving URL to DB failed due to RLS. See project README for RLS setup.");
+        } else {
+          toast.error(err?.message || "Failed to save uploaded file URL");
+        }
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Upload failed");
+    }
+  };
+
+  const handleVendorJobDescriptionUpload = async (submissionId: string, file: File) => {
+    setVendorUploading(true);
+    try {
+      const publicUrl = await uploadVendorJobDescription(submissionId, file);
+      setVendorJobDescUrl(publicUrl);
+      toast.success("Job description uploaded");
+      // persist URL immediately
+      try {
+        await updateSubmissionMutation.mutateAsync({ id: submissionId, payload: { job_description_url: publicUrl } });
+      } catch (err: any) {
+        toast.error("Uploaded but failed to save URL to DB");
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Upload failed");
+    } finally {
+      setVendorUploading(false);
+    }
+  };
 
   const filtered = submissions?.filter((s: any) => {
     const candidateName = `${s.candidates?.first_name || ""} ${s.candidates?.last_name || ""}`.toLowerCase();
@@ -124,9 +216,19 @@ export default function Submissions() {
                       <TableCell>{s.client_name}</TableCell>
                       <TableCell>{s.position}</TableCell>
                       <TableCell>
-                        <Select
+                      <Select
                           value={s.status}
-                          onValueChange={(v) => updateStatus.mutate({ id: s.id, status: v })}
+                          onValueChange={(v) => {
+                            if (v === "Vendor Responded") {
+                              setVendorSubmission(s);
+                              setVendorDialogOpen(true);
+                            } else if (v === "Screen Call") {
+                              setScreenSubmission(s);
+                              setScreenDialogOpen(true);
+                            } else {
+                              updateStatus.mutate({ id: s.id, status: v });
+                            }
+                          }}
                         >
                           <SelectTrigger className="h-7 w-auto border-0 p-0">
                             <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
@@ -152,6 +254,250 @@ export default function Submissions() {
           )}
         </CardContent>
       </Card>
+      {/* Vendor Responded Dialog */}
+      <Dialog open={vendorDialogOpen} onOpenChange={setVendorDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Vendor Responded Details</DialogTitle></DialogHeader>
+          <form onSubmit={(e) => {
+            e.preventDefault();
+            if (!vendorSubmission) return;
+            // Client-side validation: all fields required
+            if (rate === "" || isNaN(Number(rate))) {
+              toast.error("Please enter a valid Rate");
+              return;
+            }
+            if (!rateType) {
+              toast.error("Please select a Rate Type");
+              return;
+            }
+            if ((!jobDescription || jobDescription.trim() === "") && !vendorJobDescUrl) {
+              toast.error("Please enter the Job Description or upload a document");
+              return;
+            }
+            if (!jobType) {
+              toast.error("Please select the Job Type");
+              return;
+            }
+            if (jobType !== "Remote" && (!city || city.trim() === "" || !stateValue)) {
+              toast.error("Please provide City and State for non-Remote jobs");
+              return;
+            }
+            const payload: any = {
+              status: "Vendor Responded",
+              rate: Number(rate),
+              rate_type: rateType,
+              job_description: jobDescription || null,
+              job_description_url: vendorJobDescUrl ?? null,
+              job_type: jobType,
+              city: jobType !== "Remote" ? city : null,
+              state: jobType !== "Remote" ? stateValue : null,
+            };
+            updateSubmissionMutation.mutate({ id: vendorSubmission.id, payload });
+          }} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Rate (USD)</Label>
+                <Input required value={rate} onChange={(e) => setRate(e.target.value === "" ? "" : Number(e.target.value))} type="number" />
+              </div>
+              <div className="space-y-2">
+                <Label>Rate Type</Label>
+                <Select value={rateType} onValueChange={(v) => setRateType(v as any)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="W2">W2</SelectItem>
+                    <SelectItem value="C2C">C2C</SelectItem>
+                    <SelectItem value="1099">1099</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+              <div className="space-y-2">
+                <Label>Job Description</Label>
+                <Textarea value={jobDescription} onChange={(e) => setJobDescription(e.target.value)} />
+                <div className="mt-2">
+                  <Label>Or upload Job Description document</Label>
+                  <input type="file" accept=".pdf,.doc,.docx" onChange={(ev) => {
+                    const f = ev.target.files?.[0];
+                    if (!f || !vendorSubmission) return;
+                    handleVendorJobDescriptionUpload(vendorSubmission.id, f);
+                  }} />
+                  {vendorUploading && <div className="text-xs">Uploading...</div>}
+                  {vendorJobDescUrl && <a href={vendorJobDescUrl} target="_blank" rel="noreferrer" className="text-xs text-info underline">View uploaded doc</a>}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Job Type</Label>
+                <Select value={jobType} onValueChange={(v) => setJobType(v as any)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Remote">Remote</SelectItem>
+                    <SelectItem value="Hybrid">Hybrid</SelectItem>
+                    <SelectItem value="On-site">On-site</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {jobType !== "Remote" && (
+                <>
+                  <div className="space-y-2">
+                    <Label>City</Label>
+                    <Input required value={city} onChange={(e) => setCity(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>State</Label>
+                    <Select value={stateValue} onValueChange={(v) => setStateValue(v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {US_STATES.map((st) => <SelectItem key={st.code} value={st.code}>{st.name}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+            </div>
+            <Button type="submit" className="w-full" disabled={updateSubmissionMutation.isPending}>Save</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+      {/* Screen Call Dialog */}
+      <Dialog open={screenDialogOpen} onOpenChange={setScreenDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Schedule Screen Call</DialogTitle></DialogHeader>
+          <form onSubmit={async (e) => {
+            e.preventDefault();
+            if (!screenSubmission) return;
+            // validation
+            if (!screenDate || !screenTime) {
+              toast.error("Please select date and time");
+              return;
+            }
+            if (!screenMode) {
+              toast.error("Please select mode");
+              return;
+            }
+            // validate meeting link or phone format
+            if (screenMode === "Virtual") {
+              if (!screenLinkOrPhone || screenLinkOrPhone.trim() === "") {
+                toast.error("Please provide meeting link for Virtual mode");
+                return;
+              }
+              try {
+                new URL(screenLinkOrPhone);
+              } catch {
+                toast.error("Please enter a valid meeting link (include https://)");
+                return;
+              }
+            }
+            if (screenMode === "Phone") {
+              if (!screenLinkOrPhone || screenLinkOrPhone.trim() === "") {
+                toast.error("Please provide phone number for Phone mode");
+                return;
+              }
+              const phone = screenLinkOrPhone.trim();
+              const phoneRe = /^\+?[0-9\-\s()]{7,}$/;
+              if (!phoneRe.test(phone)) {
+                toast.error("Please enter a valid phone number");
+                return;
+              }
+            }
+
+            // require uploaded documents
+            if (!screenResumeUrl) {
+              toast.error("Please upload the resume for the screen call");
+              return;
+            }
+            if (!screenQuestionsUrl) {
+              toast.error("Please upload the interview questions document");
+              return;
+            }
+
+            const scheduled_at = `${screenDate}T${screenTime}:00`;
+            const payload: any = {
+              status: "Screen Call",
+              screen_scheduled_at: scheduled_at,
+              screen_mode: screenMode,
+              screen_link_or_phone: screenLinkOrPhone,
+              screen_resume_url: screenResumeUrl,
+              screen_questions_url: screenQuestionsUrl,
+              screen_response_status: screenResponse === "None" ? null : screenResponse,
+              screen_rejection_note: screenResponse === "No" ? screenRejectionNote || null : null,
+              screen_next_step: screenResponse === "Yes" ? "Interview" : null,
+            };
+
+            await updateSubmissionMutation.mutateAsync({ id: screenSubmission.id, payload });
+            setScreenDialogOpen(false);
+            setScreenSubmission(null);
+            setScreenDate("");
+            setScreenTime("");
+            setScreenLinkOrPhone("");
+            setScreenResumeUrl(null);
+            setScreenQuestionsUrl(null);
+          }} className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Date *</Label>
+                <Input type="date" value={screenDate} onChange={(e) => setScreenDate(e.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label>Time *</Label>
+                <Input type="time" value={screenTime} onChange={(e) => setScreenTime(e.target.value)} required />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Mode *</Label>
+              <Select value={screenMode} onValueChange={(v) => setScreenMode(v as any)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Virtual">Virtual</SelectItem>
+                  <SelectItem value="Phone">Phone</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{screenMode === "Virtual" ? "Meeting Link *" : "Phone Number *"}</Label>
+              <Input value={screenLinkOrPhone} onChange={(e) => setScreenLinkOrPhone(e.target.value)} required />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Upload Resume (Screen Call)</Label>
+                <input type="file" accept=".pdf,.doc,.docx" onChange={(ev) => {
+                  const f = ev.target.files?.[0];
+                  if (!f || !screenSubmission) return;
+                  handleScreenFileUpload(screenSubmission.id, f, "resume");
+                }} />
+                {screenResumeUrl && <a href={screenResumeUrl} target="_blank" rel="noreferrer" className="text-xs text-info underline">View</a>}
+              </div>
+              <div className="space-y-2">
+                <Label>Upload Interview Questions Doc</Label>
+                <input type="file" accept=".pdf,.doc,.docx" onChange={(ev) => {
+                  const f = ev.target.files?.[0];
+                  if (!f || !screenSubmission) return;
+                  handleScreenFileUpload(screenSubmission.id, f, "questions");
+                }} />
+                {screenQuestionsUrl && <a href={screenQuestionsUrl} target="_blank" rel="noreferrer" className="text-xs text-info underline">View</a>}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Screen Response</Label>
+                <Select value={screenResponse} onValueChange={(v) => setScreenResponse(v as any)}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="None">None</SelectItem>
+                    <SelectItem value="Yes">Yes</SelectItem>
+                    <SelectItem value="No">No</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Rejection Note (if Rejected)</Label>
+                <Input value={screenRejectionNote} onChange={(e) => setScreenRejectionNote(e.target.value)} placeholder="Rejection note" disabled={screenResponse !== "No"} />
+              </div>
+            </div>
+            <Button type="submit" className="w-full">Save Screen Call</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -47,12 +47,16 @@ export async function createOffer(offer: {
   submission_id: string;
   candidate_id: string;
   salary: number;
+  job_description?: string | null;
+  job_description_url?: string | null;
 }) {
   const { error } = await supabase.from("offers").insert({
     submission_id: offer.submission_id,
     candidate_id: offer.candidate_id,
     salary: offer.salary,
     status: "Pending" as any,
+    job_description: offer.job_description ?? null,
+    job_description_url: offer.job_description_url ?? null,
   });
   if (error) throw error;
 }
