@@ -20,7 +20,7 @@ import {
 import { ArrowLeft, Plus, Calendar, Gift, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchSubmissionById } from "../../dbscripts/functions/submissions";
+import { fetchSubmissionById, updateSubmission } from "../../dbscripts/functions/submissions";
 import { getStateName } from "@/lib/usStates";
 import {
   fetchInterviewsBySubmission,
@@ -29,7 +29,6 @@ import {
   updateInterviewFeedback as updateInterviewFeedbackFn,
   rescheduleInterview as rescheduleInterviewFn,
 } from "../../dbscripts/functions/interviews";
-import { uploadOfferFile } from "../../dbscripts/functions/storage";
 import { updateSubmissionStatus } from "../../dbscripts/functions/submissions";
 import { fetchRescheduleLogsByInterviewIds } from "../../dbscripts/functions/rescheduleLogs";
 import {
@@ -51,6 +50,8 @@ export default function SubmissionDetail() {
   const [offerDialogOpen, setOfferDialogOpen] = useState(false);
   const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false);
   const [rescheduleInterviewId, setRescheduleInterviewId] = useState<string | null>(null);
+  const [screenResponseLocal, setScreenResponseLocal] = useState<"None" | "Yes" | "No" | null>(null);
+  const [screenRejectionLocal, setScreenRejectionLocal] = useState<string | null>(null);
 
   const { data: submission, isLoading } = useQuery({
     queryKey: ["submission", id],
@@ -111,6 +112,18 @@ export default function SubmissionDetail() {
     },
   });
 
+  const updateSubmissionMutation = useMutation({
+    mutationFn: async ({ id: sid, payload }: { id: string; payload: any }) => {
+      await updateSubmission(sid, payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["submission", id] });
+      queryClient.invalidateQueries({ queryKey: ["submissions"] });
+      toast.success("Saved");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const updateInterviewFeedback = useMutation({
     mutationFn: async ({ interviewId, feedback }: { interviewId: string; feedback: string }) => {
       await updateInterviewFeedbackFn(interviewId, feedback);
@@ -137,23 +150,7 @@ export default function SubmissionDetail() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  const [offerJobDescText, setOfferJobDescText] = useState("");
-  const [offerJobDescUrl, setOfferJobDescUrl] = useState<string | null>(null);
-  const [offerFileUploading, setOfferFileUploading] = useState(false);
-
-  const handleOfferFileUpload = async (file: File) => {
-    if (!id) return;
-    setOfferFileUploading(true);
-    try {
-      const url = await uploadOfferFile(id, file);
-      setOfferJobDescUrl(url);
-      toast.success("Offer document uploaded");
-    } catch (err: any) {
-      toast.error(err.message || "Upload failed");
-    } finally {
-      setOfferFileUploading(false);
-    }
-  };
+  
 
   const createOffer = useMutation({
     mutationFn: async (payload: { salary: number; job_description?: string | null; job_description_url?: string | null }) => {
@@ -240,10 +237,33 @@ export default function SubmissionDetail() {
                 )}
                 <div><span className="text-muted-foreground">Resume (Screen Call):</span> {submission.screen_resume_url ? <a href={submission.screen_resume_url} target="_blank" rel="noreferrer" className="ml-2 text-xs text-info underline">View</a> : "—"}</div>
                 <div><span className="text-muted-foreground">Interview Questions:</span> {submission.screen_questions_url ? <a href={submission.screen_questions_url} target="_blank" rel="noreferrer" className="ml-2 text-xs text-info underline">View</a> : "—"}</div>
-                <div><span className="text-muted-foreground">Screen Response:</span> {submission.screen_response_status || "—"}</div>
-                {submission.screen_response_status === "No" && (
-                  <div><span className="text-muted-foreground">Rejection Note:</span> <div className="mt-1 whitespace-pre-wrap">{submission.screen_rejection_note || "—"}</div></div>
-                )}
+                <div className="flex items-center gap-3">
+                  <span className="text-muted-foreground">Screen Response:</span>
+                  <Select value={screenResponseLocal ?? (submission.screen_response_status ?? "None")} onValueChange={(v) => setScreenResponseLocal(v as any)}>
+                    <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="None">None</SelectItem>
+                      <SelectItem value="Yes">Yes</SelectItem>
+                      <SelectItem value="No">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="ml-2">
+                    <Input placeholder="Rejection note (if No)" value={screenRejectionLocal ?? (submission.screen_rejection_note ?? "")} onChange={(e) => setScreenRejectionLocal(e.target.value)} disabled={(screenResponseLocal ?? submission.screen_response_status ?? "None") !== "No"} />
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={async () => {
+                    const newStatus = screenResponseLocal ?? (submission.screen_response_status ?? "None");
+                    const payload: any = { screen_response_status: newStatus === "None" ? null : newStatus };
+                    if (newStatus === "No") payload.screen_rejection_note = screenRejectionLocal ?? submission.screen_rejection_note ?? null;
+                    else payload.screen_rejection_note = null;
+                    if (newStatus === "Yes") payload.screen_next_step = "Interview";
+                    else payload.screen_next_step = null;
+                    try {
+                      await updateSubmissionMutation.mutateAsync({ id: submission.id, payload });
+                    } catch {
+                      /* handled by mutation onError */
+                    }
+                  }}>Save</Button>
+                </div>
               </>
             )}
           </CardContent>
@@ -480,40 +500,15 @@ export default function SubmissionDetail() {
                     e.preventDefault();
                     const fd = new FormData(e.currentTarget);
                     const salary = parseFloat(fd.get("salary") as string) || 0;
-                    // require salary and either job description text or uploaded doc
                     if (!salary || salary <= 0) {
                       toast.error("Please enter a valid salary");
                       return;
                     }
-                    if (!offerJobDescText && !offerJobDescUrl) {
-                      toast.error("Please provide a job description (text or upload)");
-                      return;
-                    }
-                    await createOffer.mutateAsync({
-                      salary,
-                      job_description: offerJobDescText || null,
-                      job_description_url: offerJobDescUrl || null,
-                    });
-                    setOfferJobDescText("");
-                    setOfferJobDescUrl(null);
+                    await createOffer.mutateAsync({ salary });
                   }} className="space-y-4">
                     <div className="space-y-2">
                       <Label>Salary *</Label>
                       <Input name="salary" type="number" required placeholder="120000" />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Job Description (text)</Label>
-                      <Textarea value={offerJobDescText} onChange={(e) => setOfferJobDescText(e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Or upload Job Description document</Label>
-                      <input type="file" accept=".pdf,.doc,.docx" onChange={(ev) => {
-                        const f = ev.target.files?.[0];
-                        if (!f) return;
-                        handleOfferFileUpload(f);
-                      }} />
-                      {offerFileUploading && <div className="text-xs">Uploading...</div>}
-                      {offerJobDescUrl && <a href={offerJobDescUrl} target="_blank" rel="noreferrer" className="text-xs text-info underline">View uploaded doc</a>}
                     </div>
                     <Button type="submit" className="w-full" disabled={createOffer.isPending}>
                       Create Offer
