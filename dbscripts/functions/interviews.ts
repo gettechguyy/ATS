@@ -50,6 +50,7 @@ export async function createInterview(interview: {
   mode: string;
   scheduled_at: string;
   virtual_link?: string | null;
+  interview_questions_url?: string | null;
 }) {
   const { error } = await supabase.from("interviews").insert({
     submission_id: interview.submission_id,
@@ -59,6 +60,7 @@ export async function createInterview(interview: {
     mode: interview.mode as any,
     scheduled_at: interview.scheduled_at,
     virtual_link: interview.virtual_link || null,
+    interview_questions_url: interview.interview_questions_url ?? null,
     feedback: null,
   });
   if (error) throw error;

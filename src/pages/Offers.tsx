@@ -67,6 +67,8 @@ export default function Offers() {
                   <TableHead>Position</TableHead>
                   <TableHead>Salary</TableHead>
                   <TableHead>Status</TableHead>
+                  <TableHead>Start Date</TableHead>
+                  <TableHead>Notes</TableHead>
                   <TableHead>Date</TableHead>
                   <TableHead className="w-12"></TableHead>
                 </TableRow>
@@ -74,7 +76,7 @@ export default function Offers() {
               <TableBody>
                 {offers?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">No offers found</TableCell>
+                    <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">No offers found</TableCell>
                   </TableRow>
                 ) : (
                   offers?.map((o: any) => {
@@ -101,6 +103,8 @@ export default function Offers() {
                             </SelectContent>
                           </Select>
                         </TableCell>
+                        <TableCell>{o.tentative_start_date ? new Date(o.tentative_start_date).toLocaleDateString() : "—"}</TableCell>
+                        <TableCell className="whitespace-pre-wrap max-w-xs truncate">{o.additional_notes || "—"}</TableCell>
                         <TableCell className="text-muted-foreground">{new Date(o.offered_at).toLocaleDateString()}</TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" asChild>

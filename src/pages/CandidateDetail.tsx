@@ -213,8 +213,12 @@ export default function CandidateDetail() {
             )}
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
-            <div><span className="text-muted-foreground">Email:</span> {displayEmail}</div>
-            <div><span className="text-muted-foreground">Phone:</span> {displayPhone}</div>
+            {((isAdmin || isOwnProfile) || Boolean(candidate.email)) && (
+              <div><span className="text-muted-foreground">Email:</span> {displayEmail}</div>
+            )}
+            {((isAdmin || isOwnProfile) || Boolean(candidate.phone)) && (
+              <div><span className="text-muted-foreground">Phone:</span> {displayPhone}</div>
+            )}
             {isAdmin && recruiters && (
               <div className="space-y-1">
                 <Label className="text-muted-foreground">Assign recruiter</Label>
@@ -240,32 +244,54 @@ export default function CandidateDetail() {
             )}
             <div>
               <span className="text-muted-foreground">Resume:</span>
-              {(isAdmin || isRecruiter || isOwnProfile) && (
+              {(isAdmin || isOwnProfile) ? (
                 <ResumeUpload
                   candidateId={candidate.id}
                   currentUrl={candidate.resume_url}
                   onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
                 />
+              ) : (
+                candidate.resume_url ? (
+                  <a href={candidate.resume_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-xs text-info underline">View Resume</a>
+                ) : (
+                  <span className="ml-2 text-xs text-muted-foreground">—</span>
+                )
               )}
             </div>
             <div className="pt-2">
               <Label className="text-muted-foreground">ID Proof</Label>
-              <DocumentUpload
-                candidateId={candidate.id}
-                currentUrl={(candidate as any).id_copy_url || null}
-                folder="id"
-                onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
-              />
+              {(isAdmin || isOwnProfile) ? (
+                <DocumentUpload
+                  candidateId={candidate.id}
+                  currentUrl={(candidate as any).id_copy_url || null}
+                  folder="id"
+                  onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
+                />
+              ) : (
+                (candidate as any).id_copy_url ? (
+                  <a href={(candidate as any).id_copy_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-xs text-info underline">Download</a>
+                ) : (
+                  <span className="ml-2 text-xs text-muted-foreground">—</span>
+                )
+              )}
             </div>
             {candidate.visa_status !== "GC" && candidate.visa_status !== "Citizen" && (
               <div className="pt-2">
                 <Label className="text-muted-foreground">Visa Copy</Label>
-                <DocumentUpload
-                  candidateId={candidate.id}
-                  currentUrl={(candidate as any).visa_copy_url || null}
-                  folder="visa"
-                  onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
-                />
+                {(isAdmin || isOwnProfile) ? (
+                  <DocumentUpload
+                    candidateId={candidate.id}
+                    currentUrl={(candidate as any).visa_copy_url || null}
+                    folder="visa"
+                    onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
+                  />
+                ) : (
+                  (candidate as any).visa_copy_url ? (
+                    <a href={(candidate as any).visa_copy_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-xs text-info underline">Download</a>
+                  ) : (
+                    <span className="ml-2 text-xs text-muted-foreground">—</span>
+                  )
+                )}
               </div>
             )}
             {isAdmin && (
@@ -343,6 +369,7 @@ export default function CandidateDetail() {
                         <SelectItem value="Indeed">Indeed</SelectItem>
                         <SelectItem value="Monster">Monster</SelectItem>
                         <SelectItem value="ZipRecruiter">ZipRecruiter</SelectItem>
+                        <SelectItem value="Company Website">Company Website</SelectItem>
                         <SelectItem value="Other">Other</SelectItem>
                       </SelectContent>
                     </Select>

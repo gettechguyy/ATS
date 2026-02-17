@@ -29,6 +29,7 @@ import {
   updateInterviewFeedback as updateInterviewFeedbackFn,
   rescheduleInterview as rescheduleInterviewFn,
 } from "../../dbscripts/functions/interviews";
+import { uploadInterviewQuestions } from "../../dbscripts/functions/storage";
 import { updateSubmissionStatus } from "../../dbscripts/functions/submissions";
 import { fetchRescheduleLogsByInterviewIds } from "../../dbscripts/functions/rescheduleLogs";
 import {
@@ -85,6 +86,12 @@ export default function SubmissionDetail() {
   const createInterview = useMutation({
     mutationFn: async (fd: FormData) => {
       const mode = fd.get("mode") as string;
+      const file = fd.get("interview_questions") as File | null;
+      if (!file || (file as any).size === 0) {
+        throw new Error("Interview questions file is required");
+      }
+      // upload file to storage
+      const url = await uploadInterviewQuestions(id!, file as File);
       await createInterviewFn({
         submission_id: id!,
         candidate_id: submission!.candidate_id,
@@ -92,6 +99,7 @@ export default function SubmissionDetail() {
         mode,
         scheduled_at: `${fd.get("date")}T${fd.get("time")}:00`,
         virtual_link: mode === "Virtual" ? (fd.get("virtual_link") as string) || null : null,
+        interview_questions_url: url,
       });
     },
     onSuccess: () => {
@@ -153,13 +161,15 @@ export default function SubmissionDetail() {
   
 
   const createOffer = useMutation({
-    mutationFn: async (payload: { salary: number; job_description?: string | null; job_description_url?: string | null }) => {
+    mutationFn: async (payload: { salary: number; job_description?: string | null; job_description_url?: string | null; tentative_start_date?: string | null; additional_notes?: string | null }) => {
       await createOfferFn({
         submission_id: id!,
         candidate_id: submission!.candidate_id,
         salary: payload.salary,
         job_description: payload.job_description ?? null,
         job_description_url: payload.job_description_url ?? null,
+        tentative_start_date: payload.tentative_start_date ?? null,
+        additional_notes: payload.additional_notes ?? null,
       });
     },
     onSuccess: async () => {
@@ -295,12 +305,17 @@ export default function SubmissionDetail() {
                       const time = fd.get("time") as string | null;
                       const mode = fd.get("mode") as string | null;
                       const link = (fd.get("virtual_link") as string) || "";
+                      const file = fd.get("interview_questions") as File | null;
                       if (!date || !time) {
                         toast.error("Date and time are required");
                         return;
                       }
                       if (!mode) {
                         toast.error("Mode is required");
+                        return;
+                      }
+                      if (!file || (file as any).size === 0) {
+                        toast.error("Interview questions file is required");
                         return;
                       }
                       if (mode === "Virtual") {
@@ -344,6 +359,10 @@ export default function SubmissionDetail() {
                     <div className="space-y-2">
                       <Label>Virtual Link (if Virtual mode)</Label>
                       <Input name="virtual_link" type="url" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Interview Questions (upload) *</Label>
+                      <Input name="interview_questions" type="file" accept=".pdf,.doc,.docx,.txt" required />
                     </div>
                     <Button type="submit" className="w-full" disabled={createInterview.isPending}>
                       Schedule Interview
@@ -508,11 +527,23 @@ export default function SubmissionDetail() {
                       toast.error("Please enter a valid salary");
                       return;
                     }
-                    await createOffer.mutateAsync({ salary });
+                    const tentative = (fd.get("tentative_start_date") as string) || null;
+                    const notes = (fd.get("additional_notes") as string) || null;
+                    await createOffer.mutateAsync({ salary, tentative_start_date: tentative, additional_notes: notes });
                   }} className="space-y-4">
                     <div className="space-y-2">
                       <Label>Salary *</Label>
                       <Input name="salary" type="number" required placeholder="120000" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>Tentative Start Date</Label>
+                        <Input name="tentative_start_date" type="date" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Additional Notes</Label>
+                        <Textarea name="additional_notes" />
+                      </div>
                     </div>
                     <Button type="submit" className="w-full" disabled={createOffer.isPending}>
                       Create Offer
@@ -523,17 +554,19 @@ export default function SubmissionDetail() {
             </CardHeader>
             <CardContent className="p-0">
               <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Salary</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Offered</TableHead>
-                  </TableRow>
-                </TableHeader>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Salary</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Start Date</TableHead>
+                  <TableHead>Notes</TableHead>
+                  <TableHead>Offered</TableHead>
+                </TableRow>
+              </TableHeader>
                 <TableBody>
                   {offers?.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={3} className="py-6 text-center text-muted-foreground">
+                      <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
                         {canCreateOffer ? "No offers yet" : "Change submission status to 'Offered' to create offers"}
                       </TableCell>
                     </TableRow>
@@ -557,6 +590,8 @@ export default function SubmissionDetail() {
                             </SelectContent>
                           </Select>
                         </TableCell>
+                        <TableCell>{o.tentative_start_date ? new Date(o.tentative_start_date).toLocaleDateString() : "—"}</TableCell>
+                        <TableCell className="whitespace-pre-wrap">{o.additional_notes || "—"}</TableCell>
                         <TableCell className="text-muted-foreground">{new Date(o.offered_at).toLocaleDateString()}</TableCell>
                       </TableRow>
                     ))

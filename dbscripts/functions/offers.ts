@@ -49,6 +49,8 @@ export async function createOffer(offer: {
   salary: number;
   job_description?: string | null;
   job_description_url?: string | null;
+  tentative_start_date?: string | null;
+  additional_notes?: string | null;
 }) {
   const { error } = await supabase.from("offers").insert({
     submission_id: offer.submission_id,
@@ -57,6 +59,8 @@ export async function createOffer(offer: {
     status: "Pending" as any,
     job_description: offer.job_description ?? null,
     job_description_url: offer.job_description_url ?? null,
+    tentative_start_date: offer.tentative_start_date ?? null,
+    additional_notes: offer.additional_notes ?? null,
   });
   if (error) throw error;
 }
