@@ -85,3 +85,19 @@ export async function updateCandidateResumeUrl(id: string, resumeUrl: string) {
     .eq("id", id);
   if (error) throw error;
 }
+
+export async function updateCandidateIdUrl(id: string, idUrl: string) {
+  const { error } = await supabase
+    .from("candidates")
+    .update({ id_copy_url: idUrl })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function updateCandidateVisaUrl(id: string, visaUrl: string) {
+  const { error } = await supabase
+    .from("candidates")
+    .update({ visa_copy_url: visaUrl })
+    .eq("id", id);
+  if (error) throw error;
+}

@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useEffect } from "react";
 import ResumeUpload from "@/components/ResumeUpload";
+import DocumentUpload from "@/components/DocumentUpload";
 import { fetchCandidateById, updateCandidateStatus, updateCandidate as updateCandidateFn } from "../../dbscripts/functions/candidates";
 import { fetchSubmissionsByCandidate, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
 import { fetchProfileName } from "../../dbscripts/functions/profiles";
@@ -37,6 +38,9 @@ export default function CandidateDetail() {
   const [subDialogOpen, setSubDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editVisa, setEditVisa] = useState("Other");
+  const [editCity, setEditCity] = useState("");
+  const [editState, setEditState] = useState("");
+  const [editZip, setEditZip] = useState("");
 
   const isOwnProfile = isCandidate && profile?.linked_candidate_id === id;
   if (isCandidate && !isOwnProfile) return <Navigate to="/" replace />;
@@ -49,6 +53,11 @@ export default function CandidateDetail() {
 
   useEffect(() => {
     if (candidate) setEditVisa(candidate.visa_status || "Other");
+    if (candidate) {
+      setEditCity((candidate as any).city || "");
+      setEditState((candidate as any).state || "");
+      setEditZip((candidate as any).zip || "");
+    }
   }, [candidate?.visa_status]);
 
   const { data: submissions } = useQuery({
@@ -93,6 +102,8 @@ export default function CandidateDetail() {
         recruiter_id: user!.id,
         client_name: fd.get("client_name") as string,
         position: fd.get("position") as string,
+        job_link: (fd.get("job_link") as string) || null,
+        job_portal: (fd.get("job_portal") as string) || null,
         status: "Applied",
       });
     },
@@ -112,7 +123,7 @@ export default function CandidateDetail() {
     return <div className="text-center text-muted-foreground py-12">Candidate not found</div>;
   }
 
-  const canSeePersonalDetails = isAdmin || isOwnProfile;
+  const canSeePersonalDetails = isAdmin || isRecruiter || isOwnProfile;
   const displayEmail = canSeePersonalDetails ? (candidate.email || "—") : (candidate.email ? MASK : "—");
   const displayPhone = canSeePersonalDetails ? (candidate.phone || "—") : (candidate.phone ? MASK : "—");
   const showVisaStatus = isAdmin || isRecruiter || isOwnProfile;
@@ -146,6 +157,9 @@ export default function CandidateDetail() {
                           email: (fd.get("email") as string) || null,
                           phone: (fd.get("phone") as string) || null,
                           visa_status: editVisa,
+                          city: editCity || null,
+                          state: editState || null,
+                          zip: editZip || null,
                         },
                         { onSuccess: () => setEditDialogOpen(false) }
                       );
@@ -166,6 +180,20 @@ export default function CandidateDetail() {
                     <div className="space-y-2">
                       <Label>Phone</Label>
                       <Input name="phone" defaultValue={candidate.phone || ""} />
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label>City</Label>
+                        <Input name="city" value={editCity} onChange={(e) => setEditCity(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>State</Label>
+                        <Input name="state" value={editState} onChange={(e) => setEditState(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Zip</Label>
+                        <Input name="zip" value={editZip} onChange={(e) => setEditZip(e.target.value)} />
+                      </div>
                     </div>
                     <div className="space-y-2">
                       <Label>Visa status</Label>
@@ -220,6 +248,26 @@ export default function CandidateDetail() {
                 />
               )}
             </div>
+            <div className="pt-2">
+              <Label className="text-muted-foreground">ID Proof</Label>
+              <DocumentUpload
+                candidateId={candidate.id}
+                currentUrl={(candidate as any).id_copy_url || null}
+                folder="id"
+                onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
+              />
+            </div>
+            {candidate.visa_status !== "GC" && candidate.visa_status !== "Citizen" && (
+              <div className="pt-2">
+                <Label className="text-muted-foreground">Visa Copy</Label>
+                <DocumentUpload
+                  candidateId={candidate.id}
+                  currentUrl={(candidate as any).visa_copy_url || null}
+                  folder="visa"
+                  onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
+                />
+              </div>
+            )}
             {isAdmin && (
               <div className="pt-2">
                 <Label className="text-muted-foreground">Status (Admin only)</Label>
@@ -255,7 +303,27 @@ export default function CandidateDetail() {
               <DialogContent>
                 <DialogHeader><DialogTitle>New Submission</DialogTitle></DialogHeader>
                 <form
-                  onSubmit={(e) => { e.preventDefault(); createSubmission.mutate(new FormData(e.currentTarget)); }}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const fd = new FormData(e.currentTarget);
+                    const jobLink = ((fd.get("job_link") as string) || "").trim();
+                    const jobPortal = ((fd.get("job_portal") as string) || "").trim();
+                    if (!jobPortal) {
+                      toast.error("Please select a job portal");
+                      return;
+                    }
+                    if (!jobLink) {
+                      toast.error("Job Link is required");
+                      return;
+                    }
+                    try {
+                      new URL(jobLink);
+                    } catch {
+                      toast.error("Please enter a valid Job Link URL (include https://)");
+                      return;
+                    }
+                    createSubmission.mutate(new FormData(e.currentTarget));
+                  }}
                   className="space-y-4"
                 >
                   <div className="space-y-2">
@@ -265,6 +333,23 @@ export default function CandidateDetail() {
                   <div className="space-y-2">
                     <Label>Position *</Label>
                     <Input name="position" required />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Job Portal *</Label>
+                    <Select name="job_portal" defaultValue="">
+                      <SelectTrigger><SelectValue placeholder="Select portal" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="LinkedIn">LinkedIn</SelectItem>
+                        <SelectItem value="Indeed">Indeed</SelectItem>
+                        <SelectItem value="Monster">Monster</SelectItem>
+                        <SelectItem value="ZipRecruiter">ZipRecruiter</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Job Link *</Label>
+                    <Input name="job_link" type="url" placeholder="https://example.com/job/123" required />
                   </div>
                   <Button type="submit" className="w-full" disabled={createSubmission.isPending}>
                     Add Submission

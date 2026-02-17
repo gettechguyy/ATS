@@ -215,6 +215,10 @@ export default function SubmissionDetail() {
           </CardHeader>
           <CardContent className="space-y-3 text-sm">
             <div><span className="text-muted-foreground">Client:</span> {submission.client_name}</div>
+            <div><span className="text-muted-foreground">Portal:</span> {(submission as any).job_portal || "—"}</div>
+            {(submission as any).job_link && (
+              <div><span className="text-muted-foreground">Job Link:</span> <a href={(submission as any).job_link} target="_blank" rel="noreferrer" className="ml-2 text-xs text-info underline">{(submission as any).job_link}</a></div>
+            )}
             <div><span className="text-muted-foreground">Candidate:</span> {(submission as any).candidates?.first_name} {(submission as any).candidates?.last_name || ""}</div>
             <div><span className="text-muted-foreground">Status:</span> <Badge variant="outline">{submission.status}</Badge></div>
             <div><span className="text-muted-foreground">Created:</span> {new Date(submission.created_at!).toLocaleDateString()}</div>

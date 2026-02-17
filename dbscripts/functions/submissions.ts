@@ -44,15 +44,21 @@ export async function createSubmission(submission: {
   recruiter_id: string;
   client_name: string;
   position: string;
+  job_link?: string | null;
+  job_portal?: string | null;
   status?: string;
 }) {
-  const { error } = await supabase.from("submissions").insert({
+  const insertObj: Record<string, any> = {
     candidate_id: submission.candidate_id,
     recruiter_id: submission.recruiter_id,
     client_name: submission.client_name,
     position: submission.position,
     status: (submission.status || "Applied") as any,
-  });
+  };
+  if (submission.job_link !== undefined) insertObj.job_link = submission.job_link;
+  if (submission.job_portal !== undefined) insertObj.job_portal = submission.job_portal;
+
+  const { error } = await supabase.from("submissions").insert(insertObj as any);
   if (error) throw error;
 }
 
