@@ -86,6 +86,14 @@ export async function updateCandidateResumeUrl(id: string, resumeUrl: string) {
   if (error) throw error;
 }
 
+export async function updateCandidateCoverLetterUrl(id: string, coverLetterUrl: string) {
+  const { error } = await supabase
+    .from("candidates")
+    .update({ cover_letter_url: coverLetterUrl })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 export async function updateCandidateIdUrl(id: string, idUrl: string) {
   const { error } = await supabase
     .from("candidates")

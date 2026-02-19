@@ -14,6 +14,8 @@ import SubmissionDetail from "@/pages/SubmissionDetail";
 import Interviews from "@/pages/Interviews";
 import Offers from "@/pages/Offers";
 import UserManagement from "@/pages/UserManagement";
+import InvitesPage from "@/pages/Invites";
+import SetPasswordPage from "@/pages/SetPassword";
 import MyProfile from "@/pages/MyProfile";
 import NotFound from "./pages/NotFound";
 
@@ -28,6 +30,7 @@ const App = () => (
         <AuthProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route path="/set-password" element={<SetPasswordPage />} />
             <Route element={<AppLayout />}>
               <Route path="/" element={<Dashboard />} />
               <Route path="/candidates" element={<Candidates />} />
@@ -38,6 +41,8 @@ const App = () => (
               <Route path="/interviews" element={<Interviews />} />
               <Route path="/offers" element={<Offers />} />
               <Route path="/admin/users" element={<UserManagement />} />
+              <Route path="/admin/invites" element={<InvitesPage />} />
+              <Route path="/set-password" element={<SetPasswordPage />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>

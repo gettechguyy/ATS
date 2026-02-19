@@ -100,6 +100,25 @@ export async function uploadVendorJobDescription(submissionId: string, file: Fil
   return urlData.publicUrl;
 }
 
+/** Upload cover letter: candidateDetails/<candidate_id>/cover_letter/<filename> */
+export async function uploadCoverLetter(candidateId: string, file: File) {
+  const ext = file.name.split(".").pop() || "pdf";
+  const path = `candidateDetails/${candidateId}/cover_letter/${Date.now()}.${ext}`;
+
+  if (!STORAGE_BUCKET) throw new Error("STORAGE_BUCKET is not configured. Set VITE_SUPABASE_BUCKET in your .env and restart the dev server.");
+  const { error: listErr } = await supabase.storage.from(STORAGE_BUCKET).list("", { limit: 1 });
+  if (listErr && /Bucket not found/i.test(listErr.message || "")) {
+    throw new Error(`Bucket "${STORAGE_BUCKET}" not found. Make sure the bucket exists in Supabase and VITE_SUPABASE_BUCKET matches the bucket name.`);
+  }
+
+  const { error: uploadError } = await supabase.storage
+    .from(STORAGE_BUCKET)
+    .upload(path, file, { upsert: true });
+  if (uploadError) throw uploadError;
+  const { data: urlData } = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+  return urlData.publicUrl;
+}
+
 /** Upload path: interview/interview_questions/<submission_id>/<filename> */
 export async function uploadInterviewQuestions(submissionId: string, file: File) {
   const ext = file.name.split(".").pop() || "pdf";

@@ -1,0 +1,27 @@
+-- Add education, professional and marketing fields to candidates
+ALTER TABLE public.candidates
+  ADD COLUMN IF NOT EXISTS degree text,
+  ADD COLUMN IF NOT EXISTS institution text,
+  ADD COLUMN IF NOT EXISTS graduation_year text,
+  ADD COLUMN IF NOT EXISTS technology text,
+  ADD COLUMN IF NOT EXISTS experience_years int,
+  ADD COLUMN IF NOT EXISTS primary_skills text,
+  ADD COLUMN IF NOT EXISTS target_role text,
+  ADD COLUMN IF NOT EXISTS expected_salary numeric,
+  ADD COLUMN IF NOT EXISTS interview_availability text,
+  ADD COLUMN IF NOT EXISTS open_to_relocate boolean,
+  ADD COLUMN IF NOT EXISTS client1 text,
+  ADD COLUMN IF NOT EXISTS client2 text,
+  ADD COLUMN IF NOT EXISTS reference1 text,
+  ADD COLUMN IF NOT EXISTS reference2 text,
+  ADD COLUMN IF NOT EXISTS cover_letter_url text,
+  ADD COLUMN IF NOT EXISTS marketing_gmail text,
+  ADD COLUMN IF NOT EXISTS marketing_gmail_pass text,
+  ADD COLUMN IF NOT EXISTS marketing_linkedin text,
+  ADD COLUMN IF NOT EXISTS marketing_linkedin_pass text,
+  ADD COLUMN IF NOT EXISTS marketing_govoice text,
+  ADD COLUMN IF NOT EXISTS marketing_govoice_pass text,
+  ADD COLUMN IF NOT EXISTS marketing_other text,
+  ADD COLUMN IF NOT EXISTS marketing_submitted boolean DEFAULT false,
+  ADD COLUMN IF NOT EXISTS marketing_submitted_at timestamptz;
+

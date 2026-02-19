@@ -31,7 +31,7 @@ import { fetchCandidatesBasic } from "../../dbscripts/functions/candidates";
 const ROLES = ["admin", "recruiter", "candidate", "manager"] as const;
 
 export default function UserManagement() {
-  const { isAdmin, createUser } = useAuth();
+  const { isAdmin, createUser, user } = useAuth();
   const queryClient = useQueryClient();
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string>("recruiter");
@@ -95,20 +95,49 @@ export default function UserManagement() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  /* Create user OR create invite for candidates.
+     If role === 'candidate' we create an invite record with a token,
+     generate a link and POST to a configurable webhook (Power Automate).
+     For other roles we continue to create the user with a password. */
   const createUserMutation = useMutation({
     mutationFn: async (fd: FormData) => {
-      const { error } = await createUser(
-        fd.get("email") as string,
-        fd.get("password") as string,
-        fd.get("full_name") as string,
-        fd.get("role") as string || selectedRole,
-      );
-      if (error) throw error;
+      const role = (fd.get("role") as string) || selectedRole;
+      const email = fd.get("email") as string;
+      const fullName = fd.get("full_name") as string;
+      if (role === "candidate") {
+        // generate token and create invite
+        const token = crypto.randomUUID();
+        // insert invite record via RPC/file
+        const { createInvite } = await import("../../dbscripts/functions/invites");
+        await createInvite({ token, email, full_name: fullName, role, created_by: user?.id || "" });
+        // build invite link
+        const inviteLink = `${window.location.origin}/set-password?token=${token}`;
+        // optionally call webhook if configured
+        const webhook = import.meta.env.VITE_INVITE_WEBHOOK as string | undefined;
+        if (webhook) {
+          await fetch(webhook, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: fullName, email, link: inviteLink }),
+          });
+        }
+        return { invited: true, inviteLink };
+      } else {
+        // create normal user account (admin creates with initial password)
+        const password = fd.get("password") as string;
+        const { error } = await createUser(email, password, fullName, role);
+        if (error) throw error;
+        return { invited: false };
+      }
     },
-    onSuccess: () => {
+    onSuccess: (res: any) => {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       setCreateDialogOpen(false);
-      toast.success("User created. They can sign in with their email and password.");
+      if (res?.invited) {
+        toast.success("Invite created and sent.");
+      } else {
+        toast.success("User created. They can sign in with their email and password.");
+      }
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -139,10 +168,13 @@ export default function UserManagement() {
                 <Label>Email *</Label>
                 <Input name="email" type="email" required />
               </div>
-              <div className="space-y-2">
-                <Label>Password *</Label>
-                <Input name="password" type="password" required minLength={6} />
-              </div>
+              {/* Password is only required for non-candidate roles */}
+              {selectedRole !== "candidate" && (
+                <div className="space-y-2">
+                  <Label>Password *</Label>
+                  <Input name="password" type="password" required minLength={6} />
+                </div>
+              )}
               <div className="space-y-2">
                 <Label>Role *</Label>
                 <input type="hidden" name="role" value={selectedRole} />
