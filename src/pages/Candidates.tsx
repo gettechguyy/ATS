@@ -109,7 +109,7 @@ export default function Candidates() {
           <h1 className="text-2xl font-bold text-foreground">Candidates</h1>
           <p className="text-sm text-muted-foreground">Manage candidate pipeline</p>
         </div>
-        {(isAdmin || isRecruiter) && (
+        {isAdmin && (
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" />Add Candidate</Button>
