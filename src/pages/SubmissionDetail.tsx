@@ -206,7 +206,7 @@ export default function SubmissionDetail() {
   }
 
   if (!submission) {
-    return <div className="py-12 text-center text-muted-foreground">Submission not found</div>;
+    return <div className="py-12 text-center text-muted-foreground">Application not found</div>;
   }
 
   const canCreateInterview = submission.status === "Interview" || submission.status === "Screen Call";
@@ -290,15 +290,17 @@ export default function SubmissionDetail() {
               <CardTitle className="flex items-center gap-2 text-base">
                 <Calendar className="h-4 w-4" /> Interviews ({interviews?.length || 0})
               </CardTitle>
-              <Dialog open={interviewDialogOpen} onOpenChange={setInterviewDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" disabled={!canCreateInterview}>
-                    <Plus className="mr-1 h-3 w-3" />Schedule Round {nextRound}
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-h-[80vh] overflow-y-auto">
-                  <DialogHeader><DialogTitle>Schedule Interview Round {nextRound}</DialogTitle></DialogHeader>
-                  <form onSubmit={(e) => {
+              {/* Only allow non-candidate users to schedule interviews */}
+              { !isCandidate ? (
+                <Dialog open={interviewDialogOpen} onOpenChange={setInterviewDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" disabled={!canCreateInterview}>
+                      <Plus className="mr-1 h-3 w-3" />Schedule Round {nextRound}
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-h-[80vh] overflow-y-auto">
+                    <DialogHeader><DialogTitle>Schedule Interview Round {nextRound}</DialogTitle></DialogHeader>
+                    <form onSubmit={(e) => {
                       e.preventDefault();
                       const fd = new FormData(e.currentTarget);
                       const date = fd.get("date") as string | null;
@@ -368,8 +370,9 @@ export default function SubmissionDetail() {
                       Schedule Interview
                     </Button>
                   </form>
-                </DialogContent>
-              </Dialog>
+                  </DialogContent>
+                </Dialog>
+              ) : null}
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -386,7 +389,7 @@ export default function SubmissionDetail() {
                   {interviews?.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
-                        {canCreateInterview ? "No interviews scheduled" : "Change submission status to 'Interview' or 'Screen Call' to schedule"}
+                        {canCreateInterview ? "No interviews scheduled" : "Change application status to 'Interview' or 'Screen Call' to schedule"}
                       </TableCell>
                     </TableRow>
                   ) : (
@@ -401,40 +404,43 @@ export default function SubmissionDetail() {
                           )}
                         </TableCell>
                         <TableCell>
-                          <Select value={iv.status} onValueChange={async (v) => {
-                            // update status, then if passed open offer dialog
-                            try {
-                              await updateInterviewStatus.mutateAsync({ interviewId: iv.id, status: v });
-                              if (v === "Passed") {
-                                setOfferDialogOpen(true);
+                          {isCandidate ? (
+                            <Badge variant="secondary">{iv.status}</Badge>
+                          ) : (
+                            <Select value={iv.status} onValueChange={async (v) => {
+                              try {
+                                await updateInterviewStatus.mutateAsync({ interviewId: iv.id, status: v });
+                                if (v === "Passed") setOfferDialogOpen(true);
+                              } catch (err: any) {
+                                toast.error(err.message || "Failed to update interview status");
                               }
-                            } catch (err: any) {
-                              toast.error(err.message || "Failed to update interview status");
-                            }
-                          }}>
-                            <SelectTrigger className="h-7 w-auto border-0 p-0">
-                              <Badge variant="secondary">{iv.status}</Badge>
-                            </SelectTrigger>
-                            <SelectContent>
-                              {INTERVIEW_STATUSES.map((s) => (
-                                <SelectItem key={s} value={s}>{s}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                            }}>
+                              <SelectTrigger className="h-7 w-auto border-0 p-0">
+                                <Badge variant="secondary">{iv.status}</Badge>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {INTERVIEW_STATUSES.map((s) => (
+                                  <SelectItem key={s} value={s}>{s}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          )}
                         </TableCell>
                         <TableCell>
                           <div className="flex gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-xs"
-                              onClick={() => {
-                                setRescheduleInterviewId(iv.id);
-                                setRescheduleDialogOpen(true);
-                              }}
-                            >
-                              <Clock className="mr-1 h-3 w-3" />Reschedule
-                            </Button>
+                            {!isCandidate && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-xs"
+                                onClick={() => {
+                                  setRescheduleInterviewId(iv.id);
+                                  setRescheduleDialogOpen(true);
+                                }}
+                              >
+                                <Clock className="mr-1 h-3 w-3" />Reschedule
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -511,46 +517,49 @@ export default function SubmissionDetail() {
               <CardTitle className="flex items-center gap-2 text-base">
                 <Gift className="h-4 w-4" /> Offers ({offers?.length || 0})
               </CardTitle>
-              <Dialog open={offerDialogOpen} onOpenChange={setOfferDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button size="sm" disabled={!canCreateOffer}>
-                    <Plus className="mr-1 h-3 w-3" />Create Offer
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader><DialogTitle>Create Offer</DialogTitle></DialogHeader>
-                  <form onSubmit={async (e) => {
-                    e.preventDefault();
-                    const fd = new FormData(e.currentTarget);
-                    const salary = parseFloat(fd.get("salary") as string) || 0;
-                    if (!salary || salary <= 0) {
-                      toast.error("Please enter a valid salary");
-                      return;
-                    }
-                    const tentative = (fd.get("tentative_start_date") as string) || null;
-                    const notes = (fd.get("additional_notes") as string) || null;
-                    await createOffer.mutateAsync({ salary, tentative_start_date: tentative, additional_notes: notes });
-                  }} className="space-y-4">
-                    <div className="space-y-2">
-                      <Label>Salary *</Label>
-                      <Input name="salary" type="number" required placeholder="120000" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Tentative Start Date</Label>
-                        <Input name="tentative_start_date" type="date" />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Additional Notes</Label>
-                        <Textarea name="additional_notes" />
-                      </div>
-                    </div>
-                    <Button type="submit" className="w-full" disabled={createOffer.isPending}>
-                      Create Offer
+              {/* Only allow non-candidate users to create offers */}
+              { !isCandidate ? (
+                <Dialog open={offerDialogOpen} onOpenChange={setOfferDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" disabled={!canCreateOffer}>
+                      <Plus className="mr-1 h-3 w-3" />Create Offer
                     </Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader><DialogTitle>Create Offer</DialogTitle></DialogHeader>
+                    <form onSubmit={async (e) => {
+                      e.preventDefault();
+                      const fd = new FormData(e.currentTarget);
+                      const salary = parseFloat(fd.get("salary") as string) || 0;
+                      if (!salary || salary <= 0) {
+                        toast.error("Please enter a valid salary");
+                        return;
+                      }
+                      const tentative = (fd.get("tentative_start_date") as string) || null;
+                      const notes = (fd.get("additional_notes") as string) || null;
+                      await createOffer.mutateAsync({ salary, tentative_start_date: tentative, additional_notes: notes });
+                    }} className="space-y-4">
+                      <div className="space-y-2">
+                        <Label>Salary *</Label>
+                        <Input name="salary" type="number" required placeholder="120000" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label>Tentative Start Date</Label>
+                          <Input name="tentative_start_date" type="date" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Additional Notes</Label>
+                          <Textarea name="additional_notes" />
+                        </div>
+                      </div>
+                      <Button type="submit" className="w-full" disabled={createOffer.isPending}>
+                        Create Offer
+                      </Button>
+                    </form>
+                  </DialogContent>
+                </Dialog>
+              ) : null}
             </CardHeader>
             <CardContent className="p-0">
               <Table>
@@ -567,7 +576,7 @@ export default function SubmissionDetail() {
                   {offers?.length === 0 ? (
                     <TableRow>
                       <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">
-                        {canCreateOffer ? "No offers yet" : "Change submission status to 'Offered' to create offers"}
+                        {canCreateOffer ? "No offers yet" : "Change application status to 'Offered' to create offers"}
                       </TableCell>
                     </TableRow>
                   ) : (

@@ -162,15 +162,15 @@ export default function Submissions() {
   return (
     <div>
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground">{isCandidate ? "My Submissions" : "Submissions"}</h1>
-        <p className="text-sm text-muted-foreground">{isCandidate ? "Your job submissions" : "Track all job submissions"}</p>
+        <h1 className="text-2xl font-bold text-foreground">{isCandidate ? "My Applications" : "Applications"}</h1>
+        <p className="text-sm text-muted-foreground">{isCandidate ? "Your job applications" : "Track all job applications"}</p>
       </div>
 
       <Card className="mb-4">
         <CardContent className="flex flex-col gap-3 p-4 sm:flex-row">
-          <div className="relative flex-1">
+            <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input placeholder="Search submissions..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            <Input placeholder="Search applications..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
           </div>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-52">
@@ -196,57 +196,81 @@ export default function Submissions() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Candidate</TableHead>
+                  {!isCandidate && <TableHead>Candidate</TableHead>}
                   <TableHead>Client</TableHead>
                   <TableHead>Position</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead className="w-12"></TableHead>
+                  {isCandidate ? (
+                    <>
+                      <TableHead>Job Type</TableHead>
+                      <TableHead>Location</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Date</TableHead>
+                    </>
+                  ) : (
+                    <>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead className="w-12"></TableHead>
+                    </>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered?.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">No submissions found</TableCell>
+                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">No applications found</TableCell>
                   </TableRow>
                 ) : (
                   filtered?.map((s: any) => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-medium">{s.candidates?.first_name} {s.candidates?.last_name || ""}</TableCell>
+                  <TableRow key={s.id}>
+                      {!isCandidate && <TableCell className="font-medium">{s.candidates?.first_name} {s.candidates?.last_name || ""}</TableCell>}
                       <TableCell>{s.client_name}</TableCell>
                       <TableCell>{s.position}</TableCell>
-                      <TableCell>
-                      <Select
-                          value={s.status}
-                          onValueChange={(v) => {
-                            if (v === "Vendor Responded") {
-                              setVendorSubmission(s);
-                              setVendorDialogOpen(true);
-                            } else if (v === "Screen Call") {
-                              setScreenSubmission(s);
-                              setScreenDialogOpen(true);
-                            } else {
-                              updateStatus.mutate({ id: s.id, status: v });
-                            }
-                          }}
-                        >
-                          <SelectTrigger className="h-7 w-auto border-0 p-0">
+                      {isCandidate ? (
+                        <>
+                          <TableCell className="text-muted-foreground">{s.job_type || "—"}</TableCell>
+                          <TableCell className="text-muted-foreground">{s.city ? `${s.city}${s.state ? `, ${s.state}` : ""}` : "—"}</TableCell>
+                          <TableCell>
                             <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {SUBMISSION_STATUSES.map((st) => (
-                              <SelectItem key={st} value={st}>{st}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" asChild>
-                          <Link to={`/submissions/${s.id}`}><Eye className="h-4 w-4" /></Link>
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</TableCell>
+                        </>
+                      ) : (
+                        <>
+                          <TableCell>
+                            <Select
+                              value={s.status}
+                              onValueChange={(v) => {
+                                if (v === "Vendor Responded") {
+                                  setVendorSubmission(s);
+                                  setVendorDialogOpen(true);
+                                } else if (v === "Screen Call") {
+                                  setScreenSubmission(s);
+                                  setScreenDialogOpen(true);
+                                } else {
+                                  updateStatus.mutate({ id: s.id, status: v });
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="h-7 w-auto border-0 p-0">
+                                <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
+                              </SelectTrigger>
+                              <SelectContent>
+                                {SUBMISSION_STATUSES.map((st) => (
+                                  <SelectItem key={st} value={st}>{st}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="icon" asChild>
+                              <Link to={`/submissions/${s.id}`}><Eye className="h-4 w-4" /></Link>
+                            </Button>
+                          </TableCell>
+                        </>
+                      )}
+                  </TableRow>
                   ))
                 )}
               </TableBody>

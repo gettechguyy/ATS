@@ -239,8 +239,9 @@ export default function CandidateDetail() {
   const displayPhone = canSeePersonalDetails ? (candidate.phone || "—") : (candidate.phone ? MASK : "—");
   const showVisaStatus = isAdmin || isRecruiter || isOwnProfile;
 
-  return (
-    <div>
+  try {
+    return (
+      <div>
       <Button variant="ghost" size="sm" asChild className="mb-4">
         <Link to={isCandidate ? "/" : "/candidates"}><ArrowLeft className="mr-2 h-4 w-4" />{isCandidate ? "Back to Dashboard" : "Back to Candidates"}</Link>
       </Button>
@@ -415,7 +416,7 @@ export default function CandidateDetail() {
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
-              <FileText className="h-4 w-4" /> Submissions ({submissions?.length || 0})
+              <FileText className="h-4 w-4" /> Applications ({submissions?.length || 0})
             </CardTitle>
             {(isAdmin || isRecruiter) && (
             <Dialog open={subDialogOpen} onOpenChange={setSubDialogOpen}>
@@ -494,11 +495,11 @@ export default function CandidateDetail() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {submissions?.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">No submissions yet</TableCell>
-                  </TableRow>
-                ) : (
+                  {submissions?.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">No applications yet</TableCell>
+                    </TableRow>
+                  ) : (
                   submissions?.map((s: any) => (
                     <TableRow key={s.id}>
                       <TableCell className="font-medium">{s.client_name}</TableCell>
@@ -827,6 +828,14 @@ export default function CandidateDetail() {
           </Card>
         </div>
       </div>
-    </div>
-  );
+      </div>
+    );
+  } catch (err) {
+    console.error("CandidateDetail render error:", err);
+    return (
+      <div className="py-12 text-center text-destructive">
+        Something went wrong rendering the candidate page. Please check the console for errors.
+      </div>
+    );
+  }
 }
