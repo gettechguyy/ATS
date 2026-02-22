@@ -15,7 +15,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, Plus, FileText, Calendar, Pencil } from "lucide-react";
+import { ArrowLeft, Plus, FileText, Calendar, Pencil, ChevronDown, Download } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useEffect } from "react";
@@ -42,6 +42,7 @@ export default function CandidateDetail() {
   const [subDialogOpen, setSubDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [editVisa, setEditVisa] = useState("Other");
+  const [editVisaCopyUploaded, setEditVisaCopyUploaded] = useState(false);
   const [editCity, setEditCity] = useState("");
   const [editState, setEditState] = useState("");
   const [editZip, setEditZip] = useState("");
@@ -61,7 +62,7 @@ export default function CandidateDetail() {
   const [client2, setClient2] = useState("");
   const [reference1, setReference1] = useState("");
   const [reference2, setReference2] = useState("");
-  const [coverLetterUrlLocal, setCoverLetterUrlLocal] = useState("");
+  // coverLetter is handled by CoverLetterUpload component; no local URL input needed.
 
   const [marketingGmail, setMarketingGmail] = useState("");
   const [marketingGmailPass, setMarketingGmailPass] = useState("");
@@ -71,6 +72,11 @@ export default function CandidateDetail() {
   const [marketingGoVoicePass, setMarketingGoVoicePass] = useState("");
   const [marketingOther, setMarketingOther] = useState("");
   const [marketingSubmittedLocal, setMarketingSubmittedLocal] = useState(false);
+  // collapse states for sections
+  const [profOpen, setProfOpen] = useState(false);
+  const [eduOpen, setEduOpen] = useState(false);
+  const [expOpen, setExpOpen] = useState(false);
+  const [marketingOpen, setMarketingOpen] = useState(false);
 
   const isOwnProfile = isCandidate && profile?.linked_candidate_id === id;
   if (isCandidate && !isOwnProfile) return <Navigate to="/" replace />;
@@ -104,7 +110,8 @@ export default function CandidateDetail() {
       setClient2((candidate as any).client2 || "");
       setReference1((candidate as any).reference1 || "");
       setReference2((candidate as any).reference2 || "");
-      setCoverLetterUrlLocal((candidate as any).cover_letter_url || "");
+      // cover letter URL is displayed/managed via the upload component above
+      // (candidate as any).cover_letter_url is available via `candidate` when needed
 
       setMarketingGmail((candidate as any).marketing_gmail || "");
       setMarketingGmailPass((candidate as any).marketing_gmail_pass || "");
@@ -259,8 +266,17 @@ export default function CandidateDetail() {
                   <DialogHeader><DialogTitle>Edit candidate</DialogTitle></DialogHeader>
                   <form
                     className="space-y-4"
-                    onSubmit={(e) => {
+                    onSubmit={async (e) => {
                       e.preventDefault();
+                      // if visa status requires copy, ensure we have one
+                      if (editVisa !== "GC" && editVisa !== "Citizen") {
+                        const hasExisting = Boolean((candidate as any).visa_copy_url);
+                        const uploaded = Boolean(editVisaCopyUploaded);
+                        if (!hasExisting && !uploaded) {
+                          toast.error("Visa copy is required for the selected visa status");
+                          return;
+                        }
+                      }
                       const fd = new FormData(e.currentTarget);
                       updateCandidate.mutate(
                         {
@@ -273,7 +289,7 @@ export default function CandidateDetail() {
                           state: editState || null,
                           zip: editZip || null,
                         },
-                        { onSuccess: () => setEditDialogOpen(false) }
+                        { onSuccess: () => { setEditDialogOpen(false); queryClient.invalidateQueries({ queryKey: ["candidate", id] }); } }
                       );
                     }}
                   >
@@ -287,11 +303,11 @@ export default function CandidateDetail() {
                     </div>
                     <div className="space-y-2">
                       <Label>Email</Label>
-                      <Input name="email" type="email" defaultValue={candidate.email || ""} />
+                      <Input name="email" type="email" defaultValue={candidate.email || ""} required />
                     </div>
                     <div className="space-y-2">
                       <Label>Phone</Label>
-                      <Input name="phone" defaultValue={candidate.phone || ""} />
+                      <Input name="phone" defaultValue={candidate.phone || ""} required />
                     </div>
                     <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
@@ -318,6 +334,20 @@ export default function CandidateDetail() {
                         </SelectContent>
                       </Select>
                     </div>
+                    {editVisa !== "GC" && editVisa !== "Citizen" && (
+                      <div className="space-y-2">
+                        <Label>Visa Copy</Label>
+                        <DocumentUpload
+                          candidateId={candidate.id}
+                          currentUrl={(candidate as any).visa_copy_url || null}
+                          folder="visa"
+                          onUploaded={() => {
+                            setEditVisaCopyUploaded(true);
+                            queryClient.invalidateQueries({ queryKey: ["candidate", id] });
+                          }}
+                        />
+                      </div>
+                    )}
                     <Button type="submit" className="w-full" disabled={updateCandidate.isPending}>Save</Button>
                   </form>
                 </DialogContent>
@@ -352,7 +382,15 @@ export default function CandidateDetail() {
               <div><span className="text-muted-foreground">Recruiter:</span> {recruiterProfile?.full_name || "—"}</div>
             )}
             {showVisaStatus && (
-              <div><span className="text-muted-foreground">Visa status:</span> {candidate.visa_status || "—"}</div>
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">Visa status:</span>
+                <span>{candidate.visa_status || "—"}</span>
+                {(candidate.visa_status !== "GC" && candidate.visa_status !== "Citizen") && (candidate as any).visa_copy_url ? (
+                  <a href={(candidate as any).visa_copy_url} target="_blank" rel="noopener noreferrer" className="ml-1 text-info" title="Download visa copy">
+                    <Download className="h-4 w-4" />
+                  </a>
+                ) : null}
+              </div>
             )}
             {/* Resume upload moved to Professional Details */}
             <div className="pt-2">
@@ -372,25 +410,7 @@ export default function CandidateDetail() {
                 )
               )}
             </div>
-            {candidate.visa_status !== "GC" && candidate.visa_status !== "Citizen" && (
-              <div className="pt-2">
-                <Label className="text-muted-foreground">Visa Copy</Label>
-                {(isAdmin || isOwnProfile) ? (
-                  <DocumentUpload
-                    candidateId={candidate.id}
-                    currentUrl={(candidate as any).visa_copy_url || null}
-                    folder="visa"
-                    onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
-                  />
-                ) : (
-                  (candidate as any).visa_copy_url ? (
-                    <a href={(candidate as any).visa_copy_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-xs text-info underline">Download</a>
-                  ) : (
-                    <span className="ml-2 text-xs text-muted-foreground">—</span>
-                  )
-                )}
-              </div>
-            )}
+            
             {isAdmin && (
               <div className="pt-2">
                 <Label className="text-muted-foreground">Status (Admin only)</Label>
@@ -521,10 +541,14 @@ export default function CandidateDetail() {
         {/* Professional Details */}
         <div className="lg:col-span-2">
           <Card>
-            <CardHeader>
+            <CardHeader className="relative">
               <CardTitle className="text-base">Professional Details</CardTitle>
+              <button type="button" className="absolute right-3 top-3 p-1 rounded hover:bg-muted" onClick={() => setProfOpen(v => !v)} aria-label="Toggle professional details">
+                <ChevronDown className={`h-4 w-4 transition-transform ${profOpen ? 'rotate-180' : ''}`} />
+              </button>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <div style={{ maxHeight: profOpen ? '2000px' : '0px', overflow: 'hidden', transition: 'max-height 320ms ease' }}>
+              <CardContent className="space-y-4">
               {/* Resume & Cover Letter Upload */}
               <div className="flex gap-4 items-center">
                 <div><span className="text-muted-foreground">Resume:</span></div>
@@ -597,22 +621,27 @@ export default function CandidateDetail() {
                   <Label>Reference 2</Label>
                   {isOwnProfile ? <Input value={reference2} onChange={(e) => setReference2(e.target.value)} /> : <div className="text-sm">{reference2 || "—"}</div>}
                 </div>
-                <div className="space-y-2 col-span-2">
-                  <Label>Cover Letter URL</Label>
-                  {isOwnProfile ? <Input value={coverLetterUrlLocal} onChange={(e) => setCoverLetterUrlLocal(e.target.value)} /> : <div className="text-sm">{coverLetterUrlLocal ? <a href={coverLetterUrlLocal} target="_blank" rel="noopener noreferrer" className="text-info underline">View</a> : "—"}</div>}
-                </div>
+                {/* Cover Letter is handled above by the upload component */}
               </div>
               {isOwnProfile && (
                 <div className="flex gap-2">
                   <Button onClick={async () => {
+                    // Validate mandatory professional fields
+                    if (!degree || degree === "") { toast.error("Degree is required"); return; }
+                    if (!technology || technology.trim() === "") { toast.error("Technology is required"); return; }
+                    if (experienceYears === "" || experienceYears === null) { toast.error("Experience (years) is required"); return; }
+                    if (!primarySkills || primarySkills.trim() === "") { toast.error("Primary skills are required"); return; }
+                    if (!targetRole || targetRole.trim() === "") { toast.error("Target role is required"); return; }
+                    if (!expectedSalaryLocal || expectedSalaryLocal.trim() === "") { toast.error("Expected salary is required"); return; }
+                    if (!interviewAvailability || interviewAvailability.trim() === "") { toast.error("Interview availability is required"); return; }
                     try {
                       await updateCandidate.mutateAsync({
                         degree, institution, graduation_year: graduationYear,
-                        technology, experience_years: experienceYears === "" ? null : experienceYears,
+                        technology, experience_years: typeof experienceYears === "string" ? null : experienceYears,
                         primary_skills: primarySkills, target_role: targetRole,
                         expected_salary: expectedSalaryLocal ? Number(expectedSalaryLocal) : null,
                         interview_availability: interviewAvailability, open_to_relocate: openToRelocateLocal,
-                        client1, client2, reference1, reference2, cover_letter_url: coverLetterUrlLocal,
+                        client1, client2, reference1, reference2,
                       });
                     } catch {
                       /* handled by mutation */
@@ -620,16 +649,21 @@ export default function CandidateDetail() {
                   }}>Save Professional Details</Button>
                 </div>
               )}
-            </CardContent>
+              </CardContent>
+            </div>
           </Card>
         </div>
         {/* Education & Experience lists */}
         <div className="lg:col-span-2">
           <Card>
-            <CardHeader>
+            <CardHeader className="relative">
               <CardTitle className="text-base">Education</CardTitle>
+              <button type="button" className="absolute right-3 top-3 p-1 rounded hover:bg-muted" onClick={() => setEduOpen(v => !v)} aria-label="Toggle education">
+                <ChevronDown className={`h-4 w-4 transition-transform ${eduOpen ? 'rotate-180' : ''}`} />
+              </button>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <div style={{ maxHeight: eduOpen ? '2000px' : '0px', overflow: 'hidden', transition: 'max-height 320ms ease' }}>
+              <CardContent className="space-y-4">
               {educations?.length === 0 ? <div className="text-muted-foreground">No education added</div> : educations.map((e: any) => (
                 <div key={e.id} className="flex items-start justify-between">
                   <div>
@@ -655,9 +689,18 @@ export default function CandidateDetail() {
                   });
                   (ev.currentTarget as HTMLFormElement).reset();
                 }} className="grid grid-cols-2 gap-4">
-                  <Input name="degree" placeholder="Degree (e.g. B.Sc)" />
-                  <Input name="institution" placeholder="Institution" />
-                  <Input name="field_of_study" placeholder="Field of study" />
+                  <Select name="degree" defaultValue="">
+                    <SelectTrigger><SelectValue placeholder="Select degree" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="HighSchool Diploma">HighSchool Diploma</SelectItem>
+                      <SelectItem value="Associate Degree">Associate Degree</SelectItem>
+                      <SelectItem value="Bachelors">Bachelors</SelectItem>
+                      <SelectItem value="Masters">Masters</SelectItem>
+                      <SelectItem value="PhD">PhD</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input name="institution" placeholder="Institution/College" />
+                  <Input name="field_of_study" placeholder="Major" />
                   <Input name="graduation_year" placeholder="Graduation year" />
                   <Input name="start_date" type="date" />
                   <Input name="end_date" type="date" />
@@ -666,13 +709,18 @@ export default function CandidateDetail() {
                 </form>
               )}
             </CardContent>
+            </div>
           </Card>
 
           <Card className="mt-4">
-            <CardHeader>
+            <CardHeader className="relative">
               <CardTitle className="text-base">Experience</CardTitle>
+              <button type="button" className="absolute right-3 top-3 p-1 rounded hover:bg-muted" onClick={() => setExpOpen(v => !v)} aria-label="Toggle experience">
+                <ChevronDown className={`h-4 w-4 transition-transform ${expOpen ? 'rotate-180' : ''}`} />
+              </button>
             </CardHeader>
-            <CardContent className="space-y-4">
+            <div style={{ maxHeight: expOpen ? '2000px' : '0px', overflow: 'hidden', transition: 'max-height 320ms ease' }}>
+              <CardContent className="space-y-4">
               {experiences?.length === 0 ? <div className="text-muted-foreground">No experience added</div> : experiences.map((ex: any) => (
                 <div key={ex.id} className="flex items-start justify-between">
                   <div>
@@ -710,16 +758,21 @@ export default function CandidateDetail() {
                 </form>
               )}
             </CardContent>
+            </div>
           </Card>
         </div>
         {/* Marketing Details */}
         <div className="lg:col-span-2">
           <Card>
-            <CardHeader>
+            <CardHeader className="relative">
               <CardTitle className="text-base">Marketing Details</CardTitle>
+              <button type="button" className="absolute right-3 top-3 p-1 rounded hover:bg-muted" onClick={() => setMarketingOpen(v => !v)} aria-label="Toggle marketing details">
+                <ChevronDown className={`h-4 w-4 transition-transform ${marketingOpen ? 'rotate-180' : ''}`} />
+              </button>
             </CardHeader>
-            <CardContent className="space-y-4">
-              {marketingSubmittedLocal ? (
+            <div style={{ maxHeight: marketingOpen ? '2000px' : '0px', overflow: 'hidden', transition: 'max-height 320ms ease' }}>
+              <CardContent className="space-y-4">
+              {isOwnProfile && marketingSubmittedLocal ? (
                 <div className="p-4 bg-green-50 rounded">Thank you — you are ready for marketing.</div>
               ) : null}
               <div className="grid grid-cols-2 gap-4">
@@ -790,7 +843,7 @@ export default function CandidateDetail() {
                               email: candidate.email || null,
                               profile_link: `${window.location.origin}/candidates/${candidate.id}`,
                               technology: technology || null,
-                              experience_years: experienceYears === "" ? null : experienceYears,
+                              experience_years: typeof experienceYears === "string" ? null : experienceYears,
                               primary_skills: primarySkills || null,
                               expected_salary: expectedSalaryLocal ? Number(expectedSalaryLocal) : null,
                               recipients,
@@ -807,7 +860,7 @@ export default function CandidateDetail() {
                               email: candidate.email || null,
                               profile_link: `${window.location.origin}/candidates/${candidate.id}`,
                               technology: technology || null,
-                              experience_years: experienceYears === "" ? null : experienceYears,
+                              experience_years: typeof experienceYears === "string" ? null : experienceYears,
                               primary_skills: primarySkills || null,
                               expected_salary: expectedSalaryLocal ? Number(expectedSalaryLocal) : null,
                             }),
@@ -825,6 +878,7 @@ export default function CandidateDetail() {
                 <div className="text-sm text-muted-foreground">You have submitted marketing details and cannot edit them. Contact your recruiter to request changes.</div>
               )}
             </CardContent>
+            </div>
           </Card>
         </div>
       </div>

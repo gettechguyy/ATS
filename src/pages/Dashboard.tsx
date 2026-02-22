@@ -98,10 +98,10 @@ export default function Dashboard() {
           </div>
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard title="My Applications" value={stats?.totalSubmissions} icon={FileText} color="text-info" />
+            <StatCard title="My Applications" value={stats?.totalSubmissions} icon={FileText} color="text-info" />
+            <StatCard title="Screen Calls" value={stats?.totalScreenCalls} icon={CalendarIcon} color="text-info" />
             <StatCard title="Interviews" value={stats?.totalInterviews} icon={CalendarIcon} color="text-warning" />
             <StatCard title="Offers" value={stats?.totalOffers} icon={Gift} color="text-success" />
-            <StatCard title="Pending Offers" value={stats?.pendingOffers} icon={Gift} color="text-warning" />
           </div>
         )}
       </div>
@@ -112,6 +112,7 @@ export default function Dashboard() {
     { title: "Total Candidates", value: stats?.totalCandidates, icon: Users, color: "text-info" },
     { title: "In Marketing", value: stats?.candidatesByStatus?.["In Marketing"], icon: TrendingUp, color: "text-success" },
     { title: "Total Applications", value: stats?.totalSubmissions, icon: FileText, color: "text-info" },
+    { title: "Screen Calls", value: stats?.totalScreenCalls, icon: CalendarIcon, color: "text-info" },
     { title: "Interviews Scheduled", value: stats?.scheduledInterviews, icon: CalendarIcon, color: "text-warning" },
     { title: "Interviews Passed", value: stats?.passedInterviews, icon: CalendarIcon, color: "text-success" },
     { title: "Total Offers", value: stats?.totalOffers, icon: Gift, color: "text-success" },

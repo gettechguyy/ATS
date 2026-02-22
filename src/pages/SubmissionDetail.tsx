@@ -227,7 +227,10 @@ export default function SubmissionDetail() {
             <div><span className="text-muted-foreground">Client:</span> {submission.client_name}</div>
             <div><span className="text-muted-foreground">Portal:</span> {(submission as any).job_portal || "—"}</div>
             {(submission as any).job_link && (
-              <div><span className="text-muted-foreground">Job Link:</span> <a href={(submission as any).job_link} target="_blank" rel="noreferrer" className="ml-2 text-xs text-info underline">{(submission as any).job_link}</a></div>
+              <div>
+                <span className="text-muted-foreground">Job Link:</span>{" "}
+                <a href={(submission as any).job_link} target="_blank" rel="noreferrer" className="ml-2 text-xs text-info underline">Click Here</a>
+              </div>
             )}
             <div><span className="text-muted-foreground">Candidate:</span> {(submission as any).candidates?.first_name} {(submission as any).candidates?.last_name || ""}</div>
             <div><span className="text-muted-foreground">Status:</span> <Badge variant="outline">{submission.status}</Badge></div>
@@ -247,7 +250,14 @@ export default function SubmissionDetail() {
                 <div><span className="text-muted-foreground">Scheduled:</span> {submission.screen_scheduled_at ? new Date(submission.screen_scheduled_at).toLocaleString() : "—"}</div>
                 <div><span className="text-muted-foreground">Mode:</span> {submission.screen_mode || "—"}</div>
                 {submission.screen_link_or_phone && (
-                  <div><span className="text-muted-foreground">{submission.screen_mode === "Virtual" ? "Link" : "Phone"}:</span> {submission.screen_link_or_phone}</div>
+                  <div>
+                    <span className="text-muted-foreground">{submission.screen_mode === "Virtual" ? "Link" : "Phone"}:</span>{" "}
+                    {submission.screen_mode === "Virtual" ? (
+                      <a href={submission.screen_link_or_phone} target="_blank" rel="noreferrer" className="ml-2 text-xs text-info underline">Click Here</a>
+                    ) : (
+                      <span className="ml-2">{submission.screen_link_or_phone}</span>
+                    )}
+                  </div>
                 )}
                 <div><span className="text-muted-foreground">Resume (Screen Call):</span> {submission.screen_resume_url ? <a href={submission.screen_resume_url} target="_blank" rel="noreferrer" className="ml-2 text-xs text-info underline">View</a> : "—"}</div>
                 <div><span className="text-muted-foreground">Interview Questions:</span> {submission.screen_questions_url ? <a href={submission.screen_questions_url} target="_blank" rel="noreferrer" className="ml-2 text-xs text-info underline">View</a> : "—"}</div>
@@ -512,6 +522,7 @@ export default function SubmissionDetail() {
           )}
 
           {/* Offers */}
+          {offers && offers.length > 0 && (
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2 text-base">
@@ -609,6 +620,7 @@ export default function SubmissionDetail() {
               </Table>
             </CardContent>
           </Card>
+          )}
         </div>
       </div>
     </div>

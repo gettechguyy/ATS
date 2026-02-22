@@ -30,6 +30,7 @@ const allNavItems = [
   { to: "/candidates", icon: Users, label: "Candidates", roles: ["admin", "recruiter", "manager"] },
   { to: "/my-profile", icon: User, label: "My Profile", roles: ["candidate"] },
   { to: "/submissions", icon: FileText, label: "Applications", roles: ["admin", "recruiter", "candidate", "manager"] },
+  { to: "/screens", icon: Calendar, label: "Screens", roles: ["admin", "recruiter", "candidate", "manager"] },
   { to: "/interviews", icon: Calendar, label: "Interviews", roles: ["admin", "recruiter", "candidate", "manager"] },
   { to: "/offers", icon: Gift, label: "Offers", roles: ["admin", "recruiter", "candidate", "manager"] },
   { to: "/admin/users", icon: Shield, label: "User Management", roles: ["admin"] },

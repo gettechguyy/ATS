@@ -4,6 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+ 
 import { Input } from "@/components/ui/input";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -20,7 +21,8 @@ import { Search, Eye } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { fetchSubmissions, fetchSubmissionsByRecruiter, fetchSubmissionsByCandidate, updateSubmissionStatus, updateSubmission } from "../../dbscripts/functions/submissions";
+import { fetchSubmissions, fetchSubmissionsByRecruiter, fetchSubmissionsByCandidate, updateSubmissionStatus, updateSubmission, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
+import { fetchCandidates, fetchCandidatesByRecruiter } from "../../dbscripts/functions/candidates";
 import { uploadScreenCallFile, uploadVendorJobDescription } from "../../dbscripts/functions/storage";
 import { US_STATES } from "@/lib/usStates";
 
@@ -36,7 +38,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function Submissions() {
-  const { user, profile, role, isCandidate, isRecruiter } = useAuth();
+  const { user, profile, role, isCandidate, isRecruiter, isAdmin, isManager } = useAuth();
   const queryClient = useQueryClient();
   const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
   const [vendorSubmission, setVendorSubmission] = useState<any | null>(null);
@@ -62,6 +64,12 @@ export default function Submissions() {
  
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [newCandidateId, setNewCandidateId] = useState<string | null>(null);
+  const [newClientName, setNewClientName] = useState("");
+  const [newPosition, setNewPosition] = useState("");
+  const [newJobPortal, setNewJobPortal] = useState("");
+  const [newJobLink, setNewJobLink] = useState("");
 
   const submissionsQueryFn = async () => {
     if (isCandidate) {
@@ -75,6 +83,21 @@ export default function Submissions() {
   const { data: submissions, isLoading } = useQuery({
     queryKey: ["submissions", role, user?.id, profile?.linked_candidate_id],
     queryFn: submissionsQueryFn,
+  });
+
+  // fetch candidates for Add Application dropdown
+  const candidatesQueryFn = async () => {
+    // Admins and managers see all candidates (no filter)
+    if (isAdmin || isManager) return fetchCandidates();
+    // Recruiters see only candidates assigned to them
+    if (isRecruiter && user?.id) return fetchCandidatesByRecruiter(user.id);
+    // Others: empty
+    return [];
+  };
+
+  const { data: candidates = [], isLoading: candidatesLoading } = useQuery({
+    queryKey: ["candidates-dropdown", role, user?.id],
+    queryFn: candidatesQueryFn,
   });
 
   const updateStatus = useMutation({
@@ -104,6 +127,8 @@ export default function Submissions() {
     },
     onError: (err: Error) => toast.error(err.message),
   });
+
+ 
 
   const handleScreenFileUpload = async (submissionId: string, file: File, folder?: "resume" | "questions") => {
     try {
@@ -159,6 +184,8 @@ export default function Submissions() {
     return matchSearch && matchStatus;
   });
 
+ 
+
   return (
     <div>
       <div className="mb-6">
@@ -172,6 +199,27 @@ export default function Submissions() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Search applications..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
           </div>
+          {(isAdmin || isRecruiter) && (
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (candidatesLoading) {
+                    toast.error("Loading candidates, please wait");
+                    return;
+                  }
+                  if (isRecruiter && (!candidates || candidates.length === 0)) {
+                    toast.error("No candidates assigned to you. Please create or assign a candidate first.");
+                    return;
+                  }
+                  setAddDialogOpen(true);
+                }}
+                disabled={candidatesLoading || (isRecruiter && (!candidates || candidates.length === 0))}
+              >
+                Add Application
+              </Button>
+            </div>
+          )}
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-52">
               <SelectValue placeholder="Filter by status" />
@@ -185,6 +233,8 @@ export default function Submissions() {
           </Select>
         </CardContent>
       </Card>
+
+ 
 
       <Card>
         <CardContent className="p-0">
@@ -278,6 +328,94 @@ export default function Submissions() {
           )}
         </CardContent>
       </Card>
+      {/* Add Application Dialog */}
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>New Application</DialogTitle></DialogHeader>
+            <form onSubmit={async (e) => {
+            e.preventDefault();
+            // validations
+            if (!newCandidateId) { toast.error("Please select a candidate"); return; }
+            if (!newClientName || !newPosition) { toast.error("Client and Position are required"); return; }
+            if (!newJobPortal || newJobPortal.trim() === "") { toast.error("Please select a Job Portal"); return; }
+            if (!newJobLink || newJobLink.trim() === "") { toast.error("Please enter Job Link"); return; }
+            try {
+              // validate URL
+              try {
+                new URL(newJobLink);
+              } catch {
+                toast.error("Please enter a valid Job Link URL (include https://)");
+                return;
+              }
+
+              await createSubmissionFn({
+                candidate_id: newCandidateId,
+                recruiter_id: user!.id,
+                client_name: newClientName,
+                position: newPosition,
+                job_link: newJobLink,
+                job_portal: newJobPortal,
+                status: "Applied",
+              });
+              toast.success("Application added");
+              queryClient.invalidateQueries({ queryKey: ["submissions"] });
+              setAddDialogOpen(false);
+              // reset form
+              setNewCandidateId(null);
+              setNewClientName("");
+              setNewPosition("");
+              setNewJobPortal("");
+              setNewJobLink("");
+            } catch (err: any) {
+              toast.error(err?.message || "Failed to add application");
+            }
+          }} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Candidate</Label>
+              <Select value={newCandidateId ?? undefined} onValueChange={(v) => setNewCandidateId(v || null)}>
+                <SelectTrigger><SelectValue placeholder="Select candidate" /></SelectTrigger>
+                <SelectContent>
+                  {(candidates || []).filter((c: any) => c && c.id).map((c: any) => (
+                    <SelectItem key={c.id} value={String(c.id)}>{c.first_name} {c.last_name || ""} {c.email ? `— ${c.email}` : ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Client Name *</Label>
+                <Input value={newClientName} onChange={(e) => setNewClientName(e.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label>Position *</Label>
+                <Input value={newPosition} onChange={(e) => setNewPosition(e.target.value)} required />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Job Portal *</Label>
+                <Select value={newJobPortal} onValueChange={setNewJobPortal}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="LinkedIn">LinkedIn</SelectItem>
+                    <SelectItem value="Indeed">Indeed</SelectItem>
+                    <SelectItem value="Monster">Monster</SelectItem>
+                    <SelectItem value="ZipRecruiter">ZipRecruiter</SelectItem>
+                    <SelectItem value="Company Website">Company Website</SelectItem>
+                    <SelectItem value="Other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Job Link *</Label>
+                <Input value={newJobLink} onChange={(e) => setNewJobLink(e.target.value)} placeholder="https://example.com/job/123" required />
+              </div>
+            </div>
+            <Button type="submit" className="w-full">Add Application</Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+ 
       {/* Vendor Responded Dialog */}
       <Dialog open={vendorDialogOpen} onOpenChange={setVendorDialogOpen}>
         <DialogContent>
