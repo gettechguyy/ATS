@@ -31,7 +31,7 @@ import { fetchProfileName, fetchProfilesBySelect } from "../../dbscripts/functio
 import { fetchAllUserRoles } from "../../dbscripts/functions/userRoles";
 
 const CANDIDATE_STATUSES = ["New", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
-const VISA_STATUSES = ["OPT", "H1B", "GC", "Citizen", "Other"] as const;
+const VISA_STATUSES = ["CPT", "OPT", "STEM OPT", "H1-B", "H4-EAD", "GC-EAD", "Green Card", "US Citizen", "Other"] as const;
 
 const MASK = "*******";
 
@@ -334,7 +334,7 @@ export default function CandidateDetail() {
                         </SelectContent>
                       </Select>
                     </div>
-                    {editVisa !== "GC" && editVisa !== "Citizen" && (
+                    {editVisa !== "US Citizen" && (
                       <div className="space-y-2">
                         <Label>Visa Copy</Label>
                         <DocumentUpload
@@ -384,31 +384,57 @@ export default function CandidateDetail() {
             {showVisaStatus && (
               <div className="flex items-center gap-2">
                 <span className="text-muted-foreground">Visa status:</span>
-                <span>{candidate.visa_status || "—"}</span>
-                {(candidate.visa_status !== "GC" && candidate.visa_status !== "Citizen") && (candidate as any).visa_copy_url ? (
+                {isOwnProfile ? (
+                  <Select value={editVisa} onValueChange={async (v) => {
+                    setEditVisa(v);
+                    try {
+                      await updateCandidate.mutateAsync({ visa_status: v });
+                    } catch {
+                      /* handled by mutation */
+                    }
+                  }}>
+                    <SelectTrigger className="h-7"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {VISA_STATUSES.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <span>{candidate.visa_status || "—"}</span>
+                )}
+
+                {((candidate as any).visa_copy_url && (candidate.visa_status !== "US Citizen")) ? (
                   <a href={(candidate as any).visa_copy_url} target="_blank" rel="noopener noreferrer" className="ml-1 text-info" title="Download visa copy">
                     <Download className="h-4 w-4" />
                   </a>
                 ) : null}
+                {/* Visa copy upload for own profile (only if not US Citizen and not already uploaded) */}
+                {isOwnProfile && editVisa !== "US Citizen" && !(candidate as any).visa_copy_url && (
+                  <div className="ml-2">
+                    <DocumentUpload
+                      candidateId={candidate.id}
+                      currentUrl={null}
+                      folder="visa"
+                      onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
+                    />
+                  </div>
+                )}
               </div>
             )}
             {/* Resume upload moved to Professional Details */}
             <div className="pt-2">
               <Label className="text-muted-foreground">ID Proof</Label>
-              {(isAdmin || isOwnProfile) ? (
+              {((candidate as any).id_copy_url) ? (
+                <a href={(candidate as any).id_copy_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-xs text-info underline">View</a>
+              ) : ((isAdmin || isOwnProfile) ? (
                 <DocumentUpload
                   candidateId={candidate.id}
-                  currentUrl={(candidate as any).id_copy_url || null}
+                  currentUrl={null}
                   folder="id"
                   onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
                 />
               ) : (
-                (candidate as any).id_copy_url ? (
-                  <a href={(candidate as any).id_copy_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-xs text-info underline">Download</a>
-                ) : (
-                  <span className="ml-2 text-xs text-muted-foreground">—</span>
-                )
-              )}
+                <span className="ml-2 text-xs text-muted-foreground">—</span>
+              ))}
             </div>
             
             {isAdmin && (

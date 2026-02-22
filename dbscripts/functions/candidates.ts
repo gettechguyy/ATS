@@ -33,7 +33,7 @@ export async function fetchCandidateById(id: string) {
 export async function fetchCandidatesBasic() {
   const { data } = await supabase
     .from("candidates")
-    .select("id, first_name, last_name, email");
+    .select("id, first_name, last_name, email, recruiter_id, team_lead_id");
   return data || [];
 }
 
@@ -48,7 +48,7 @@ export async function createCandidate(candidate: {
   status?: string;
   visa_status?: string | null;
 }) {
-  const { error } = await supabase.from("candidates").insert({
+  const { data, error } = await supabase.from("candidates").insert({
     first_name: candidate.first_name,
     last_name: candidate.last_name || null,
     email: candidate.email || null,
@@ -56,8 +56,9 @@ export async function createCandidate(candidate: {
     recruiter_id: candidate.recruiter_id,
     status: (candidate.status || "New") as any,
     visa_status: candidate.visa_status || "Other",
-  });
+  }).select("id").single();
   if (error) throw error;
+  return data;
 }
 
 export async function updateCandidate(id: string, updates: Record<string, any>) {
@@ -79,33 +80,37 @@ export async function deleteCandidate(id: string) {
 }
 
 export async function updateCandidateResumeUrl(id: string, resumeUrl: string) {
+  const updateObj: Record<string, any> = { resume_url: resumeUrl };
   const { error } = await supabase
     .from("candidates")
-    .update({ resume_url: resumeUrl })
+    .update(updateObj)
     .eq("id", id);
   if (error) throw error;
 }
 
 export async function updateCandidateCoverLetterUrl(id: string, coverLetterUrl: string) {
+  const updateObj: Record<string, any> = { cover_letter_url: coverLetterUrl };
   const { error } = await supabase
     .from("candidates")
-    .update({ cover_letter_url: coverLetterUrl })
+    .update(updateObj)
     .eq("id", id);
   if (error) throw error;
 }
 
 export async function updateCandidateIdUrl(id: string, idUrl: string) {
+  const updateObj: Record<string, any> = { id_copy_url: idUrl };
   const { error } = await supabase
     .from("candidates")
-    .update({ id_copy_url: idUrl })
+    .update(updateObj)
     .eq("id", id);
   if (error) throw error;
 }
 
 export async function updateCandidateVisaUrl(id: string, visaUrl: string) {
+  const updateObj: Record<string, any> = { visa_copy_url: visaUrl };
   const { error } = await supabase
     .from("candidates")
-    .update({ visa_copy_url: visaUrl })
+    .update(updateObj)
     .eq("id", id);
   if (error) throw error;
 }

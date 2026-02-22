@@ -1,7 +1,7 @@
 import { supabase } from "../../src/integrations/supabase/client";
 
 export type DashboardStatsOptions = {
-  role: "admin" | "recruiter" | "candidate" | "manager";
+  role: "admin" | "recruiter" | "candidate" | "manager" | "team_lead";
   userId?: string;
   linkedCandidateId?: string | null;
   // Optional date range (inclusive). Can be Date or ISO string.
@@ -16,6 +16,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
 
   const isRecruiterScoped = role === "recruiter" && recruiterId;
   const isCandidateScoped = role === "candidate" && candidateId;
+  const isTeamLeadScoped = role === "team_lead" && options?.userId;
 
   const emptyStats = () => ({
     totalCandidates: 0,
@@ -100,6 +101,30 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
       o = [];
     }
   } else {
+  if (isTeamLeadScoped) {
+    // Limit candidates to those owned by team lead (team_lead_id = recruiterId (profile id))
+    const teamLeadId = options?.userId!;
+    const candidatesRes: any = await (supabase as any).from("candidates").select("id").eq("team_lead_id", teamLeadId);
+    const candidateIds = (candidatesRes.data || []).map((r: any) => r.id);
+    // submissions where candidate_id in candidateIds OR recruiter_id in (distinct recruiter_ids for those candidates)
+    const recruiterRes: any = await (supabase as any).from("candidates").select("distinct recruiter_id").in("id", candidateIds).neq("recruiter_id", null);
+    const recruiterIds = (recruiterRes.data || []).map((r: any) => r.recruiter_id).filter(Boolean);
+    const submissionsRes: any = await (supabase as any).from("submissions").select("*").or(`${candidateIds.length ? `candidate_id.in.(${candidateIds.join(",")})` : ''}${candidateIds.length && recruiterIds.length ? ',' : ''}${recruiterIds.length ? `recruiter_id.in.(${recruiterIds.join(",")})` : ''}`);
+    s = submissionsRes.data || [];
+    // fetch interviews/offers for those submissions
+    const submissionIds = s.map((x:any)=>x.id);
+    if (submissionIds.length>0) {
+      const intRes = await supabase.from("interviews").select("id, scheduled_at, status").in("submission_id", submissionIds);
+      const offRes = await supabase.from("offers").select("id, status").in("submission_id", submissionIds);
+      i = intRes.data || [];
+      o = offRes.data || [];
+    } else {
+      i = [];
+      o = [];
+    }
+    // candidates list limited
+    c = (await supabase.from("candidates").select("id, status, recruiter_id").in("id", candidateIds)).data || [];
+  } else {
     const [candidatesRes, submissionsRes, interviewsRes, offersRes] = await Promise.all([
       candidatesQuery,
       submissionsQuery,
@@ -111,7 +136,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
     i = interviewsRes.data || [];
     o = offersRes.data || [];
   }
-
+  }
 
   return {
     totalCandidates: c.length,

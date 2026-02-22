@@ -86,8 +86,9 @@ DECLARE
   v_profile_id uuid;
   v_role_enum app_role;
 BEGIN
-  IF NOT EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = p_admin_user_id AND role = 'admin') THEN
-    RAISE EXCEPTION 'Only admins can create users';
+  -- Allow admins, managers, or team_leads to create users
+  IF NOT EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = p_admin_user_id AND role IN ('admin','manager','team_lead')) THEN
+    RAISE EXCEPTION 'Only admins, managers, or team leads can create users';
   END IF;
 
   p_email := trim(lower(p_email));
@@ -149,6 +150,38 @@ BEGIN
     END IF;
   END LOOP;
 END $$;
+
+-- Allow privileged users to update an app user's password (hash stored using crypt)
+CREATE OR REPLACE FUNCTION public.update_app_user_password(
+  p_admin_user_id uuid,
+  p_target_user_id uuid,
+  p_password text
+)
+RETURNS json
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, extensions
+AS $$
+BEGIN
+  -- Allow admins, managers, or team leads to update passwords
+  IF NOT EXISTS (SELECT 1 FROM public.user_roles WHERE user_id = p_admin_user_id AND role IN ('admin','manager','team_lead')) THEN
+    RAISE EXCEPTION 'Only admins, managers, or team leads can update passwords';
+  END IF;
+
+  IF p_password IS NULL OR trim(p_password) = '' THEN
+    RAISE EXCEPTION 'Password required';
+  END IF;
+
+  UPDATE public.app_users
+    SET password_hash = extensions.crypt(p_password, extensions.gen_salt('bf')), updated_at = now()
+    WHERE id = p_target_user_id;
+
+  RETURN json_build_object('ok', true);
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.update_app_user_password(uuid, uuid, text) TO anon;
+GRANT EXECUTE ON FUNCTION public.update_app_user_password(uuid, uuid, text) TO authenticated;
 
 -- ============================================
 -- DEFAULT ADMIN: Create once so you can log in (idempotent: only if no admin exists).

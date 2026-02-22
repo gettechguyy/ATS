@@ -9,12 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { fetchSubmissions, fetchSubmissionsByRecruiter, fetchSubmissionsByCandidate, updateSubmission } from "../../dbscripts/functions/submissions";
+import { fetchSubmissions, fetchSubmissionsByRecruiter, fetchSubmissionsByCandidate, fetchSubmissionsByTeamLead, updateSubmission } from "../../dbscripts/functions/submissions";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 
 export default function ScreensPage() {
-  const { user, profile, isCandidate, isRecruiter, isAdmin } = useAuth();
+  const { user, profile, isCandidate, isRecruiter, isAdmin, isTeamLead } = useAuth();
   const queryClient = useQueryClient();
   const [outcomeDialogOpen, setOutcomeDialogOpen] = useState(false);
   const [outcomeSubmission, setOutcomeSubmission] = useState<any | null>(null);
@@ -28,6 +28,7 @@ export default function ScreensPage() {
       return fetchSubmissionsByCandidate(profile.linked_candidate_id);
     }
     if (isRecruiter && user?.id) return fetchSubmissionsByRecruiter(user.id);
+    if (isTeamLead && profile?.id) return fetchSubmissionsByTeamLead(profile.id);
     return fetchSubmissions();
   };
 

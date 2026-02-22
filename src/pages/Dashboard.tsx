@@ -26,8 +26,9 @@ export default function Dashboard() {
     ],
     queryFn: () =>
       fetchDashboardStats({
-        role: role ?? "recruiter",
-        userId: user?.id,
+        role: (role ?? "recruiter") as any,
+        // pass profile.id (profiles.id) because DB columns like recruiter_id/team_lead_id reference profiles.id
+        userId: profile?.id ?? user?.id,
         linkedCandidateId: profile?.linked_candidate_id ?? null,
         startDate: dateRange?.from ?? null,
         endDate: dateRange?.to ?? null,
@@ -183,20 +184,24 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-4">
-              {[
-                { label: "Applications", count: stats.totalSubmissions },
-                { label: "Interviews", count: stats.totalInterviews },
-                { label: "Offers", count: stats.totalOffers },
-                { label: "Placed", count: stats.candidatesByStatus.Placed },
-              ].map((step, i) => (
-                <div key={step.label} className="flex items-center gap-2">
-                  <div className="text-center">
-                    <p className="text-xl font-bold text-foreground">{step.count}</p>
-                    <p className="text-xs text-muted-foreground">{step.label}</p>
-                  </div>
-                  {i < 3 && <span className="text-muted-foreground">→</span>}
+          {(() => {
+            const steps = [
+              { label: "Applications", count: stats.totalSubmissions },
+              { label: "Screen Calls", count: stats.totalScreenCalls },
+              { label: "Interviews", count: stats.totalInterviews },
+              { label: "Offers", count: stats.totalOffers },
+              { label: "Placed", count: stats.candidatesByStatus.Placed },
+            ];
+            return steps.map((step, i) => (
+              <div key={step.label} className="flex items-center gap-2">
+                <div className="text-center">
+                  <p className="text-xl font-bold text-foreground">{step.count}</p>
+                  <p className="text-xs text-muted-foreground">{step.label}</p>
                 </div>
-              ))}
+                {i < steps.length - 1 && <span className="text-muted-foreground">→</span>}
+              </div>
+            ));
+          })()}
             </div>
           </CardContent>
         </Card>

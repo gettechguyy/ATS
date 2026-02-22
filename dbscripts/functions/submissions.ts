@@ -39,6 +39,46 @@ export async function fetchSubmissionsByCandidate(candidateId: string) {
   return data || [];
 }
 
+/** Submissions for a Team Lead:
+ *  - any submission whose candidate.team_lead_id = teamLeadProfileId
+ *  - OR any submission whose recruiter_id is assigned to any candidate of the team lead
+ */
+export async function fetchSubmissionsByTeamLead(teamLeadProfileId: string) {
+  // select submissions where candidate has team_lead_id = teamLeadProfileId
+  const { data, error } = await supabase
+    .from("submissions")
+    .select("*, candidates(first_name, last_name, email, team_lead_id)")
+    .or(`candidate_id.in.(select id from candidates where team_lead_id.eq.${teamLeadProfileId}),recruiter_id.in.(select recruiter_id from candidates where team_lead_id.eq.${teamLeadProfileId})`)
+    .order("created_at", { ascending: false });
+  // Fallback: if supabase does not support subqueries in .or, run two queries and merge
+  if (error) {
+    // Fetch candidate IDs for the team lead first to avoid complex nested type inference
+    const candRes: any = await (supabase as any).from("candidates").select("id").eq("team_lead_id", teamLeadProfileId);
+    const candidateIds = (candRes.data || []).map((r: any) => r.id);
+
+    const byCandidate: any = await (supabase as any)
+      .from("submissions")
+      .select("*, candidates(first_name, last_name, email, team_lead_id)")
+      .in("candidate_id", candidateIds.length ? candidateIds : []);
+
+    const recruiterRes: any = await (supabase as any).from("candidates").select("recruiter_id").eq("team_lead_id", teamLeadProfileId);
+    const recruiterIds = (recruiterRes.data || []).map((r: any) => r.recruiter_id).filter(Boolean);
+
+    const byRecruiter: any = await (supabase as any)
+      .from("submissions")
+      .select("*, candidates(first_name, last_name, email, team_lead_id)")
+      .in("recruiter_id", recruiterIds.length ? recruiterIds : []);
+
+    const merged = [...(byCandidate.data || []), ...(byRecruiter.data || [])];
+    // dedupe by submission id
+    const map = new Map<string, any>();
+    merged.forEach((s: any) => map.set(s.id, s));
+    return Array.from(map.values()).sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
+  if (error) throw error;
+  return data || [];
+}
+
 export async function createSubmission(submission: {
   candidate_id: string;
   recruiter_id: string;

@@ -21,7 +21,7 @@ import { Search, Eye } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { fetchSubmissions, fetchSubmissionsByRecruiter, fetchSubmissionsByCandidate, updateSubmissionStatus, updateSubmission, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
+import { fetchSubmissions, fetchSubmissionsByRecruiter, fetchSubmissionsByCandidate, fetchSubmissionsByTeamLead, updateSubmissionStatus, updateSubmission, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
 import { fetchCandidates, fetchCandidatesByRecruiter } from "../../dbscripts/functions/candidates";
 import { uploadScreenCallFile, uploadVendorJobDescription } from "../../dbscripts/functions/storage";
 import { US_STATES } from "@/lib/usStates";
@@ -38,7 +38,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function Submissions() {
-  const { user, profile, role, isCandidate, isRecruiter, isAdmin, isManager } = useAuth();
+  const { user, profile, role, isCandidate, isRecruiter, isAdmin, isManager, isTeamLead } = useAuth();
   const queryClient = useQueryClient();
   const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
   const [vendorSubmission, setVendorSubmission] = useState<any | null>(null);
@@ -77,6 +77,7 @@ export default function Submissions() {
       return fetchSubmissionsByCandidate(profile.linked_candidate_id);
     }
     if (isRecruiter && user?.id) return fetchSubmissionsByRecruiter(user.id);
+    if (isTeamLead && profile?.id) return fetchSubmissionsByTeamLead(profile.id);
     return fetchSubmissions();
   };
 

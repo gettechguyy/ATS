@@ -8,7 +8,7 @@ import {
   type SessionUser,
 } from "@/lib/authApi";
 
-export type AppRole = "admin" | "recruiter" | "candidate" | "manager";
+export type AppRole = "admin" | "recruiter" | "candidate" | "manager" | "team_lead";
 
 export interface Profile {
   id: string;
@@ -33,6 +33,7 @@ interface AuthContextType {
   role: AppRole | null;
   isAdmin: boolean;
   isRecruiter: boolean;
+  isTeamLead: boolean;
   isCandidate: boolean;
   isManager: boolean;
   loading: boolean;
@@ -130,6 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         role,
         isAdmin: role === "admin",
         isRecruiter: role === "recruiter",
+        isTeamLead: role === "team_lead",
         isCandidate: role === "candidate",
         isManager: role === "manager",
         loading,

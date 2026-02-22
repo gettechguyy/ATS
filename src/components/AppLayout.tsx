@@ -26,14 +26,14 @@ import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const allNavItems = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "recruiter", "candidate", "manager"] },
-  { to: "/candidates", icon: Users, label: "Candidates", roles: ["admin", "recruiter", "manager"] },
+  { to: "/", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "recruiter", "candidate", "manager", "team_lead"] },
+  { to: "/candidates", icon: Users, label: "Candidates", roles: ["admin", "recruiter", "manager", "team_lead"] },
   { to: "/my-profile", icon: User, label: "My Profile", roles: ["candidate"] },
-  { to: "/submissions", icon: FileText, label: "Applications", roles: ["admin", "recruiter", "candidate", "manager"] },
-  { to: "/screens", icon: Calendar, label: "Screens", roles: ["admin", "recruiter", "candidate", "manager"] },
-  { to: "/interviews", icon: Calendar, label: "Interviews", roles: ["admin", "recruiter", "candidate", "manager"] },
-  { to: "/offers", icon: Gift, label: "Offers", roles: ["admin", "recruiter", "candidate", "manager"] },
-  { to: "/admin/users", icon: Shield, label: "User Management", roles: ["admin"] },
+  { to: "/submissions", icon: FileText, label: "Applications", roles: ["admin", "recruiter", "candidate", "manager", "team_lead"] },
+  { to: "/screens", icon: Calendar, label: "Screens", roles: ["admin", "recruiter", "candidate", "manager", "team_lead"] },
+  { to: "/interviews", icon: Calendar, label: "Interviews", roles: ["admin", "recruiter", "candidate", "manager", "team_lead"] },
+  { to: "/offers", icon: Gift, label: "Offers", roles: ["admin", "recruiter", "candidate", "manager", "team_lead"] },
+  { to: "/admin/users", icon: Shield, label: "User Management", roles: ["admin", "manager", "team_lead"] },
 ];
 
 export default function AppLayout() {

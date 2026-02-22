@@ -76,3 +76,20 @@ export async function createAppUser(
   const payload = data as { user_id: string } | null;
   return { data: payload ?? null, error: null };
 }
+
+export async function updateAppUserPassword(
+  adminUserId: string,
+  targetUserId: string,
+  password: string
+): Promise<{ data: any | null; error: Error | null }> {
+  if (!adminUserId || !targetUserId || !password) {
+    return { data: null, error: new Error("adminUserId, targetUserId and password required") };
+  }
+  const { data, error } = await supabase.rpc("update_app_user_password", {
+    p_admin_user_id: adminUserId,
+    p_target_user_id: targetUserId,
+    p_password: password,
+  });
+  if (error) return { data: null, error: error as Error };
+  return { data: data ?? null, error: null };
+}

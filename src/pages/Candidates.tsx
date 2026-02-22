@@ -25,6 +25,7 @@ import { Link, Navigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchCandidates, fetchCandidatesByRecruiter, createCandidate as createCandidateFn, deleteCandidate as deleteCandidateFn } from "../../dbscripts/functions/candidates";
 import { fetchProfilesBySelect } from "../../dbscripts/functions/profiles";
+import { createInvite } from "../../dbscripts/functions/invites";
 
 const CANDIDATE_STATUSES = ["New", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
 
@@ -61,19 +62,41 @@ export default function Candidates() {
 
   const createCandidate = useMutation({
     mutationFn: async (fd: FormData) => {
-      await createCandidateFn({
-        first_name: fd.get("first_name") as string,
-        last_name: (fd.get("last_name") as string) || null,
-        email: (fd.get("email") as string) || null,
-        phone: (fd.get("phone") as string) || null,
-        recruiter_id: (fd.get("recruiter") as string) || user!.id,
+      const first_name = fd.get("first_name") as string;
+      const last_name = (fd.get("last_name") as string) || null;
+      const email = (fd.get("email") as string) || null;
+      const phone = (fd.get("phone") as string) || null;
+      const recruiter_id = (fd.get("recruiter") as string) || user!.id;
+
+      // Create candidate row and get its id
+      const created = await createCandidateFn({
+        first_name,
+        last_name,
+        email,
+        phone,
+        recruiter_id,
         status: "New",
       });
+
+      // If email provided, create an invite linked to this candidate so when accepted it won't create a duplicate
+      if (email) {
+        const token = crypto.randomUUID();
+        await createInvite({ token, email, full_name: `${first_name} ${last_name || ""}`, role: "candidate", created_by: user?.id || "", candidate_id: created?.id });
+        const inviteLink = `${window.location.origin}/set-password?token=${token}`;
+        const webhook = import.meta.env.VITE_INVITE_WEBHOOK as string | undefined;
+        if (webhook) {
+          await fetch(webhook, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name: `${first_name} ${last_name || ""}`, email, link: inviteLink }),
+          });
+        }
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["candidates"] });
       setDialogOpen(false);
-      toast.success("Candidate created");
+      toast.success("Candidate created (invite sent if email provided)");
     },
     onError: (err: Error) => toast.error(err.message),
   });
