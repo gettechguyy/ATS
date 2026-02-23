@@ -271,7 +271,8 @@ export default function CandidateDetail() {
                     onSubmit={async (e) => {
                       e.preventDefault();
                       // if visa status requires copy, ensure we have one
-                      if (editVisa !== "GC" && editVisa !== "Citizen") {
+                      // For "Green Card" and "US Citizen" a visa copy is NOT required.
+                      if (editVisa !== "Green Card" && editVisa !== "US Citizen") {
                         const hasExisting = Boolean((candidate as any).visa_copy_url);
                         const uploaded = Boolean(editVisaCopyUploaded);
                         if (!hasExisting && !uploaded) {
@@ -303,14 +304,14 @@ export default function CandidateDetail() {
                       <Label>Last name</Label>
                       <Input name="last_name" defaultValue={candidate.last_name || ""} />
                     </div>
-                    <div className="space-y-2">
-                      <Label>Email</Label>
-                      <Input name="email" type="email" defaultValue={candidate.email || ""} required />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Phone</Label>
-                      <Input name="phone" defaultValue={candidate.phone || ""} required />
-                    </div>
+                      <div className="space-y-2">
+                        <Label>Email</Label>
+                        <Input name="email" type="email" defaultValue={candidate.email || ""} />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Phone</Label>
+                        <Input name="phone" defaultValue={candidate.phone || ""} />
+                      </div>
                     <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label>City</Label>
@@ -341,7 +342,7 @@ export default function CandidateDetail() {
                         </SelectContent>
                       </Select>
                     </div>
-                    {editVisa !== "US Citizen" && (
+                    {editVisa !== "US Citizen" && editVisa !== "Green Card" && (
                       <div className="space-y-2">
                         <Label>Visa Copy</Label>
                         <DocumentUpload
@@ -409,13 +410,13 @@ export default function CandidateDetail() {
                   <span>{candidate.visa_status || "—"}</span>
                 )}
 
-                {((candidate as any).visa_copy_url && (candidate.visa_status !== "US Citizen")) ? (
+                {((candidate as any).visa_copy_url && (candidate.visa_status !== "US Citizen" && candidate.visa_status !== "Green Card")) ? (
                   <a href={(candidate as any).visa_copy_url} target="_blank" rel="noopener noreferrer" className="ml-1 text-info" title="Download visa copy">
                     <Download className="h-4 w-4" />
                   </a>
                 ) : null}
                 {/* Visa copy upload for own profile (only if not US Citizen and not already uploaded) */}
-                {isOwnProfile && editVisa !== "US Citizen" && !(candidate as any).visa_copy_url && (
+                {isOwnProfile && editVisa !== "US Citizen" && editVisa !== "Green Card" && !(candidate as any).visa_copy_url && (
                   <div className="ml-2">
                     <DocumentUpload
                       candidateId={candidate.id}
