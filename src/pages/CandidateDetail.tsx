@@ -27,7 +27,7 @@ import { fetchCandidateById, updateCandidateStatus, updateCandidate as updateCan
 import { fetchEducationsByCandidate, createEducation, deleteEducation } from "../../dbscripts/functions/educations";
 import { fetchExperiencesByCandidate, createExperience, deleteExperience } from "../../dbscripts/functions/experiences";
 import { fetchSubmissionsByCandidate, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
-import { fetchProfileName, fetchProfilesBySelect } from "../../dbscripts/functions/profiles";
+import { fetchProfileName, fetchProfilesBySelect, fetchProfilesByRole } from "../../dbscripts/functions/profiles";
 import { fetchAllUserRoles } from "../../dbscripts/functions/userRoles";
 
 const CANDIDATE_STATUSES = ["New", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
@@ -148,7 +148,7 @@ export default function CandidateDetail() {
 
   const { data: recruiters } = useQuery({
     queryKey: ["recruiters"],
-    queryFn: () => fetchProfilesBySelect("user_id, full_name, email"),
+    queryFn: () => fetchProfilesByRole("recruiter"),
     enabled: isAdmin && !!candidate,
   });
 
@@ -241,9 +241,10 @@ export default function CandidateDetail() {
     return <div className="text-center text-muted-foreground py-12">Candidate not found</div>;
   }
 
-  const canSeePersonalDetails = isAdmin || isRecruiter || isOwnProfile;
-  const displayEmail = canSeePersonalDetails ? (candidate.email || "—") : (candidate.email ? MASK : "—");
-  const displayPhone = canSeePersonalDetails ? (candidate.phone || "—") : (candidate.phone ? MASK : "—");
+  // Only admins and the candidate themselves can see personal contact details.
+  const canSeePersonalDetails = isAdmin || isOwnProfile;
+  const displayEmail = canSeePersonalDetails ? (candidate.email || "—") : "—";
+  const displayPhone = canSeePersonalDetails ? (candidate.phone || "—") : "—";
   const showVisaStatus = isAdmin || isRecruiter || isOwnProfile;
 
   try {
@@ -355,10 +356,10 @@ export default function CandidateDetail() {
             )}
           </CardHeader>
             <CardContent className="space-y-3 text-sm">
-            {((isAdmin || isOwnProfile) || Boolean(candidate.email)) && (
+            {((isAdmin || isOwnProfile) || (!isRecruiter && Boolean(candidate.email))) && (
               <div><span className="text-muted-foreground">Email:</span> {displayEmail}</div>
             )}
-            {((isAdmin || isOwnProfile) || Boolean(candidate.phone)) && (
+            {((isAdmin || isOwnProfile) || (!isRecruiter && Boolean(candidate.phone))) && (
               <div><span className="text-muted-foreground">Phone:</span> {displayPhone}</div>
             )}
             {isAdmin && recruiters && (

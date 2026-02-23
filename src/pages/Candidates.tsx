@@ -24,7 +24,7 @@ import { toast } from "sonner";
 import { Link, Navigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchCandidates, fetchCandidatesByRecruiter, createCandidate as createCandidateFn, deleteCandidate as deleteCandidateFn } from "../../dbscripts/functions/candidates";
-import { fetchProfilesBySelect } from "../../dbscripts/functions/profiles";
+import { fetchProfilesBySelect, fetchProfilesByRole } from "../../dbscripts/functions/profiles";
 import { createInvite } from "../../dbscripts/functions/invites";
 
 const CANDIDATE_STATUSES = ["New", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
@@ -49,7 +49,7 @@ export default function Candidates() {
 
   const { data: recruiters } = useQuery({
     queryKey: ["recruiters"],
-    queryFn: () => fetchProfilesBySelect("user_id, full_name, email"),
+    queryFn: () => fetchProfilesByRole("recruiter"),
     enabled: !isCandidate,
   });
 
@@ -121,9 +121,9 @@ export default function Candidates() {
   const getRecruiterName = (id: string) =>
     recruiters?.find((r: any) => r.user_id === id)?.full_name || "Unassigned";
 
-  const maskPersonal = isRecruiter;
-  const displayEmail = (c: any) => (maskPersonal && c.email ? "*******" : (c.email || "—"));
-  const displayPhone = (c: any) => (maskPersonal && c.phone ? "*******" : (c.phone || "—"));
+  // Recruiters must not see email/phone — show as "—" for them.
+  const displayEmail = (c: any) => (isRecruiter ? "—" : (c.email || "—"));
+  const displayPhone = (c: any) => (isRecruiter ? "—" : (c.phone || "—"));
 
   return (
     <div>
