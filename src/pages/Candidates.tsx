@@ -24,7 +24,8 @@ import { toast } from "sonner";
 import { Link, Navigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchCandidates, fetchCandidatesByRecruiter, createCandidate as createCandidateFn, deleteCandidate as deleteCandidateFn } from "../../dbscripts/functions/candidates";
-import { fetchProfilesBySelect, fetchProfilesByRole } from "../../dbscripts/functions/profiles";
+import { fetchProfilesBySelect, fetchProfilesByRole, updateProfile } from "../../dbscripts/functions/profiles";
+import { createAppUser } from "@/lib/authApi";
 import { createInvite } from "../../dbscripts/functions/invites";
 
 const CANDIDATE_STATUSES = ["New", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
@@ -78,18 +79,39 @@ export default function Candidates() {
         status: "New",
       });
 
-      // If email provided, create an invite linked to this candidate so when accepted it won't create a duplicate
+      // If email provided, provision an app user/profile immediately and create an invite so they can set their password later.
       if (email) {
-        const token = crypto.randomUUID();
-        await createInvite({ token, email, full_name: `${first_name} ${last_name || ""}`, role: "candidate", created_by: user?.id || "", candidate_id: created?.id });
-        const inviteLink = `${window.location.origin}/set-password?token=${token}`;
-        const webhook = import.meta.env.VITE_INVITE_WEBHOOK as string | undefined;
-        if (webhook) {
-          await fetch(webhook, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name: `${first_name} ${last_name || ""}`, email, link: inviteLink }),
-          });
+        try {
+          // 1) Create app user/profile/role with a temporary random password so the user exists immediately.
+          // createAppUser RPC expects the current admin user's id as first arg.
+          const tempPassword = crypto.randomUUID();
+          await createAppUser(user!.id, email, tempPassword, `${first_name} ${last_name || ""}`, "candidate");
+
+          // 2) Link the created profile to the candidate record.
+          // The createAppUser RPC inserts a profile with user_id = new app_user id.
+          // We need to find that profile by email and set linked_candidate_id.
+          const profiles = await fetchProfilesBySelect("user_id, email");
+          const match = (profiles || []).find((p: any) => (p.email || "").toLowerCase() === (email || "").toLowerCase());
+          if (match && match.user_id) {
+            await updateProfile(match.user_id, { linked_candidate_id: created?.id });
+          }
+
+          // 3) Create an invite tied to this candidate so the user can set a new password via the invite flow.
+          const token = crypto.randomUUID();
+          await createInvite({ token, email, full_name: `${first_name} ${last_name || ""}`, role: "candidate", created_by: user?.id || "", candidate_id: created?.id });
+          const inviteLink = `${window.location.origin}/set-password?token=${token}`;
+          const webhook = import.meta.env.VITE_INVITE_WEBHOOK as string | undefined;
+          if (webhook) {
+            await fetch(webhook, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: `${first_name} ${last_name || ""}`, email, link: inviteLink }),
+            });
+          }
+        } catch (err: any) {
+          // Non-fatal: candidate was created, but provisioning user/profile/invite failed.
+          console.error("Provision candidate user/profile failed:", err);
+          throw err;
         }
       }
     },

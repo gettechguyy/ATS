@@ -23,6 +23,7 @@ import { Textarea } from "@/components/ui/textarea";
 import ResumeUpload from "@/components/ResumeUpload";
 import CoverLetterUpload from "@/components/CoverLetterUpload";
 import DocumentUpload from "@/components/DocumentUpload";
+import { US_STATES } from "@/lib/usStates";
 import { fetchCandidateById, updateCandidateStatus, updateCandidate as updateCandidateFn } from "../../dbscripts/functions/candidates";
 import { fetchEducationsByCandidate, createEducation, deleteEducation } from "../../dbscripts/functions/educations";
 import { fetchExperiencesByCandidate, createExperience, deleteExperience } from "../../dbscripts/functions/experiences";
@@ -317,7 +318,12 @@ export default function CandidateDetail() {
                       </div>
                       <div className="space-y-2">
                         <Label>State</Label>
-                        <Input name="state" value={editState} onChange={(e) => setEditState(e.target.value)} />
+                        <Select name="state" value={editState} onValueChange={(v) => setEditState(v)}>
+                          <SelectTrigger><SelectValue placeholder="Select state" /></SelectTrigger>
+                          <SelectContent>
+                            {US_STATES.map((st) => <SelectItem key={st.code} value={st.code}>{st.name}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="space-y-2">
                         <Label>Zip</Label>

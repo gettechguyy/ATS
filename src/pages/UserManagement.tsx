@@ -311,8 +311,8 @@ export default function UserManagement() {
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
-                  <TableHead>Change Password</TableHead>
                   <TableHead>Linked Candidate</TableHead>
+                  <TableHead>Change Password</TableHead>
                   <TableHead>Active</TableHead>
                   <TableHead>Joined</TableHead>
                 </TableRow>
