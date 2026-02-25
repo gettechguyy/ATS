@@ -73,6 +73,7 @@ export default function CandidateDetail() {
   const [marketingGoVoicePass, setMarketingGoVoicePass] = useState("");
   const [marketingOther, setMarketingOther] = useState("");
   const [marketingSubmittedLocal, setMarketingSubmittedLocal] = useState(false);
+  const [marketingSubmitting, setMarketingSubmitting] = useState(false);
   // collapse states for sections
   const [profOpen, setProfOpen] = useState(false);
   const [eduOpen, setEduOpen] = useState(false);
@@ -841,71 +842,95 @@ export default function CandidateDetail() {
               </div>
               {isOwnProfile && !marketingSubmittedLocal && (
                 <div className="flex gap-2">
-                  <Button onClick={async () => {
-                    try {
-                      await updateCandidate.mutateAsync({
-                        marketing_gmail: marketingGmail || null,
-                        marketing_gmail_pass: marketingGmailPass || null,
-                        marketing_linkedin: marketingLinkedIn || null,
-                        marketing_linkedin_pass: marketingLinkedInPass || null,
-                        marketing_govoice: marketingGoVoice || null,
-                        marketing_govoice_pass: marketingGoVoicePass || null,
-                        marketing_other: marketingOther || null,
-                        marketing_submitted: true,
-                        marketing_submitted_at: new Date().toISOString(),
-                      });
-                      setMarketingSubmittedLocal(true);
-                      // call webhook to notify admin/manager (include key professional fields)
-                      const webhook = import.meta.env.VITE_MARKETING_WEBHOOK as string | undefined;
-                      if (webhook) {
-                        // fetch admin/manager emails to include as recipients
-                        try {
-                          const roles = await fetchAllUserRoles();
-                          const adminManagerUserIds = (roles || []).filter((r: any) => r.role === "admin" || r.role === "manager").map((r: any) => r.user_id);
-                          let recipients: string[] = [];
-                          if (adminManagerUserIds.length > 0) {
-                            const profiles = await fetchProfilesBySelect("user_id, full_name, email");
-                            recipients = (profiles || []).filter((p: any) => adminManagerUserIds.includes(p.user_id)).map((p: any) => p.email).filter(Boolean);
-                          }
+                  <Button
+                    disabled={marketingSubmitting}
+                    onClick={async () => {
+                      setMarketingSubmitting(true);
+                      try {
+                        // Validate required basic, professional, education and experience details
+                        const missing: string[] = [];
+                        if (!candidate?.first_name) missing.push("First name");
+                        if (!candidate?.email) missing.push("Email");
+                        if (!candidate?.phone) missing.push("Phone");
 
-                          await fetch(webhook, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              id: candidate.id,
-                              name: `${candidate.first_name} ${candidate.last_name || ""}`,
-                              email: candidate.email || null,
-                              profile_link: `${window.location.origin}/candidates/${candidate.id}`,
-                              technology: technology || null,
-                              experience_years: typeof experienceYears === "string" ? null : experienceYears,
-                              primary_skills: primarySkills || null,
-                              expected_salary: expectedSalaryLocal ? Number(expectedSalaryLocal) : null,
-                              recipients,
-                            }),
-                          });
-                        } catch (err) {
-                          // fallback to original payload if role fetch fails
-                          await fetch(webhook, {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({
-                              id: candidate.id,
-                              name: `${candidate.first_name} ${candidate.last_name || ""}`,
-                              email: candidate.email || null,
-                              profile_link: `${window.location.origin}/candidates/${candidate.id}`,
-                              technology: technology || null,
-                              experience_years: typeof experienceYears === "string" ? null : experienceYears,
-                              primary_skills: primarySkills || null,
-                              expected_salary: expectedSalaryLocal ? Number(expectedSalaryLocal) : null,
-                            }),
-                          });
+                        if (!degree) missing.push("Degree");
+                        if (!technology) missing.push("Technology");
+                        if (experienceYears === "" || experienceYears === null) missing.push("Experience (years)");
+                        if (!primarySkills) missing.push("Primary skills");
+                        if (!targetRole) missing.push("Target role");
+                        if (!expectedSalaryLocal) missing.push("Expected salary");
+                        if (!interviewAvailability) missing.push("Interview availability");
+
+                        if (!educations || (educations || []).length === 0) missing.push("Education");
+                        if (!experiences || (experiences || []).length === 0) missing.push("Experience");
+
+                        if (missing.length > 0) {
+                          toast.error(`Please provide: ${missing.join(", ")}`);
+                          setMarketingSubmitting(false);
+                          return;
                         }
+
+                        // 1) Save marketing fields (do NOT mark submitted yet)
+                        await updateCandidate.mutateAsync({
+                          marketing_gmail: marketingGmail || null,
+                          marketing_gmail_pass: marketingGmailPass || null,
+                          marketing_linkedin: marketingLinkedIn || null,
+                          marketing_linkedin_pass: marketingLinkedInPass || null,
+                          marketing_govoice: marketingGoVoice || null,
+                          marketing_govoice_pass: marketingGoVoicePass || null,
+                          marketing_other: marketingOther || null,
+                        });
+
+                        // 2) Only after save succeeds, call the webhook to notify admins/managers
+                        const webhook = import.meta.env.VITE_MARKETING_WEBHOOK as string | undefined;
+                        if (webhook) {
+                          try {
+                            const roles = await fetchAllUserRoles();
+                            const adminManagerUserIds = (roles || []).filter((r: any) => r.role === "admin" || r.role === "manager").map((r: any) => r.user_id);
+                            let recipients: string[] = [];
+                            if (adminManagerUserIds.length > 0) {
+                              const profiles = await fetchProfilesBySelect("user_id, full_name, email");
+                              recipients = (profiles || []).filter((p: any) => adminManagerUserIds.includes(p.user_id)).map((p: any) => p.email).filter(Boolean);
+                            }
+
+                            await fetch(webhook, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                id: candidate.id,
+                                name: `${candidate.first_name} ${candidate.last_name || ""}`,
+                                email: candidate.email || null,
+                                profile_link: `${window.location.origin}/candidates/${candidate.id}`,
+                                technology: technology || null,
+                                experience_years: typeof experienceYears === "string" ? null : experienceYears,
+                                primary_skills: primarySkills || null,
+                                expected_salary: expectedSalaryLocal ? Number(expectedSalaryLocal) : null,
+                                recipients,
+                              }),
+                            });
+                          } catch (err) {
+                            // If webhook failed, surface error and do not mark submitted
+                            throw new Error("Failed to notify admins after saving — please try again.");
+                          }
+                        }
+
+                        // 3) Mark marketing_submitted only after webhook succeeded
+                        await updateCandidate.mutateAsync({
+                          marketing_submitted: true,
+                          marketing_submitted_at: new Date().toISOString(),
+                        });
+
+                        setMarketingSubmittedLocal(true);
+                        toast.success("Thank you — your marketing details were saved and notified to the team.");
+                      } catch (err: any) {
+                        toast.error(err?.message || "Failed to submit marketing details");
+                      } finally {
+                        setMarketingSubmitting(false);
                       }
-                      toast.success("Marketing details submitted");
-                    } catch (err: any) {
-                      toast.error(err?.message || "Failed to submit marketing details");
-                    }
-                  }}>Submit Marketing Details</Button>
+                    }}
+                  >
+                    {marketingSubmitting ? "Submitting..." : "Submit Marketing Details"}
+                  </Button>
                 </div>
               )}
               {isOwnProfile && marketingSubmittedLocal && (
