@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload, FileText, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { uploadCoverLetter } from "../../dbscripts/functions/storage";
+import { uploadCoverLetter, deleteCandidateCoverLetters } from "../../dbscripts/functions/storage";
 import { updateCandidateCoverLetterUrl } from "../../dbscripts/functions/candidates";
 
 interface CoverLetterUploadProps {
@@ -14,6 +14,7 @@ interface CoverLetterUploadProps {
 export default function CoverLetterUpload({ candidateId, currentUrl, onUploaded }: CoverLetterUploadProps) {
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -66,6 +67,28 @@ export default function CoverLetterUpload({ candidateId, currentUrl, onUploaded 
             disabled={uploading}
           >
             {uploading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-destructive"
+            onClick={async () => {
+              if (!confirm("Delete cover letter? This will remove the file from storage.")) return;
+              setDeleting(true);
+              try {
+                await deleteCandidateCoverLetters(candidateId);
+                await updateCandidateCoverLetterUrl(candidateId, null);
+                onUploaded("");
+                toast.success("Cover letter removed");
+              } catch (err: any) {
+                toast.error(err?.message || "Failed to remove cover letter");
+              } finally {
+                setDeleting(false);
+              }
+            }}
+            disabled={deleting}
+          >
+            {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
           </Button>
         </div>
       ) : (

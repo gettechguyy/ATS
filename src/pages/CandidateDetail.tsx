@@ -613,51 +613,51 @@ export default function CandidateDetail() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>Technology</Label>
-                  {isOwnProfile ? <Input value={technology} onChange={(e) => setTechnology(e.target.value)} /> : <div className="text-sm">{technology || "—"}</div>}
+                  {(isOwnProfile || isAdmin) ? <Input value={technology} onChange={(e) => setTechnology(e.target.value)} /> : <div className="text-sm">{technology || "—"}</div>}
                 </div>
                 <div className="space-y-2">
                   <Label>Experience (years)</Label>
-                  {isOwnProfile ? <Input type="number" value={experienceYears as any} onChange={(e) => setExperienceYears(e.target.value === "" ? "" : Number(e.target.value))} /> : <div className="text-sm">{experienceYears || "—"}</div>}
+                  {(isOwnProfile || isAdmin) ? <Input type="number" value={experienceYears as any} onChange={(e) => setExperienceYears(e.target.value === "" ? "" : Number(e.target.value))} /> : <div className="text-sm">{experienceYears || "—"}</div>}
                 </div>
                 <div className="space-y-2">
                   <Label>Primary Skills</Label>
-                  {isOwnProfile ? <Input value={primarySkills} onChange={(e) => setPrimarySkills(e.target.value)} /> : <div className="text-sm">{primarySkills || "—"}</div>}
+                  {(isOwnProfile || isAdmin) ? <Input value={primarySkills} onChange={(e) => setPrimarySkills(e.target.value)} /> : <div className="text-sm">{primarySkills || "—"}</div>}
                 </div>
                 <div className="space-y-2">
                   <Label>Target Role</Label>
-                  {isOwnProfile ? <Input value={targetRole} onChange={(e) => setTargetRole(e.target.value)} /> : <div className="text-sm">{targetRole || "—"}</div>}
+                  {(isOwnProfile || isAdmin) ? <Input value={targetRole} onChange={(e) => setTargetRole(e.target.value)} /> : <div className="text-sm">{targetRole || "—"}</div>}
                 </div>
                 <div className="space-y-2">
                   <Label>Expected Salary</Label>
-                  {isOwnProfile ? <Input type="number" value={expectedSalaryLocal} onChange={(e) => setExpectedSalaryLocal(e.target.value)} /> : <div className="text-sm">{expectedSalaryLocal ? `$${Number(expectedSalaryLocal).toLocaleString()}` : "—"}</div>}
+                  {(isOwnProfile || isAdmin) ? <Input type="number" value={expectedSalaryLocal} onChange={(e) => setExpectedSalaryLocal(e.target.value)} /> : <div className="text-sm">{expectedSalaryLocal ? `$${Number(expectedSalaryLocal).toLocaleString()}` : "—"}</div>}
                 </div>
                 <div className="space-y-2">
                   <Label>Interview Availability</Label>
-                  {isOwnProfile ? <Input value={interviewAvailability} onChange={(e) => setInterviewAvailability(e.target.value)} /> : <div className="text-sm">{interviewAvailability || "—"}</div>}
+                  {(isOwnProfile || isAdmin) ? <Input value={interviewAvailability} onChange={(e) => setInterviewAvailability(e.target.value)} /> : <div className="text-sm">{interviewAvailability || "—"}</div>}
                 </div>
                 <div className="space-y-2">
                   <Label>Open to Relocate</Label>
-                  {isOwnProfile ? <Select value={openToRelocateLocal ? "yes" : "no"} onValueChange={(v) => setOpenToRelocateLocal(v === "yes")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="yes">Yes</SelectItem><SelectItem value="no">No</SelectItem></SelectContent></Select> : <div className="text-sm">{openToRelocateLocal ? "Yes" : "No"}</div>}
+                  {(isOwnProfile || isAdmin) ? <Select value={openToRelocateLocal ? "yes" : "no"} onValueChange={(v) => setOpenToRelocateLocal(v === "yes")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="yes">Yes</SelectItem><SelectItem value="no">No</SelectItem></SelectContent></Select> : <div className="text-sm">{openToRelocateLocal ? "Yes" : "No"}</div>}
                 </div>
                 <div className="space-y-2">
                   <Label>Client 1 (Recent)</Label>
-                  {isOwnProfile ? <Input value={client1} onChange={(e) => setClient1(e.target.value)} /> : <div className="text-sm">{client1 || "—"}</div>}
+                  {(isOwnProfile || isAdmin) ? <Input value={client1} onChange={(e) => setClient1(e.target.value)} /> : <div className="text-sm">{client1 || "—"}</div>}
                 </div>
                 <div className="space-y-2">
                   <Label>Client 2 (Past)</Label>
-                  {isOwnProfile ? <Input value={client2} onChange={(e) => setClient2(e.target.value)} /> : <div className="text-sm">{client2 || "—"}</div>}
+                  {(isOwnProfile || isAdmin) ? <Input value={client2} onChange={(e) => setClient2(e.target.value)} /> : <div className="text-sm">{client2 || "—"}</div>}
                 </div>
                 <div className="space-y-2">
                   <Label>Reference 1</Label>
-                  {isOwnProfile ? <Input value={reference1} onChange={(e) => setReference1(e.target.value)} /> : <div className="text-sm">{reference1 || "—"}</div>}
+                  {(isOwnProfile || isAdmin) ? <Input value={reference1} onChange={(e) => setReference1(e.target.value)} /> : <div className="text-sm">{reference1 || "—"}</div>}
                 </div>
                 <div className="space-y-2">
                   <Label>Reference 2</Label>
-                  {isOwnProfile ? <Input value={reference2} onChange={(e) => setReference2(e.target.value)} /> : <div className="text-sm">{reference2 || "—"}</div>}
+                  {(isOwnProfile || isAdmin) ? <Input value={reference2} onChange={(e) => setReference2(e.target.value)} /> : <div className="text-sm">{reference2 || "—"}</div>}
                 </div>
                 {/* Cover Letter is handled above by the upload component */}
               </div>
-              {isOwnProfile && (
+              {(isOwnProfile || isAdmin) && (
                 <div className="flex gap-2">
                   <Button onClick={async () => {
                     // Validate mandatory professional fields
@@ -705,10 +705,10 @@ export default function CandidateDetail() {
                     <div className="text-sm text-muted-foreground">{e.graduation_year || ""}</div>
                     {e.notes && <div className="text-sm whitespace-pre-wrap">{e.notes}</div>}
                   </div>
-                  {isOwnProfile && <Button variant="ghost" size="sm" onClick={() => deleteEducationMutation.mutate(e.id)}>Delete</Button>}
+                  {(isOwnProfile || isAdmin) && <Button variant="ghost" size="sm" onClick={() => deleteEducationMutation.mutate(e.id)}>Delete</Button>}
                 </div>
               ))}
-              {isOwnProfile && (
+              {(isOwnProfile || isAdmin) && (
                 <form onSubmit={async (ev) => {
                   ev.preventDefault();
                   const fd = new FormData(ev.currentTarget);
@@ -763,10 +763,10 @@ export default function CandidateDetail() {
                     {ex.technologies && <div className="text-sm">Tech: {ex.technologies}</div>}
                     {ex.responsibilities && <div className="text-sm whitespace-pre-wrap">{ex.responsibilities}</div>}
                   </div>
-                  {isOwnProfile && <Button variant="ghost" size="sm" onClick={() => deleteExperienceMutation.mutate(ex.id)}>Delete</Button>}
+                  {(isOwnProfile || isAdmin) && <Button variant="ghost" size="sm" onClick={() => deleteExperienceMutation.mutate(ex.id)}>Delete</Button>}
                 </div>
               ))}
-              {isOwnProfile && (
+              {(isOwnProfile || isAdmin) && (
                 <form onSubmit={async (ev) => {
                   ev.preventDefault();
                   const fd = new FormData(ev.currentTarget);

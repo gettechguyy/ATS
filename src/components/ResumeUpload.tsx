@@ -2,7 +2,7 @@ import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Upload, FileText, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { uploadResume } from "../../dbscripts/functions/storage";
+import { uploadResume, deleteCandidateResumes } from "../../dbscripts/functions/storage";
 import { updateCandidateResumeUrl } from "../../dbscripts/functions/candidates";
 
 interface ResumeUploadProps {
@@ -14,6 +14,7 @@ interface ResumeUploadProps {
 export default function ResumeUpload({ candidateId, currentUrl, onUploaded }: ResumeUploadProps) {
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -58,6 +59,29 @@ export default function ResumeUpload({ candidateId, currentUrl, onUploaded }: Re
           >
             <FileText className="h-3 w-3" /> View Resume
           </a>
+          
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-6 w-6 text-destructive"
+            onClick={async () => {
+              if (!confirm("Delete resume? This will remove the file from storage.")) return;
+              setDeleting(true);
+              try {
+                await deleteCandidateResumes(candidateId);
+                await updateCandidateResumeUrl(candidateId, null);
+                onUploaded("");
+                toast.success("Resume removed");
+              } catch (err: any) {
+                toast.error(err?.message || "Failed to remove resume");
+              } finally {
+                setDeleting(false);
+              }
+            }}
+            disabled={deleting}
+          >
+            {deleting ? <Loader2 className="h-3 w-3 animate-spin" /> : <X className="h-3 w-3" />}
+          </Button>
           <Button
             variant="ghost"
             size="icon"

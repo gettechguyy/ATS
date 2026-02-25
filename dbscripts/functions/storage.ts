@@ -119,6 +119,33 @@ export async function uploadCoverLetter(candidateId: string, file: File) {
   return urlData.publicUrl;
 }
 
+/** Delete all resume files for a candidate and return number deleted */
+export async function deleteCandidateResumes(candidateId: string) {
+  if (!STORAGE_BUCKET) throw new Error("STORAGE_BUCKET is not configured.");
+  const prefix = `candidate resume/${candidateId}/`;
+  const { data: list, error: listErr } = await supabase.storage.from(STORAGE_BUCKET).list(`candidate resume/${candidateId}`, { limit: 1000 });
+  if (listErr) throw listErr;
+  if (!list || list.length === 0) return 0;
+  const paths = list.map((f: any) => `${prefix}${f.name}`);
+  const { error: delErr } = await supabase.storage.from(STORAGE_BUCKET).remove(paths);
+  if (delErr) throw delErr;
+  return paths.length;
+}
+
+/** Delete all cover letter files for a candidate and return number deleted */
+export async function deleteCandidateCoverLetters(candidateId: string) {
+  if (!STORAGE_BUCKET) throw new Error("STORAGE_BUCKET is not configured.");
+  const folder = `candidateDetails/${candidateId}/cover_letter`;
+  const prefix = `${folder}/`;
+  const { data: list, error: listErr } = await supabase.storage.from(STORAGE_BUCKET).list(folder, { limit: 1000 });
+  if (listErr) throw listErr;
+  if (!list || list.length === 0) return 0;
+  const paths = list.map((f: any) => `${prefix}${f.name}`);
+  const { error: delErr } = await supabase.storage.from(STORAGE_BUCKET).remove(paths);
+  if (delErr) throw delErr;
+  return paths.length;
+}
+
 /** Upload path: interview/interview_questions/<submission_id>/<filename> */
 export async function uploadInterviewQuestions(submissionId: string, file: File) {
   const ext = file.name.split(".").pop() || "pdf";

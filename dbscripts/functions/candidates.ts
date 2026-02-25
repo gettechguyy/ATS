@@ -79,7 +79,7 @@ export async function deleteCandidate(id: string) {
   if (error) throw error;
 }
 
-export async function updateCandidateResumeUrl(id: string, resumeUrl: string) {
+export async function updateCandidateResumeUrl(id: string, resumeUrl: string | null) {
   const updateObj: Record<string, any> = { resume_url: resumeUrl };
   const { error } = await supabase
     .from("candidates")
@@ -88,7 +88,7 @@ export async function updateCandidateResumeUrl(id: string, resumeUrl: string) {
   if (error) throw error;
 }
 
-export async function updateCandidateCoverLetterUrl(id: string, coverLetterUrl: string) {
+export async function updateCandidateCoverLetterUrl(id: string, coverLetterUrl: string | null) {
   const updateObj: Record<string, any> = { cover_letter_url: coverLetterUrl };
   const { error } = await supabase
     .from("candidates")
