@@ -377,7 +377,7 @@ export default function Submissions() {
                 <SelectTrigger><SelectValue placeholder="Select candidate" /></SelectTrigger>
                 <SelectContent>
                   {(candidates || []).filter((c: any) => c && c.id).map((c: any) => (
-                    <SelectItem key={c.id} value={String(c.id)}>{c.first_name} {c.last_name || ""} {c.email ? `— ${c.email}` : ""}</SelectItem>
+                    <SelectItem key={c.id} value={String(c.id)}>{c.first_name} {c.last_name || ""} </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
