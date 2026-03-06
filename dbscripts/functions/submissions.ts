@@ -39,6 +39,126 @@ export async function fetchSubmissionsByCandidate(candidateId: string) {
   return data || [];
 }
 
+/** Matches DB enum submission_status for type-safe .eq("status", ...) */
+type SubmissionStatusFilter =
+  | "Applied"
+  | "Vendor Responded"
+  | "Screen Call"
+  | "Interview"
+  | "Rejected"
+  | "Offered";
+
+const SUBMISSIONS_SORT_COLUMNS = ["created_at", "client_name", "position", "status"] as const;
+export type SubmissionsPageOpts = {
+  page: number;
+  pageSize: number;
+  search?: string;
+  status?: string;
+  sortBy?: string;
+  order?: "asc" | "desc";
+};
+
+function buildSubmissionsQuery(recruiterId?: string, candidateId?: string, sortBy?: string, order?: "asc" | "desc") {
+  const col = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const asc = order === "asc";
+  let q = supabase
+    .from("submissions")
+    .select("*, candidates(first_name, last_name, email)", { count: "exact" })
+    .order(col, { ascending: asc });
+  if (recruiterId) q = q.eq("recruiter_id", recruiterId);
+  if (candidateId) q = q.eq("candidate_id", candidateId);
+  return q;
+}
+
+/** Server-side paginated submissions. Optional search, status, sort. */
+export async function fetchSubmissionsPaginated(opts: SubmissionsPageOpts) {
+  const { page, pageSize, search, status, sortBy, order } = opts;
+  let q = buildSubmissionsQuery(undefined, undefined, sortBy, order);
+  if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
+  if (search && search.trim()) {
+    const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+    const term = `%${safe}%`;
+    q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
+  }
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, error, count } = await q.range(from, to);
+  if (error) throw error;
+  return { data: data ?? [], total: count ?? 0 };
+}
+
+export async function fetchSubmissionsByRecruiterPaginated(recruiterId: string, opts: SubmissionsPageOpts) {
+  const { page, pageSize, search, status, sortBy, order } = opts;
+  let q = buildSubmissionsQuery(recruiterId, undefined, sortBy, order);
+  if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
+  if (search && search.trim()) {
+    const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+    const term = `%${safe}%`;
+    q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
+  }
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, error, count } = await q.range(from, to);
+  if (error) throw error;
+  return { data: data ?? [], total: count ?? 0 };
+}
+
+export async function fetchSubmissionsByCandidatePaginated(candidateId: string, opts: SubmissionsPageOpts) {
+  const { page, pageSize, search, status, sortBy, order } = opts;
+  let q = buildSubmissionsQuery(undefined, candidateId, sortBy, order);
+  if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
+  if (search && search.trim()) {
+    const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+    const term = `%${safe}%`;
+    q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
+  }
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, error, count } = await q.range(from, to);
+  if (error) throw error;
+  return { data: data ?? [], total: count ?? 0 };
+}
+
+/** All submissions whose candidate is assigned to this agency (e.g. for Screens). */
+export async function fetchSubmissionsByAgency(agencyId: string) {
+  const { data: candidateRows } = await supabase.from("candidates").select("id").eq("agency_id", agencyId);
+  const candidateIds = (candidateRows || []).map((c: any) => c.id);
+  if (candidateIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("submissions")
+    .select("*, candidates(first_name, last_name, email)")
+    .in("candidate_id", candidateIds)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** Submissions for an agency: only submissions whose candidate is assigned to this agency. */
+export async function fetchSubmissionsByAgencyPaginated(agencyId: string, opts: SubmissionsPageOpts) {
+  const { data: candidateRows } = await supabase.from("candidates").select("id").eq("agency_id", agencyId);
+  const candidateIds = (candidateRows || []).map((c: any) => c.id);
+  if (candidateIds.length === 0) return { data: [], total: 0 };
+  const { page, pageSize, search, status, sortBy, order } = opts;
+  const col = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const asc = order === "asc";
+  let q = supabase
+    .from("submissions")
+    .select("*, candidates(first_name, last_name, email)", { count: "exact" })
+    .in("candidate_id", candidateIds)
+    .order(col, { ascending: asc });
+  if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
+  if (search && search.trim()) {
+    const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+    const term = `%${safe}%`;
+    q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
+  }
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, error, count } = await q.range(from, to);
+  if (error) throw error;
+  return { data: data ?? [], total: count ?? 0 };
+}
+
 /** Submissions for a Team Lead:
  *  - any submission whose candidate.team_lead_id = teamLeadProfileId
  *  - OR any submission whose recruiter_id is assigned to any candidate of the team lead

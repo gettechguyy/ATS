@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { fetchInvites } from "../../dbscripts/functions/invites";
+import { getAppBaseUrl } from "@/lib/utils";
 import { useState } from "react";
 
 export default function InvitesPage() {
@@ -40,7 +41,7 @@ export default function InvitesPage() {
                   <TableCell>
                     {!inv.used && (
                       <Button size="sm" onClick={() => {
-                        const link = `${window.location.origin}/set-password?token=${inv.token}`;
+                        const link = `${getAppBaseUrl()}/set-password?token=${inv.token}`;
                         navigator.clipboard.writeText(link);
                         setCopied(inv.id);
                         setTimeout(() => setCopied(null), 2000);

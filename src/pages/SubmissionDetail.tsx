@@ -95,6 +95,7 @@ export default function SubmissionDetail() {
       await createInterviewFn({
         submission_id: id!,
         candidate_id: submission!.candidate_id,
+        created_by: submission!.recruiter_id ?? null,
         round_number: nextRound,
         mode,
         scheduled_at: `${fd.get("date")}T${fd.get("time")}:00`,
@@ -165,6 +166,7 @@ export default function SubmissionDetail() {
       await createOfferFn({
         submission_id: id!,
         candidate_id: submission!.candidate_id,
+        created_by: submission!.recruiter_id ?? null,
         salary: payload.salary,
         job_description: payload.job_description ?? null,
         job_description_url: payload.job_description_url ?? null,

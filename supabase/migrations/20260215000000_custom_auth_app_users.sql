@@ -184,18 +184,18 @@ GRANT EXECUTE ON FUNCTION public.update_app_user_password(uuid, uuid, text) TO a
 GRANT EXECUTE ON FUNCTION public.update_app_user_password(uuid, uuid, text) TO authenticated;
 
 -- ============================================
--- DEFAULT ADMIN: Create once so you can log in (idempotent: only if no admin exists).
--- Email: admin@example.com  |  Password: Yavin@2025  |  Role: admin
+-- DEFAULT ADMIN (Thetechguyy master company): Create once so you can log in (idempotent: only if no admin exists).
+-- Email: admin@thetechguyy.com  |  Password: Yavin@2025  |  Role: admin  |  full_name: Thetechguyy
 -- ============================================
 DO $$
 DECLARE v_id uuid;
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.user_roles WHERE role = 'admin' LIMIT 1) THEN
     INSERT INTO public.app_users (email, password_hash, updated_at)
-    VALUES ('admin@example.com', extensions.crypt('Yavin@2025', extensions.gen_salt('bf')), now())
+    VALUES ('admin@thetechguyy.com', extensions.crypt('Yavin@2025', extensions.gen_salt('bf')), now())
     RETURNING id INTO v_id;
     INSERT INTO public.profiles (user_id, full_name, email, is_active, created_at, updated_at)
-    VALUES (v_id, 'Admin', 'admin@example.com', true, now(), now());
+    VALUES (v_id, 'Thetechguyy', 'admin@thetechguyy.com', true, now(), now());
     INSERT INTO public.user_roles (user_id, role)
     VALUES (v_id, 'admin');
   END IF;

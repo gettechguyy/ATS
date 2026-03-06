@@ -9,35 +9,53 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { fetchSubmissions, fetchSubmissionsByRecruiter, fetchSubmissionsByCandidate, fetchSubmissionsByTeamLead, updateSubmission } from "../../dbscripts/functions/submissions";
+import { fetchSubmissions, fetchSubmissionsByRecruiter, fetchSubmissionsByCandidate, fetchSubmissionsByTeamLead, fetchSubmissionsByAgency, updateSubmission } from "../../dbscripts/functions/submissions";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
+import { ChevronLeft, ChevronRight } from "lucide-react";
+
+const PAGE_SIZE = 10;
 
 export default function ScreensPage() {
-  const { user, profile, isCandidate, isRecruiter, isAdmin, isTeamLead } = useAuth();
+  const { user, profile, isCandidate, isRecruiter, isAdmin, isTeamLead, isAgencyAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [outcomeDialogOpen, setOutcomeDialogOpen] = useState(false);
   const [outcomeSubmission, setOutcomeSubmission] = useState<any | null>(null);
   const [outcomeChoice, setOutcomeChoice] = useState<"Positive" | "Negative" | "DidNotHappen">("Positive");
   const [outcomeNote, setOutcomeNote] = useState("");
   const [outcomeBy, setOutcomeBy] = useState<"candidate" | "recruiter">("recruiter");
+  const [page, setPage] = useState(1);
 
   const submissionsQueryFn = async () => {
     if (isCandidate) {
       if (!profile?.linked_candidate_id) return [];
       return fetchSubmissionsByCandidate(profile.linked_candidate_id);
     }
-    if (isRecruiter && user?.id) return fetchSubmissionsByRecruiter(user.id);
+    if (isAgencyAdmin && profile?.agency_id) return fetchSubmissionsByAgency(profile.agency_id);
+    if (isRecruiter) {
+      if (!user?.id) return [];
+      return fetchSubmissionsByRecruiter(user.id);
+    }
     if (isTeamLead && profile?.id) return fetchSubmissionsByTeamLead(profile.id);
     return fetchSubmissions();
   };
 
+  const screensEnabled =
+    isCandidate ? !!profile?.linked_candidate_id
+    : isRecruiter ? !!user?.id
+    : isAgencyAdmin ? !!profile?.agency_id
+    : isTeamLead ? !!profile?.id
+    : true;
+
   const { data: submissions = [], isLoading } = useQuery({
-    queryKey: ["submissions-screens", user?.id, profile?.linked_candidate_id],
+    queryKey: ["submissions-screens", user?.id, profile?.linked_candidate_id, profile?.agency_id, profile?.id],
     queryFn: submissionsQueryFn,
+    enabled: screensEnabled,
   });
 
   const screens = submissions.filter((s: any) => s && (s.status === "Screen Call" || s.screen_scheduled_at));
+  const totalPages = Math.max(1, Math.ceil(screens.length / PAGE_SIZE));
+  const paginatedScreens = screens.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
@@ -73,9 +91,9 @@ export default function ScreensPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {screens.length === 0 ? (
+              {paginatedScreens.length === 0 ? (
                 <TableRow><TableCell colSpan={8} className="py-6 text-center text-muted-foreground">No screen calls</TableCell></TableRow>
-              ) : screens.map((s: any) => (
+              ) : paginatedScreens.map((s: any) => (
                 <TableRow key={s.id}>
                   {!isCandidate && <TableCell className="font-medium">{s.candidates?.first_name} {s.candidates?.last_name || ""}</TableCell>}
                   <TableCell>{s.client_name}</TableCell>
@@ -135,6 +153,31 @@ export default function ScreensPage() {
             </TableBody>
           </Table>
         </CardContent>
+        {screens.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+            <p className="text-sm text-muted-foreground">
+              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, screens.length)} of {screens.length}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+                <ChevronLeft className="h-4 w-4" /> Previous
+              </Button>
+              <Select value={String(page)} onValueChange={(v) => setPage(Number(v))}>
+                <SelectTrigger className="w-[7rem] h-8">
+                  <SelectValue>Page {page} of {totalPages}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                    <SelectItem key={p} value={String(p)}>Page {p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
+                Next <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
 
       <Dialog open={outcomeDialogOpen} onOpenChange={setOutcomeDialogOpen}>

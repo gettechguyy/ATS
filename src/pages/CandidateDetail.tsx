@@ -38,7 +38,7 @@ const MASK = "*******";
 
 export default function CandidateDetail() {
   const { id } = useParams<{ id: string }>();
-  const { user, profile, isAdmin, isRecruiter, isCandidate, isManager } = useAuth();
+  const { user, profile, isAdmin, isRecruiter, isCandidate, isManager, isAgencyAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [subDialogOpen, setSubDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
@@ -149,10 +149,11 @@ export default function CandidateDetail() {
   });
 
   const { data: recruiters } = useQuery({
-    queryKey: ["recruiters"],
-    queryFn: () => fetchProfilesByRole("recruiter"),
-    enabled: isAdmin && !!candidate,
+    queryKey: ["recruiters", isAgencyAdmin ? profile?.agency_id : "master"],
+    queryFn: () => fetchProfilesByRole("recruiter", isAgencyAdmin ? profile?.agency_id ?? undefined : undefined),
+    enabled: (isAdmin || isAgencyAdmin) && !!candidate,
   });
+  const canAssignRecruiter = isAdmin || (isAgencyAdmin && candidate?.agency_id === profile?.agency_id);
 
   const updateStatus = useMutation({
     mutationFn: (status: string) => updateCandidateStatus(id!, status),
@@ -241,6 +242,10 @@ export default function CandidateDetail() {
 
   if (!candidate) {
     return <div className="text-center text-muted-foreground py-12">Candidate not found</div>;
+  }
+
+  if (isAgencyAdmin && candidate.agency_id !== profile?.agency_id) {
+    return <Navigate to="/candidates" replace />;
   }
 
   // Only admins and the candidate themselves can see personal contact details.
@@ -370,7 +375,7 @@ export default function CandidateDetail() {
             {((isAdmin || isOwnProfile) || (!isRecruiter && Boolean(candidate.phone))) && (
               <div><span className="text-muted-foreground">Phone:</span> {displayPhone}</div>
             )}
-            {isAdmin && recruiters && (
+            {canAssignRecruiter && recruiters && (
               <div className="space-y-1">
                 <Label className="text-muted-foreground">Assign recruiter</Label>
                 <Select
@@ -387,7 +392,7 @@ export default function CandidateDetail() {
                 </Select>
               </div>
             )}
-            {!isAdmin && (
+            {!canAssignRecruiter && (
               <div><span className="text-muted-foreground">Recruiter:</span> {recruiterProfile?.full_name || "—"}</div>
             )}
             {showVisaStatus && (

@@ -8,15 +8,14 @@ export async function createInvite(invite: {
   created_by: string;
   candidate_id?: string | null;
 }) {
-  const insertObj: Record<string, any> = {
+  const { error } = await supabase.from("invites").insert({
     token: invite.token,
     email: invite.email,
     full_name: invite.full_name,
     role: invite.role,
     created_by: invite.created_by,
-  };
-  if (invite.candidate_id) insertObj.candidate_id = invite.candidate_id;
-  const { error } = await supabase.from("invites").insert(insertObj);
+    ...(invite.candidate_id != null && { candidate_id: invite.candidate_id }),
+  });
   if (error) throw error;
 }
 

@@ -20,6 +20,59 @@ export async function fetchCandidatesByRecruiter(recruiterId: string) {
   return data;
 }
 
+const CANDIDATES_SORT_COLUMNS = ["first_name", "last_name", "email", "created_at", "status"] as const;
+export type CandidatesPageOpts = {
+  page: number;
+  pageSize: number;
+  search?: string;
+  status?: string;
+  sortBy?: string;
+  order?: "asc" | "desc";
+  agencyId?: string | null;
+};
+
+function buildCandidatesQuery(recruiterId?: string, agencyId?: string | null, sortBy?: string, order?: "asc" | "desc") {
+  const col = sortBy && CANDIDATES_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const asc = order === "asc";
+  let q = supabase.from("candidates").select("*", { count: "exact" }).order(col, { ascending: asc });
+  if (recruiterId) q = q.eq("recruiter_id", recruiterId);
+  if (agencyId) q = q.eq("agency_id", agencyId);
+  return q;
+}
+
+/** Server-side paginated + optional search, status, sort, agencyId. Returns { data, total } */
+export async function fetchCandidatesPaginated(opts: CandidatesPageOpts) {
+  const { page, pageSize, search, status, sortBy, order, agencyId } = opts;
+  let q = buildCandidatesQuery(undefined, agencyId ?? undefined, sortBy, order);
+  if (status && status !== "all") q = q.eq("status", status);
+  if (search && search.trim()) {
+    const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+    const term = `%${safe}%`;
+    q = q.or(`first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term}`);
+  }
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, error, count } = await q.range(from, to);
+  if (error) throw error;
+  return { data: data ?? [], total: count ?? 0 };
+}
+
+export async function fetchCandidatesByRecruiterPaginated(recruiterId: string, opts: CandidatesPageOpts) {
+  const { page, pageSize, search, status, sortBy, order, agencyId } = opts;
+  let q = buildCandidatesQuery(recruiterId, agencyId ?? undefined, sortBy, order);
+  if (status && status !== "all") q = q.eq("status", status);
+  if (search && search.trim()) {
+    const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+    const term = `%${safe}%`;
+    q = q.or(`first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term}`);
+  }
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, error, count } = await q.range(from, to);
+  if (error) throw error;
+  return { data: data ?? [], total: count ?? 0 };
+}
+
 export async function fetchCandidateById(id: string) {
   const { data, error } = await supabase
     .from("candidates")
@@ -30,10 +83,12 @@ export async function fetchCandidateById(id: string) {
   return data;
 }
 
-export async function fetchCandidatesBasic() {
-  const { data } = await supabase
+export async function fetchCandidatesBasic(agencyId?: string | null) {
+  let q = supabase
     .from("candidates")
-    .select("id, first_name, last_name, email, recruiter_id, team_lead_id");
+    .select("id, first_name, last_name, email, recruiter_id, team_lead_id, agency_id");
+  if (agencyId != null) q = q.eq("agency_id", agencyId);
+  const { data } = await q;
   return data || [];
 }
 

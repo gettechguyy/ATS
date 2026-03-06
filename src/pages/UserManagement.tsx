@@ -23,40 +23,44 @@ import { Users, Shield, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Navigate } from "react-router-dom";
+import { getAppBaseUrl } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
-import { fetchAllProfiles, updateProfile } from "../../dbscripts/functions/profiles";
+import { fetchAllProfiles, fetchProfilesByAgency, updateProfile } from "../../dbscripts/functions/profiles";
 import { fetchAllUserRoles, updateUserRole, insertUserRole } from "../../dbscripts/functions/userRoles";
 import { fetchCandidatesBasic, updateCandidate } from "../../dbscripts/functions/candidates";
 import { updateAppUserPassword } from "@/lib/authApi";
 
-const ROLES = ["admin", "recruiter", "candidate", "manager", "team_lead"] as const;
+const ROLES = ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] as const;
 
 export default function UserManagement() {
-  const { isAdmin, createUser, user, isManager, isTeamLead, profile } = useAuth();
+  const { isAdmin, createUser, user, isManager, isTeamLead, isAgencyAdmin, profile } = useAuth();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"team" | "candidates">("team");
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string>("recruiter");
 
+  const canAccessUserManagement = isAdmin || isManager || isTeamLead || isAgencyAdmin;
+
   const { data: users, isLoading } = useQuery({
-    queryKey: ["admin-users"],
+    queryKey: ["admin-users", isAgencyAdmin ? profile?.agency_id : "all"],
     queryFn: async () => {
-      const [profiles, roles] = await Promise.all([
-        fetchAllProfiles(),
-        fetchAllUserRoles(),
-      ]);
+      // Agency admin must only see users in their agency (never Thetechguyy / master company users).
+      const profiles = isAgencyAdmin
+        ? (profile?.agency_id ? await fetchProfilesByAgency(profile.agency_id) : [])
+        : await fetchAllProfiles();
+      const roles = await fetchAllUserRoles();
       return profiles.map((p: any) => ({
         ...p,
         role: roles.find((r: any) => r.user_id === p.user_id)?.role || "recruiter",
         roleId: roles.find((r: any) => r.user_id === p.user_id)?.id,
       }));
     },
-    enabled: isAdmin || isManager || isTeamLead,
+    enabled: canAccessUserManagement && (!isAgencyAdmin || !!profile?.agency_id),
   });
 
   const { data: candidates } = useQuery({
-    queryKey: ["all-candidates-for-linking"],
-    queryFn: fetchCandidatesBasic,
+    queryKey: ["all-candidates-for-linking", isAgencyAdmin ? profile?.agency_id : "all"],
+    queryFn: () => fetchCandidatesBasic(isAgencyAdmin ? profile?.agency_id ?? undefined : undefined),
     enabled: isAdmin || isManager || isTeamLead,
   });
   // recruiter ids under this team lead (may be app_user ids or profile ids depending on schema)
@@ -166,9 +170,9 @@ export default function UserManagement() {
      For other roles we continue to create the user with a password. */
   const createUserMutation = useMutation({
     mutationFn: async (fd: FormData) => {
-      // Guard: only admin/manager/team_lead may create users
-      if (!(isAdmin || isManager || isTeamLead)) throw new Error("Not authorized to create users");
+      if (!(isAdmin || isManager || isTeamLead || isAgencyAdmin)) throw new Error("Not authorized to create users");
       const role = (fd.get("role") as string) || selectedRole;
+      if (isAgencyAdmin && role !== "recruiter" && role !== "agency_admin") throw new Error("Agency admin can only create recruiters or agency admins for their agency");
       const email = fd.get("email") as string;
       const fullName = fd.get("full_name") as string;
       // Candidates should always be invited (invite token + webhook)
@@ -176,7 +180,7 @@ export default function UserManagement() {
         const token = crypto.randomUUID();
         const { createInvite } = await import("../../dbscripts/functions/invites");
         await createInvite({ token, email, full_name: fullName, role, created_by: user?.id || "" });
-        const inviteLink = `${window.location.origin}/set-password?token=${token}`;
+        const inviteLink = `${getAppBaseUrl()}/set-password?token=${token}`;
         const webhook = import.meta.env.VITE_INVITE_WEBHOOK as string | undefined;
         if (webhook) {
           await fetch(webhook, {
@@ -208,8 +212,7 @@ export default function UserManagement() {
     onError: (err: Error) => toast.error(err.message),
   });
 
-  if (!(isAdmin || isManager || isTeamLead)) {
-    // allow access for admin, manager, and team lead
+  if (!canAccessUserManagement) {
     return <Navigate to="/" replace />;
   }
 
@@ -223,6 +226,7 @@ export default function UserManagement() {
           <p className="text-sm text-muted-foreground">Manage team members, roles, and candidate assignments</p>
         </div>
         <div className="flex items-center gap-2">
+          {!isAgencyAdmin && (
           <div className="tabs inline-flex rounded-md bg-muted p-1">
             <button
               className={`px-3 py-1 rounded ${activeTab === "team" ? "bg-background font-medium" : "text-muted-foreground"}`}
@@ -237,9 +241,9 @@ export default function UserManagement() {
               Candidates
             </button>
           </div>
+          )}
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-            {/* Only Admin, Manager, or Team Lead may create users */}
-            {(isAdmin || isManager || isTeamLead) && (
+            {(isAdmin || isManager || isTeamLead || isAgencyAdmin) && (
               <DialogTrigger asChild>
                 <Button><Plus className="mr-2 h-4 w-4" />Create User</Button>
               </DialogTrigger>
@@ -275,9 +279,9 @@ export default function UserManagement() {
                     <Select value={selectedRole} onValueChange={setSelectedRole}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                    { (isTeamLead ? ["recruiter","candidate"] : ROLES.filter(r => r !== "candidate")) .map((r) => {
-                          const label = r === "team_lead" ? "Team Lead" : r.replace('_',' ').replace(/\b\w/g, c => c.toUpperCase());
-                          return <SelectItem key={r} value={r}><Badge variant={r === "admin" ? "default" : "secondary"} className="capitalize">{label}</Badge></SelectItem>;
+                    { (isAgencyAdmin ? ["agency_admin", "recruiter"] : isTeamLead ? ["recruiter","candidate"] : ROLES.filter(r => r !== "candidate")) .map((r) => {
+                          const label = r === "team_lead" ? "Team Lead" : r === "agency_admin" ? "Admin" : r.replace('_',' ').replace(/\b\w/g, c => c.toUpperCase());
+                          return <SelectItem key={r} value={r}><Badge variant={r === "admin" || r === "agency_admin" ? "default" : "secondary"} className="capitalize">{label}</Badge></SelectItem>;
                         })}
                       </SelectContent>
                     </Select>
@@ -296,7 +300,7 @@ export default function UserManagement() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="h-4 w-4" /> Team Members ({users?.length || 0})
+            <Users className="h-4 w-4" /> {isAgencyAdmin ? "Agency" : "Team"} Members ({users?.length || 0})
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -345,9 +349,8 @@ export default function UserManagement() {
                       <TableCell className="font-medium">{u.full_name}</TableCell>
                       <TableCell className="text-muted-foreground">{u.email}</TableCell>
                       <TableCell>
-                      {isTeamLead && (u.role === "candidate" || u.role === "recruiter") ? (
-                        // Team Leads may not change candidate or recruiter roles
-                        <Badge className="capitalize">{u.role}</Badge>
+                      {(isTeamLead && (u.role === "candidate" || u.role === "recruiter")) || isAgencyAdmin ? (
+                        <Badge className="capitalize">{u.role === "agency_admin" ? "Admin" : u.role.replace('_',' ')}</Badge>
                       ) : (
                         <Select
                           value={u.role}
@@ -391,7 +394,7 @@ export default function UserManagement() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {(isAdmin || isManager || isTeamLead) && (
+                        {(isAdmin || isManager || isTeamLead || isAgencyAdmin) && (
                           <div className="mt-1">
                             <Button size="sm" variant="ghost" onClick={() => { setPasswordTargetUser(u); setNewPassword(""); setPasswordDialogOpen(true); }}>
                               Change Password

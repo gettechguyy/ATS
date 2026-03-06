@@ -8,7 +8,7 @@ import {
   type SessionUser,
 } from "@/lib/authApi";
 
-export type AppRole = "admin" | "recruiter" | "candidate" | "manager" | "team_lead";
+export type AppRole = "admin" | "recruiter" | "candidate" | "manager" | "team_lead" | "agency_admin";
 
 export interface Profile {
   id: string;
@@ -19,6 +19,7 @@ export interface Profile {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  agency_id?: string | null;
 }
 
 /** App user (from our app_users table + session). Same shape as before so user.id works everywhere. */
@@ -36,13 +37,15 @@ interface AuthContextType {
   isTeamLead: boolean;
   isCandidate: boolean;
   isManager: boolean;
+  isAgencyAdmin: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   createUser: (
     email: string,
     password: string,
     fullName: string,
-    role: string
+    role: string,
+    agencyId?: string | null
   ) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
@@ -65,6 +68,7 @@ function sessionToProfile(s: SessionUser): Profile | null {
     is_active: p.is_active !== false,
     created_at: p.created_at,
     updated_at: p.updated_at,
+    agency_id: p.agency_id ?? null,
   };
 }
 
@@ -103,7 +107,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     email: string,
     password: string,
     fullName: string,
-    roleParam: string
+    roleParam: string,
+    agencyId?: string | null
   ) => {
     if (!user?.id) return { error: new Error("Not authenticated") };
     const { error } = await createAppUser(
@@ -111,7 +116,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       password,
       fullName,
-      roleParam
+      roleParam,
+      agencyId ?? undefined
     );
     return { error: error ?? null };
   };
@@ -134,6 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isTeamLead: role === "team_lead",
         isCandidate: role === "candidate",
         isManager: role === "manager",
+        isAgencyAdmin: role === "agency_admin",
         loading,
         signIn,
         createUser,

@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,31 +10,39 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Eye } from "lucide-react";
+import { Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { fetchAllOffers, fetchOffersByCandidate, fetchOffersByRecruiter, updateOfferStatus } from "../../dbscripts/functions/offers";
+import { fetchAllOffersPaginated, fetchOffersByCandidatePaginated, fetchOffersByRecruiterPaginated, fetchOffersByAgencyPaginated, updateOfferStatus } from "../../dbscripts/functions/offers";
 
+const PAGE_SIZE = 10;
 const OFFER_STATUSES = ["Pending", "Accepted", "Declined"] as const;
 
 export default function Offers() {
-  const { user, profile, role, isCandidate, isRecruiter } = useAuth();
+  const { user, profile, role, isCandidate, isRecruiter, isAgencyAdmin } = useAuth();
   const queryClient = useQueryClient();
+  const [page, setPage] = useState(1);
+  const [sortBy, setSortBy] = useState("offered_at");
+  const [order, setOrder] = useState<"asc" | "desc">("desc");
 
-  const offersQueryFn = async () => {
-    if (isCandidate) {
-      if (!profile?.linked_candidate_id) return [];
-      return fetchOffersByCandidate(profile.linked_candidate_id);
-    }
-    if (isRecruiter && user?.id) return fetchOffersByRecruiter(user.id);
-    return fetchAllOffers();
-  };
-
-  const { data: offers, isLoading } = useQuery({
-    queryKey: ["all-offers", role, user?.id, profile?.linked_candidate_id],
-    queryFn: offersQueryFn,
+  const { data: result, isLoading } = useQuery({
+    queryKey: ["all-offers", role, user?.id, profile?.linked_candidate_id, profile?.agency_id, page, PAGE_SIZE, sortBy, order],
+    queryFn: async () => {
+      if (isCandidate) {
+        if (!profile?.linked_candidate_id) return { data: [], total: 0 };
+        return fetchOffersByCandidatePaginated(profile.linked_candidate_id, { page, pageSize: PAGE_SIZE, sortBy, order });
+      }
+      if (isAgencyAdmin && profile?.agency_id) return fetchOffersByAgencyPaginated(profile.agency_id, { page, pageSize: PAGE_SIZE, sortBy, order });
+      if (isRecruiter && user?.id) return fetchOffersByRecruiterPaginated(user.id, { page, pageSize: PAGE_SIZE, sortBy, order });
+      return fetchAllOffersPaginated({ page, pageSize: PAGE_SIZE, sortBy, order });
+    },
   });
+
+  const list = result?.data ?? [];
+  const totalCount = result?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  useEffect(() => setPage(1), [sortBy, order]);
 
   const updateStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
@@ -51,6 +60,31 @@ export default function Offers() {
         <h1 className="text-2xl font-bold text-foreground">{isCandidate ? "My Offers" : "Offers"}</h1>
         <p className="text-sm text-muted-foreground">{isCandidate ? "Your offers" : "Track all offers and acceptance status"}</p>
       </div>
+
+      <Card className="mb-4">
+        <CardContent className="flex flex-wrap items-center gap-3 p-4">
+          <Select value={sortBy} onValueChange={setSortBy}>
+            <SelectTrigger className="w-44">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="offered_at">Offer date</SelectItem>
+              <SelectItem value="salary">Salary</SelectItem>
+              <SelectItem value="tentative_start_date">Start date</SelectItem>
+              <SelectItem value="created_at">Date added</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={order} onValueChange={(v) => setOrder(v as "asc" | "desc")}>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="desc">Newest first</SelectItem>
+              <SelectItem value="asc">Oldest first</SelectItem>
+            </SelectContent>
+          </Select>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="p-0">
@@ -74,12 +108,12 @@ export default function Offers() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {offers?.length === 0 ? (
+                {list.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={9} className="py-8 text-center text-muted-foreground">No offers found</TableCell>
                   </TableRow>
                 ) : (
-                  offers?.map((o: any) => {
+                  list.map((o: any) => {
                     const sub = o.submissions;
                     return (
                       <TableRow key={o.id}>
@@ -119,6 +153,31 @@ export default function Offers() {
             </Table>
           )}
         </CardContent>
+        {!isLoading && totalCount > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+            <p className="text-sm text-muted-foreground">
+              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCount)} of {totalCount}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+                <ChevronLeft className="h-4 w-4" /> Previous
+              </Button>
+              <Select value={String(page)} onValueChange={(v) => setPage(Number(v))}>
+                <SelectTrigger className="w-[7rem] h-8">
+                  <SelectValue>Page {page} of {totalPages}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                    <SelectItem key={p} value={String(p)}>Page {p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
+                Next <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   );

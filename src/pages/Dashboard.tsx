@@ -12,24 +12,33 @@ import { Calendar } from "@/components/ui/calendar";
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, subDays } from "date-fns";
 
 export default function Dashboard() {
-  const { user, isAdmin, isRecruiter, isCandidate, isManager, role, profile } = useAuth();
+  const { user, isAdmin, isRecruiter, isCandidate, isManager, isAgencyAdmin, role, profile } = useAuth();
   const [dateRange, setDateRange] = useState<{ from?: Date | null; to?: Date | null } | undefined>(undefined);
+
+  const effectiveRole = (typeof role === "string" ? role.toLowerCase() : role) ?? "recruiter";
+  const dashboardUserId =
+    effectiveRole === "team_lead"
+      ? profile?.id
+      : effectiveRole === "recruiter"
+        ? user?.id
+        : profile?.id ?? user?.id;
 
   const { data: stats, isLoading } = useQuery({
     queryKey: [
       "dashboard-stats",
-      user?.id,
-      role,
+      effectiveRole,
+      dashboardUserId,
       profile?.linked_candidate_id,
+      profile?.agency_id,
       dateRange?.from ? dateRange.from.toISOString() : null,
       dateRange?.to ? dateRange.to.toISOString() : null,
     ],
     queryFn: () =>
       fetchDashboardStats({
-        role: (role ?? "recruiter") as any,
-        // pass profile.id (profiles.id) because DB columns like recruiter_id/team_lead_id reference profiles.id
-        userId: profile?.id ?? user?.id,
+        role: effectiveRole as any,
+        userId: dashboardUserId ?? undefined,
         linkedCandidateId: profile?.linked_candidate_id ?? null,
+        agencyId: isAgencyAdmin ? profile?.agency_id ?? null : null,
         startDate: dateRange?.from ?? null,
         endDate: dateRange?.to ?? null,
       }),
@@ -125,10 +134,10 @@ export default function Dashboard() {
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">
-          {isAdmin ? "Admin Dashboard" : isManager ? "Manager Dashboard" : "My Dashboard"}
+          {isAdmin ? "Admin Dashboard" : isManager ? "Manager Dashboard" : isAgencyAdmin ? "Agency Dashboard" : "My Dashboard"}
         </h1>
         <p className="text-sm text-muted-foreground">
-          {isAdmin ? "Overview of all activity" : isManager ? "Read-only overview" : "Your recruiting progress"}
+          {isAdmin ? "Overview of all activity" : isManager ? "Read-only overview" : isAgencyAdmin ? "Your agency's candidates and submissions" : "Your recruiting progress"}
         </p>
       </div>
 

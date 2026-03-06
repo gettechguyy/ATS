@@ -20,18 +20,104 @@ export async function fetchOffersByCandidate(candidateId: string) {
   return data;
 }
 
-/** Offers for submissions created by this recruiter. */
+/** Offers created by this recruiter (uses created_by for fast fetch). */
 export async function fetchOffersByRecruiter(recruiterId: string) {
-  const { data: subs } = await supabase.from("submissions").select("id").eq("recruiter_id", recruiterId);
-  const ids = (subs || []).map((x: { id: string }) => x.id);
-  if (ids.length === 0) return [];
   const { data, error } = await supabase
     .from("offers")
     .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))")
-    .in("submission_id", ids)
+    .eq("created_by", recruiterId)
     .order("offered_at", { ascending: false });
   if (error) throw error;
-  return data;
+  return data ?? [];
+}
+
+const OFFERS_SORT_COLUMNS = ["offered_at", "salary", "tentative_start_date", "created_at"] as const;
+export type OffersPageOpts = { page: number; pageSize: number; sortBy?: string; order?: "asc" | "desc" };
+
+function offersOrder(sortBy?: string, order?: "asc" | "desc") {
+  const col = sortBy && OFFERS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "offered_at";
+  return { column: col, ascending: order === "asc" };
+}
+
+export async function fetchAllOffersPaginated(opts: OffersPageOpts) {
+  const { page, pageSize, sortBy, order } = opts;
+  const { column, ascending } = offersOrder(sortBy, order);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, error, count } = await supabase
+    .from("offers")
+    .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" })
+    .order(column, { ascending })
+    .range(from, to);
+  if (error) throw error;
+  return { data: data ?? [], total: count ?? 0 };
+}
+
+export async function fetchOffersByCandidatePaginated(candidateId: string, opts: OffersPageOpts) {
+  const { page, pageSize, sortBy, order } = opts;
+  const { column, ascending } = offersOrder(sortBy, order);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, error, count } = await supabase
+    .from("offers")
+    .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" })
+    .eq("candidate_id", candidateId)
+    .order(column, { ascending })
+    .range(from, to);
+  if (error) throw error;
+  return { data: data ?? [], total: count ?? 0 };
+}
+
+/** Recruiter offers: filter by created_by only (no submission_id list). Requires offers.created_by column. */
+export async function fetchOffersByRecruiterPaginated(recruiterId: string, opts: OffersPageOpts) {
+  const { page, pageSize, sortBy, order } = opts;
+  const { column, ascending } = offersOrder(sortBy, order);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, error, count } = await supabase
+    .from("offers")
+    .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" })
+    .eq("created_by", recruiterId)
+    .order(column, { ascending })
+    .range(from, to);
+  if (error) throw error;
+  return { data: data ?? [], total: count ?? 0 };
+}
+
+/** Offers for submissions whose candidate is assigned to this agency. Uses created_by to avoid long submission_id lists. */
+export async function fetchOffersByAgencyPaginated(agencyId: string, opts: OffersPageOpts) {
+  const { data: candidateRows } = await supabase.from("candidates").select("id").eq("agency_id", agencyId);
+  const candidateIds = (candidateRows || []).map((c: { id: string }) => c.id);
+  if (candidateIds.length === 0) return { data: [], total: 0 };
+  const { data: subs } = await supabase.from("submissions").select("id, recruiter_id").in("candidate_id", candidateIds);
+  const submissionIds = (subs || []).map((x: { id: string }) => x.id);
+  if (submissionIds.length === 0) return { data: [], total: 0 };
+  const recruiterIds = [...new Set((subs || []).map((x: { recruiter_id: string | null }) => x.recruiter_id).filter(Boolean))] as string[];
+  const submissionIdSet = new Set(submissionIds);
+  const { page, pageSize, sortBy, order } = opts;
+  const { column, ascending } = offersOrder(sortBy, order);
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  if (recruiterIds.length === 0) {
+    const { data, error, count } = await supabase
+      .from("offers")
+      .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" })
+      .in("submission_id", submissionIds)
+      .order(column, { ascending })
+      .range(from, to);
+    if (error) throw error;
+    return { data: data ?? [], total: count ?? 0 };
+  }
+  const { data: rawData, error } = await supabase
+    .from("offers")
+    .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))")
+    .in("created_by", recruiterIds)
+    .order(column, { ascending });
+  if (error) throw error;
+  const filtered = (rawData ?? []).filter((o: any) => submissionIdSet.has(o.submission_id));
+  const total = filtered.length;
+  const data = filtered.slice(from, to + 1);
+  return { data, total };
 }
 
 export async function fetchOffersBySubmission(submissionId: string) {
@@ -46,6 +132,7 @@ export async function fetchOffersBySubmission(submissionId: string) {
 export async function createOffer(offer: {
   submission_id: string;
   candidate_id: string;
+  created_by: string | null;
   salary: number;
   job_description?: string | null;
   job_description_url?: string | null;
@@ -55,6 +142,7 @@ export async function createOffer(offer: {
   const { error } = await supabase.from("offers").insert({
     submission_id: offer.submission_id,
     candidate_id: offer.candidate_id,
+    created_by: offer.created_by ?? null,
     salary: offer.salary,
     status: "Pending" as any,
     job_description: offer.job_description ?? null,

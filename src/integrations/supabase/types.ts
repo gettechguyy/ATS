@@ -38,8 +38,30 @@ export type Database = {
         }
         Relationships: []
       }
+      agencies: {
+        Row: {
+          id: string
+          name: string
+          type: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          type?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          type?: string
+          created_at?: string
+        }
+        Relationships: []
+      }
       candidates: {
         Row: {
+          agency_id: string | null
           created_at: string | null
           email: string | null
           first_name: string
@@ -49,9 +71,11 @@ export type Database = {
           recruiter_id: string | null
           resume_url: string | null
           status: Database["public"]["Enums"]["candidate_status"] | null
+          team_lead_id: string | null
           visa_status: string | null
         }
         Insert: {
+          agency_id?: string | null
           created_at?: string | null
           email?: string | null
           first_name: string
@@ -61,9 +85,11 @@ export type Database = {
           recruiter_id?: string | null
           resume_url?: string | null
           status?: Database["public"]["Enums"]["candidate_status"] | null
+          team_lead_id?: string | null
           visa_status?: string | null
         }
         Update: {
+          agency_id?: string | null
           created_at?: string | null
           email?: string | null
           first_name?: string
@@ -73,6 +99,7 @@ export type Database = {
           recruiter_id?: string | null
           resume_url?: string | null
           status?: Database["public"]["Enums"]["candidate_status"] | null
+          team_lead_id?: string | null
           visa_status?: string | null
         }
         Relationships: []
@@ -116,6 +143,7 @@ export type Database = {
         Row: {
           candidate_id: string
           created_at: string | null
+          created_by: string | null
           feedback: string | null
           id: string
           mode: Database["public"]["Enums"]["interview_mode"] | null
@@ -128,6 +156,7 @@ export type Database = {
         Insert: {
           candidate_id: string
           created_at?: string | null
+          created_by?: string | null
           feedback?: string | null
           id?: string
           mode?: Database["public"]["Enums"]["interview_mode"] | null
@@ -140,6 +169,7 @@ export type Database = {
         Update: {
           candidate_id?: string
           created_at?: string | null
+          created_by?: string | null
           feedback?: string | null
           id?: string
           mode?: Database["public"]["Enums"]["interview_mode"] | null
@@ -169,6 +199,7 @@ export type Database = {
       offers: {
         Row: {
           candidate_id: string
+          created_by: string | null
           id: string
           offered_at: string | null
           salary: number | null
@@ -179,6 +210,7 @@ export type Database = {
         }
         Insert: {
           candidate_id: string
+          created_by?: string | null
           id?: string
           offered_at?: string | null
           salary?: number | null
@@ -189,6 +221,7 @@ export type Database = {
         }
         Update: {
           candidate_id?: string
+          created_by?: string | null
           id?: string
           offered_at?: string | null
           salary?: number | null
@@ -216,6 +249,7 @@ export type Database = {
       }
       profiles: {
         Row: {
+          agency_id: string | null
           created_at: string
           email: string
           full_name: string
@@ -226,6 +260,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          agency_id?: string | null
           created_at?: string
           email: string
           full_name: string
@@ -236,6 +271,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          agency_id?: string | null
           created_at?: string
           email?: string
           full_name?: string
@@ -338,6 +374,45 @@ export type Database = {
           },
         ]
       }
+      invites: {
+        Row: {
+          id: string
+          token: string
+          email: string
+          full_name: string
+          role: string
+          created_by: string
+          used: boolean | null
+          used_at: string | null
+          created_at: string | null
+          candidate_id: string | null
+        }
+        Insert: {
+          id?: string
+          token: string
+          email: string
+          full_name: string
+          role: string
+          created_by: string
+          used?: boolean | null
+          used_at?: string | null
+          created_at?: string | null
+          candidate_id?: string | null
+        }
+        Update: {
+          id?: string
+          token?: string
+          email?: string
+          full_name?: string
+          role?: string
+          created_by?: string
+          used?: boolean | null
+          used_at?: string | null
+          created_at?: string | null
+          candidate_id?: string | null
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           id: string
@@ -372,6 +447,7 @@ export type Database = {
           p_password: string
           p_full_name: string
           p_role: string
+          p_agency_id?: string
         }
         Returns: Json
       }
@@ -391,9 +467,13 @@ export type Database = {
         Args: { _candidate_id: string; _user_id: string }
         Returns: boolean
       }
+      create_user_from_invite: {
+        Args: { p_token: string; p_password: string }
+        Returns: Json
+      }
     }
     Enums: {
-      app_role: "admin" | "recruiter" | "candidate" | "manager"
+      app_role: "admin" | "recruiter" | "candidate" | "manager" | "team_lead" | "agency_admin"
       candidate_status:
         | "New"
         | "In Marketing"
@@ -538,7 +618,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "recruiter", "candidate", "manager"],
+      app_role: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"],
       candidate_status: [
         "New",
         "In Marketing",

@@ -40,7 +40,7 @@ export default function Login() {
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Briefcase className="h-6 w-6" />
           </div>
-          <CardTitle className="text-2xl">RecruiterTrack</CardTitle>
+          <CardTitle className="text-2xl">HireTrack</CardTitle>
           <CardDescription>Sign in with your email and password.</CardDescription>
         </CardHeader>
         <CardContent>

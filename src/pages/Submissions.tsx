@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,15 +17,16 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Search, Eye } from "lucide-react";
+import { Search, Eye, ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { fetchSubmissions, fetchSubmissionsByRecruiter, fetchSubmissionsByCandidate, fetchSubmissionsByTeamLead, updateSubmissionStatus, updateSubmission, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
-import { fetchCandidates, fetchCandidatesByRecruiter } from "../../dbscripts/functions/candidates";
+import { fetchSubmissionsPaginated, fetchSubmissionsByRecruiterPaginated, fetchSubmissionsByCandidatePaginated, fetchSubmissionsByAgencyPaginated, fetchSubmissionsByTeamLead, updateSubmissionStatus, updateSubmission, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
+import { fetchCandidates, fetchCandidatesByRecruiter, fetchCandidatesBasic } from "../../dbscripts/functions/candidates";
 import { uploadScreenCallFile, uploadVendorJobDescription } from "../../dbscripts/functions/storage";
 import { US_STATES } from "@/lib/usStates";
 
+const PAGE_SIZE = 10;
 const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Screen Call", "Interview", "Rejected", "Offered"] as const;
 
 const statusColors: Record<string, string> = {
@@ -38,7 +39,7 @@ const statusColors: Record<string, string> = {
 };
 
 export default function Submissions() {
-  const { user, profile, role, isCandidate, isRecruiter, isAdmin, isManager, isTeamLead } = useAuth();
+  const { user, profile, role, isCandidate, isRecruiter, isAdmin, isManager, isTeamLead, isAgencyAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
   const [vendorSubmission, setVendorSubmission] = useState<any | null>(null);
@@ -64,41 +65,63 @@ export default function Submissions() {
  
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [sortBy, setSortBy] = useState("created_at");
+  const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newCandidateId, setNewCandidateId] = useState<string | null>(null);
   const [newClientName, setNewClientName] = useState("");
   const [newPosition, setNewPosition] = useState("");
   const [newJobPortal, setNewJobPortal] = useState("");
   const [newJobLink, setNewJobLink] = useState("");
+  const [page, setPage] = useState(1);
 
+  const isPaginatedRole = !isTeamLead; // team lead uses fetchSubmissionsByTeamLead + client filter; others use paginated API
   const submissionsQueryFn = async () => {
-    if (isCandidate) {
-      if (!profile?.linked_candidate_id) return [];
-      return fetchSubmissionsByCandidate(profile.linked_candidate_id);
-    }
-    if (isRecruiter && user?.id) return fetchSubmissionsByRecruiter(user.id);
     if (isTeamLead && profile?.id) return fetchSubmissionsByTeamLead(profile.id);
-    return fetchSubmissions();
+    return [];
   };
-
-  const { data: submissions, isLoading } = useQuery({
-    queryKey: ["submissions", role, user?.id, profile?.linked_candidate_id],
+  const { data: submissionsTeamLead, isLoading: loadingTL } = useQuery({
+    queryKey: ["submissions-tl", profile?.id],
     queryFn: submissionsQueryFn,
+    enabled: isTeamLead && !!profile?.id,
   });
+  const { data: submissionsResult, isLoading: loadingPaginated } = useQuery({
+    queryKey: ["submissions", role, user?.id, profile?.linked_candidate_id, profile?.agency_id, page, PAGE_SIZE, search, statusFilter, sortBy, order],
+    queryFn: async () => {
+      if (isCandidate) {
+        if (!profile?.linked_candidate_id) return { data: [], total: 0 };
+        return fetchSubmissionsByCandidatePaginated(profile.linked_candidate_id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order });
+      }
+      if (isAgencyAdmin && profile?.agency_id) return fetchSubmissionsByAgencyPaginated(profile.agency_id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order });
+      if (isRecruiter && user?.id) return fetchSubmissionsByRecruiterPaginated(user.id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order });
+      return fetchSubmissionsPaginated({ page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order });
+    },
+    enabled: isPaginatedRole && !!user,
+  });
+  const filteredTL = (submissionsTeamLead ?? []).filter((s: any) => {
+    const candidateName = `${s.candidates?.first_name || ""} ${s.candidates?.last_name || ""}`.toLowerCase();
+    const matchSearch = !search.trim() || s.client_name?.toLowerCase().includes(search.toLowerCase()) || s.position?.toLowerCase().includes(search.toLowerCase()) || candidateName.includes(search.toLowerCase());
+    const matchStatus = statusFilter === "all" || s.status === statusFilter;
+    return matchSearch && matchStatus;
+  });
+  const displaySubmissions = isTeamLead ? filteredTL.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : (submissionsResult?.data ?? []);
+  const totalCount = isTeamLead ? filteredTL.length : (submissionsResult?.total ?? 0);
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const isLoading = isTeamLead ? loadingTL : loadingPaginated;
+  useEffect(() => setPage(1), [search, statusFilter, sortBy, order]);
 
   // fetch candidates for Add Application dropdown
   const candidatesQueryFn = async () => {
-    // Admins and managers see all candidates (no filter)
     if (isAdmin || isManager) return fetchCandidates();
-    // Recruiters see only candidates assigned to them
+    if (isAgencyAdmin && profile?.agency_id) return fetchCandidatesBasic(profile.agency_id);
     if (isRecruiter && user?.id) return fetchCandidatesByRecruiter(user.id);
-    // Others: empty
     return [];
   };
 
   const { data: candidates = [], isLoading: candidatesLoading } = useQuery({
-    queryKey: ["candidates-dropdown", role, user?.id],
+    queryKey: ["candidates-dropdown", role, user?.id, profile?.agency_id],
     queryFn: candidatesQueryFn,
+    enabled: isAdmin || isManager || (isRecruiter && !!user?.id) || (isAgencyAdmin && !!profile?.agency_id),
   });
 
   const updateStatus = useMutation({
@@ -175,18 +198,6 @@ export default function Submissions() {
     }
   };
 
-  const filtered = submissions?.filter((s: any) => {
-    const candidateName = `${s.candidates?.first_name || ""} ${s.candidates?.last_name || ""}`.toLowerCase();
-    const matchSearch =
-      s.client_name.toLowerCase().includes(search.toLowerCase()) ||
-      s.position.toLowerCase().includes(search.toLowerCase()) ||
-      candidateName.includes(search.toLowerCase());
-    const matchStatus = statusFilter === "all" || s.status === statusFilter;
-    return matchSearch && matchStatus;
-  });
-
- 
-
   return (
     <div>
       <div className="mb-6">
@@ -200,7 +211,7 @@ export default function Submissions() {
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Search applications..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
           </div>
-          {(isAdmin || isRecruiter) && (
+          {(isAdmin || isRecruiter || isAgencyAdmin) && (
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
@@ -213,9 +224,13 @@ export default function Submissions() {
                     toast.error("No candidates assigned to you. Please create or assign a candidate first.");
                     return;
                   }
+                  if (isAgencyAdmin && (!candidates || candidates.length === 0)) {
+                    toast.error("No candidates assigned to your agency yet. Master admin must assign candidates to your agency first.");
+                    return;
+                  }
                   setAddDialogOpen(true);
                 }}
-                disabled={candidatesLoading || (isRecruiter && (!candidates || candidates.length === 0))}
+                disabled={candidatesLoading || (isRecruiter && (!candidates || candidates.length === 0)) || (isAgencyAdmin && (!candidates || candidates.length === 0))}
               >
                 Add Application
               </Button>
@@ -232,6 +247,30 @@ export default function Submissions() {
               ))}
             </SelectContent>
           </Select>
+          {isPaginatedRole && (
+            <>
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="created_at">Date</SelectItem>
+                  <SelectItem value="client_name">Client</SelectItem>
+                  <SelectItem value="position">Position</SelectItem>
+                  <SelectItem value="status">Status</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={order} onValueChange={(v) => setOrder(v as "asc" | "desc")}>
+                <SelectTrigger className="w-36">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="desc">Newest first</SelectItem>
+                  <SelectItem value="asc">Oldest first</SelectItem>
+                </SelectContent>
+              </Select>
+            </>
+          )}
         </CardContent>
       </Card>
 
@@ -267,12 +306,12 @@ export default function Submissions() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered?.length === 0 ? (
+                {displaySubmissions.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">No applications found</TableCell>
                   </TableRow>
                 ) : (
-                  filtered?.map((s: any) => (
+                  displaySubmissions.map((s: any) => (
                   <TableRow key={s.id}>
                       {!isCandidate && <TableCell className="font-medium">{s.candidates?.first_name} {s.candidates?.last_name || ""}</TableCell>}
                       <TableCell>{s.client_name}</TableCell>
@@ -328,6 +367,31 @@ export default function Submissions() {
             </Table>
           )}
         </CardContent>
+        {!isLoading && totalCount > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+            <p className="text-sm text-muted-foreground">
+              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCount)} of {totalCount}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+                <ChevronLeft className="h-4 w-4" /> Previous
+              </Button>
+              <Select value={String(page)} onValueChange={(v) => setPage(Number(v))}>
+                <SelectTrigger className="w-[7rem] h-8">
+                  <SelectValue>Page {page} of {totalPages}</SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
+                    <SelectItem key={p} value={String(p)}>Page {p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
+                Next <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        )}
       </Card>
       {/* Add Application Dialog */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>

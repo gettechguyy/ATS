@@ -14,6 +14,7 @@ import {
   ChevronLeft,
   Briefcase,
   Shield,
+  Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -26,14 +27,15 @@ import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 
 const allNavItems = [
-  { to: "/", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "recruiter", "candidate", "manager", "team_lead"] },
-  { to: "/candidates", icon: Users, label: "Candidates", roles: ["admin", "recruiter", "manager", "team_lead"] },
+  { to: "/", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },
+  { to: "/candidates", icon: Users, label: "Candidates", roles: ["admin", "recruiter", "manager", "team_lead", "agency_admin"] },
   { to: "/my-profile", icon: User, label: "My Profile", roles: ["candidate"] },
-  { to: "/submissions", icon: FileText, label: "Applications", roles: ["admin", "recruiter", "candidate", "manager", "team_lead"] },
-  { to: "/screens", icon: Calendar, label: "Screens", roles: ["admin", "recruiter", "candidate", "manager", "team_lead"] },
-  { to: "/interviews", icon: Calendar, label: "Interviews", roles: ["admin", "recruiter", "candidate", "manager", "team_lead"] },
-  { to: "/offers", icon: Gift, label: "Offers", roles: ["admin", "recruiter", "candidate", "manager", "team_lead"] },
-  { to: "/admin/users", icon: Shield, label: "User Management", roles: ["admin", "manager", "team_lead"] },
+  { to: "/submissions", icon: FileText, label: "Applications", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },
+  { to: "/screens", icon: Calendar, label: "Screens", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },
+  { to: "/interviews", icon: Calendar, label: "Interviews", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },
+  { to: "/offers", icon: Gift, label: "Offers", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },
+  { to: "/admin/agencies", icon: Building2, label: "Agencies", roles: ["admin"] },
+  { to: "/admin/users", icon: Shield, label: "User Management", roles: ["admin", "manager", "team_lead", "agency_admin"] },
 ];
 
 export default function AppLayout() {
@@ -82,7 +84,7 @@ export default function AppLayout() {
           </div>
           {!collapsed && (
             <span className="text-base font-semibold tracking-tight text-sidebar-primary">
-              RecruiterTrack
+              HireTrack
             </span>
           )}
           <Button
@@ -173,7 +175,7 @@ export default function AppLayout() {
                 <p className="truncate text-sm font-medium text-sidebar-primary">
                   {profile?.full_name}
                 </p>
-                <p className="truncate text-xs capitalize text-sidebar-foreground/80">{role}</p>
+                <p className="truncate text-xs capitalize text-sidebar-foreground/80">{role === "agency_admin" ? "Admin" : role}</p>
               </div>
             )}
             <TooltipProvider delayDuration={0}>
@@ -202,7 +204,7 @@ export default function AppLayout() {
           <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
-          <span className="text-sm font-semibold">RecruiterTrack</span>
+          <span className="text-sm font-semibold">HireTrack</span>
         </div>
         <div className="p-4 md:p-6 lg:p-8">
           <Outlet />

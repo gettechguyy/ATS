@@ -15,6 +15,7 @@ import Interviews from "@/pages/Interviews";
 import ScreensPage from "@/pages/Screens";
 import Offers from "@/pages/Offers";
 import UserManagement from "@/pages/UserManagement";
+import Agencies from "@/pages/Agencies";
 import InvitesPage from "@/pages/Invites";
 import SetPasswordPage from "@/pages/SetPassword";
 import MyProfile from "@/pages/MyProfile";
@@ -43,6 +44,7 @@ const App = () => (
               <Route path="/interviews" element={<Interviews />} />
               <Route path="/offers" element={<Offers />} />
               <Route path="/admin/users" element={<UserManagement />} />
+              <Route path="/admin/agencies" element={<Agencies />} />
               <Route path="/admin/invites" element={<InvitesPage />} />
               <Route path="/set-password" element={<SetPasswordPage />} />
             </Route>
