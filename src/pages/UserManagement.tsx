@@ -28,6 +28,7 @@ import { Switch } from "@/components/ui/switch";
 import { fetchAllProfiles, fetchProfilesByAgency, updateProfile } from "../../dbscripts/functions/profiles";
 import { fetchAllUserRoles, updateUserRole, insertUserRole } from "../../dbscripts/functions/userRoles";
 import { fetchCandidatesBasic, updateCandidate } from "../../dbscripts/functions/candidates";
+import { fetchAgencies } from "../../dbscripts/functions/agencies";
 import { updateAppUserPassword } from "@/lib/authApi";
 
 const ROLES = ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] as const;
@@ -58,6 +59,12 @@ export default function UserManagement() {
     enabled: canAccessUserManagement && (!isAgencyAdmin || !!profile?.agency_id),
   });
 
+  const { data: agencies } = useQuery({
+    queryKey: ["agencies"],
+    queryFn: fetchAgencies,
+    enabled: !isAgencyAdmin,
+  });
+
   const { data: candidates } = useQuery({
     queryKey: ["all-candidates-for-linking", isAgencyAdmin ? profile?.agency_id : "all"],
     queryFn: () => fetchCandidatesBasic(isAgencyAdmin ? profile?.agency_id ?? undefined : undefined),
@@ -81,6 +88,14 @@ export default function UserManagement() {
     if (!candidateOptionsMap.has(key)) candidateOptionsMap.set(key, c);
   });
   const candidateOptionList = Array.from(candidateOptionsMap.entries()).map(([key, c]) => ({ key, ...c }));
+  // Agency admin and recruiters must not see candidate personal email.
+  const displayCandidateEmail = (c: any) => (isAgencyAdmin ? "" : (c?.email || ""));
+  // Main company (admin/manager/team lead) sees "Name (Agency Name)" for agency users; agency viewer sees name only.
+  const displayUserName = (u: any) => {
+    if (isAgencyAdmin || !u?.agency_id || !agencies?.length) return u?.full_name ?? "";
+    const agency = (agencies as any[]).find((a: any) => a.id === u.agency_id);
+    return agency ? `${u.full_name} (${agency.name})` : (u.full_name ?? "");
+  };
 
   const updateRoleMutation = useMutation({
     mutationFn: async ({ userId, roleId, newRole }: { userId: string; roleId?: string; newRole: string }) => {
@@ -346,7 +361,7 @@ export default function UserManagement() {
                       return u.role === "candidate";
                     }).map((u: any) => (
                     <TableRow key={u.id}>
-                      <TableCell className="font-medium">{u.full_name}</TableCell>
+                      <TableCell className="font-medium">{displayUserName(u)}</TableCell>
                       <TableCell className="text-muted-foreground">{u.email}</TableCell>
                       <TableCell>
                       {(isTeamLead && (u.role === "candidate" || u.role === "recruiter")) || isAgencyAdmin ? (
@@ -433,7 +448,7 @@ export default function UserManagement() {
                     if (e.target.checked) next.add(c.key); else next.delete(c.key);
                     setSelectedAssignedCandidates(next);
                   }} />
-                  <div>{c.first_name} {c.last_name || ""} {c.email ? `— ${c.email}` : ""}</div>
+                  <div>{c.first_name} {c.last_name || ""} {displayCandidateEmail(c) ? `— ${displayCandidateEmail(c)}` : ""}</div>
                 </div>
               );
             })}

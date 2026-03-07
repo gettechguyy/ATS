@@ -64,7 +64,7 @@ export default function Candidates() {
   const { data: agencies } = useQuery({
     queryKey: ["agencies"],
     queryFn: fetchAgencies,
-    enabled: isAdmin,
+    enabled: !isAgencyAdmin,
   });
 
   const { data: candidatesResult, isLoading } = useQuery({
@@ -178,9 +178,26 @@ export default function Candidates() {
   const getRecruiterName = (id: string) =>
     recruiters?.find((r: any) => r.user_id === id)?.full_name || "Unassigned";
 
-  // Recruiters must not see email/phone — show as "—" for them.
-  const displayEmail = (c: any) => (isRecruiter ? "—" : (c.email || "—"));
-  const displayPhone = (c: any) => (isRecruiter ? "—" : (c.phone || "—"));
+  // Main company sees "Recruiter Name (Agency Name)" for agency recruiters; agency viewer sees name only (same as User Management).
+  const displayRecruiterName = (recruiterId: string) => {
+    const r = recruiters?.find((x: any) => x.user_id === recruiterId);
+    const name = r?.full_name || "Unassigned";
+    if (isAgencyAdmin || !r?.agency_id || !agencies?.length) return name;
+    const agency = (agencies as any[]).find((a: any) => a.id === r.agency_id);
+    return agency ? `${name} (${agency.name})` : name;
+  };
+
+  // Recruiters and agency admin/employees must not see personal email/phone — show as "—".
+  const cannotSeePersonalContact = isRecruiter || isAgencyAdmin;
+  const displayEmail = (c: any) => (cannotSeePersonalContact ? "—" : (c.email || "—"));
+  const displayPhone = (c: any) => (cannotSeePersonalContact ? "—" : (c.phone || "—"));
+  // Main company (admin/manager/recruiter) sees "Name (Agency Name)" for agency-assigned candidates; agency viewer sees name only.
+  const displayCandidateName = (c: any) => {
+    const name = `${c.first_name || ""} ${(c.last_name || "").trim()}`.trim() || "—";
+    if (isAgencyAdmin || !c?.agency_id || !agencies?.length) return name;
+    const agency = (agencies as any[]).find((a: any) => a.id === c.agency_id);
+    return agency ? `${name} (${agency.name})` : name;
+  };
 
   return (
     <div>
@@ -189,7 +206,7 @@ export default function Candidates() {
           <h1 className="text-2xl font-bold text-foreground">Candidates</h1>
           <p className="text-sm text-muted-foreground">Manage candidate pipeline</p>
         </div>
-        {isAdmin && (
+        {(isAdmin && !isAgencyAdmin) && (
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" />Add Candidate</Button>
@@ -304,7 +321,7 @@ export default function Candidates() {
                 ) : (
                   candidates.map((c: any) => (
                     <TableRow key={c.id}>
-                      <TableCell className="font-medium">{c.first_name} {c.last_name || ""}</TableCell>
+                      <TableCell className="font-medium">{displayCandidateName(c)}</TableCell>
                       <TableCell className="text-muted-foreground">{displayEmail(c)}</TableCell>
                       <TableCell className="text-muted-foreground">{displayPhone(c)}</TableCell>
                       <TableCell className="text-muted-foreground">{c.visa_status || "—"}</TableCell>
@@ -327,7 +344,7 @@ export default function Candidates() {
                           </Select>
                         </TableCell>
                       )}
-                      <TableCell className="text-muted-foreground">{getRecruiterName(c.recruiter_id)}</TableCell>
+                      <TableCell className="text-muted-foreground">{displayRecruiterName(c.recruiter_id)}</TableCell>
                       <TableCell>
                         <div className="flex gap-1">
                           <Button variant="ghost" size="icon" asChild>

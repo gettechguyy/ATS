@@ -30,6 +30,7 @@ import { fetchExperiencesByCandidate, createExperience, deleteExperience } from 
 import { fetchSubmissionsByCandidate, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
 import { fetchProfileName, fetchProfilesBySelect, fetchProfilesByRole } from "../../dbscripts/functions/profiles";
 import { fetchAllUserRoles } from "../../dbscripts/functions/userRoles";
+import { fetchAgencies } from "../../dbscripts/functions/agencies";
 
 const CANDIDATE_STATUSES = ["New", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
 const VISA_STATUSES = ["CPT", "OPT", "STEM OPT", "H1-B", "H4-EAD", "GC-EAD", "Green Card", "US Citizen", "Other"] as const;
@@ -87,6 +88,12 @@ export default function CandidateDetail() {
     queryKey: ["candidate", id],
     queryFn: () => fetchCandidateById(id!),
     enabled: !!id,
+  });
+
+  const { data: agencies } = useQuery({
+    queryKey: ["agencies"],
+    queryFn: fetchAgencies,
+    enabled: !isAgencyAdmin,
   });
 
   useEffect(() => {
@@ -248,11 +255,27 @@ export default function CandidateDetail() {
     return <Navigate to="/candidates" replace />;
   }
 
-  // Only admins and the candidate themselves can see personal contact details.
-  const canSeePersonalDetails = isAdmin || isOwnProfile;
+  // Only master admin (not agency admin) and the candidate themselves can see personal contact details.
+  const canSeePersonalDetails = (isAdmin && !isAgencyAdmin) || isOwnProfile;
   const displayEmail = canSeePersonalDetails ? (candidate.email || "—") : "—";
   const displayPhone = canSeePersonalDetails ? (candidate.phone || "—") : "—";
   const showVisaStatus = isAdmin || isRecruiter || isOwnProfile;
+  // Main company sees "Name (Agency Name)" for agency-assigned candidates; agency viewer sees name only.
+  const displayCandidateTitle = () => {
+    const name = `${candidate.first_name || ""} ${(candidate.last_name || "").trim()}`.trim() || "—";
+    if (isAgencyAdmin || !candidate.agency_id || !agencies?.length) return name;
+    const agency = (agencies as any[]).find((a: any) => a.id === candidate.agency_id);
+    return agency ? `${name} (${agency.name})` : name;
+  };
+  // Main company sees "Recruiter Name (Agency Name)" for agency recruiters; agency viewer sees name only (same as User Management).
+  const displayRecruiterName = (recruiterId: string | null) => {
+    if (!recruiterId) return "—";
+    const r = recruiters?.find((x: any) => x.user_id === recruiterId);
+    const name = r?.full_name ?? recruiterProfile?.full_name ?? "—";
+    if (isAgencyAdmin || !r?.agency_id || !agencies?.length) return name;
+    const agency = (agencies as any[]).find((a: any) => a.id === r.agency_id);
+    return agency ? `${name} (${agency.name})` : name;
+  };
 
   try {
     return (
@@ -264,8 +287,8 @@ export default function CandidateDetail() {
       <div className="grid gap-6 lg:grid-cols-3">
         <Card className="lg:col-span-1">
           <CardHeader className="flex flex-row items-start justify-between gap-2">
-            <CardTitle className="text-lg">{candidate.first_name} {candidate.last_name || ""}</CardTitle>
-            {isAdmin && (
+            <CardTitle className="text-lg">{displayCandidateTitle()}</CardTitle>
+            {(isAdmin && !isAgencyAdmin) && (
               <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline" size="sm"><Pencil className="h-3 w-3 mr-1" />Edit</Button>
@@ -369,11 +392,11 @@ export default function CandidateDetail() {
             )}
           </CardHeader>
             <CardContent className="space-y-3 text-sm">
-            {((isAdmin || isOwnProfile) || (!isRecruiter && Boolean(candidate.email))) && (
-              <div><span className="text-muted-foreground">Email:</span> {displayEmail}</div>
-            )}
-            {((isAdmin || isOwnProfile) || (!isRecruiter && Boolean(candidate.phone))) && (
-              <div><span className="text-muted-foreground">Phone:</span> {displayPhone}</div>
+            {canSeePersonalDetails && (
+              <>
+                {Boolean(candidate.email) && <div><span className="text-muted-foreground">Email:</span> {displayEmail}</div>}
+                {Boolean(candidate.phone) && <div><span className="text-muted-foreground">Phone:</span> {displayPhone}</div>}
+              </>
             )}
             {canAssignRecruiter && recruiters && (
               <div className="space-y-1">
@@ -386,14 +409,14 @@ export default function CandidateDetail() {
                   <SelectContent>
                     <SelectItem value="unassigned">Unassigned</SelectItem>
                     {recruiters.map((r: any) => (
-                      <SelectItem key={r.user_id} value={r.user_id}>{r.full_name}</SelectItem>
+                      <SelectItem key={r.user_id} value={r.user_id}>{displayRecruiterName(r.user_id)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             )}
             {!canAssignRecruiter && (
-              <div><span className="text-muted-foreground">Recruiter:</span> {recruiterProfile?.full_name || "—"}</div>
+              <div><span className="text-muted-foreground">Recruiter:</span> {displayRecruiterName(candidate.recruiter_id ?? null)}</div>
             )}
             {showVisaStatus && (
               <div className="flex items-center gap-2">
