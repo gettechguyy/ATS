@@ -80,27 +80,21 @@ export async function createAppUser(
   if (!trimmedEmail || !password || !fullName?.trim()) {
     return { data: null, error: new Error("Email, password, and full name required") };
   }
-  // Use only 5-param RPC (no p_agency_id) so it works with existing DB; set agency_id in a second step
-  const { data, error } = await supabase.rpc("create_app_user", {
+  // When creating agency_admin, DB requires p_agency_id in the RPC call (it sets profiles.agency_id in one step).
+  const rpcParams: Record<string, unknown> = {
     p_admin_user_id: adminUserId,
     p_email: trimmedEmail,
     p_password: password,
     p_full_name: fullName.trim(),
     p_role: role,
-  });
+  };
+  if (agencyId != null && agencyId !== "") {
+    rpcParams.p_agency_id = agencyId;
+  }
+  const { data, error } = await supabase.rpc("create_app_user", rpcParams);
   if (error) return { data: null, error: error as Error };
   const payload = data as { user_id: string } | null;
   if (!payload?.user_id) return { data: payload ?? null, error: null };
-
-  if (agencyId != null && agencyId !== "") {
-    const { error: updateErr } = await supabase
-      .from("profiles")
-      .update({ agency_id: agencyId })
-      .eq("user_id", payload.user_id);
-    if (updateErr) {
-      return { data: null, error: new Error(updateErr.message || "User created but failed to set agency") };
-    }
-  }
   return { data: payload, error: null };
 }
 
