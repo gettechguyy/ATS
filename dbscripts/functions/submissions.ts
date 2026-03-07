@@ -56,6 +56,7 @@ export type SubmissionsPageOpts = {
   status?: string;
   sortBy?: string;
   order?: "asc" | "desc";
+  candidateId?: string | null;
 };
 
 function buildSubmissionsQuery(recruiterId?: string, candidateId?: string, sortBy?: string, order?: "asc" | "desc") {
@@ -70,10 +71,10 @@ function buildSubmissionsQuery(recruiterId?: string, candidateId?: string, sortB
   return q;
 }
 
-/** Server-side paginated submissions. Optional search, status, sort. */
+/** Server-side paginated submissions. Optional search, status, sort, candidateId. */
 export async function fetchSubmissionsPaginated(opts: SubmissionsPageOpts) {
-  const { page, pageSize, search, status, sortBy, order } = opts;
-  let q = buildSubmissionsQuery(undefined, undefined, sortBy, order);
+  const { page, pageSize, search, status, sortBy, order, candidateId } = opts;
+  let q = buildSubmissionsQuery(undefined, candidateId ?? undefined, sortBy, order);
   if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
   if (search && search.trim()) {
     const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
@@ -88,8 +89,8 @@ export async function fetchSubmissionsPaginated(opts: SubmissionsPageOpts) {
 }
 
 export async function fetchSubmissionsByRecruiterPaginated(recruiterId: string, opts: SubmissionsPageOpts) {
-  const { page, pageSize, search, status, sortBy, order } = opts;
-  let q = buildSubmissionsQuery(recruiterId, undefined, sortBy, order);
+  const { page, pageSize, search, status, sortBy, order, candidateId } = opts;
+  let q = buildSubmissionsQuery(recruiterId, candidateId ?? undefined, sortBy, order);
   if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
   if (search && search.trim()) {
     const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
@@ -133,18 +134,19 @@ export async function fetchSubmissionsByAgency(agencyId: string) {
   return data ?? [];
 }
 
-/** Submissions for an agency: only submissions whose candidate is assigned to this agency. */
+/** Submissions for an agency: only submissions whose candidate is assigned to this agency. Optional candidateId filter. */
 export async function fetchSubmissionsByAgencyPaginated(agencyId: string, opts: SubmissionsPageOpts) {
   const { data: candidateRows } = await supabase.from("candidates").select("id").eq("agency_id", agencyId);
   const candidateIds = (candidateRows || []).map((c: any) => c.id);
   if (candidateIds.length === 0) return { data: [], total: 0 };
-  const { page, pageSize, search, status, sortBy, order } = opts;
+  const { page, pageSize, search, status, sortBy, order, candidateId: filterCandidateId } = opts;
   const col = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
   const asc = order === "asc";
+  const idsToUse = filterCandidateId && candidateIds.includes(filterCandidateId) ? [filterCandidateId] : candidateIds;
   let q = supabase
     .from("submissions")
     .select("*, candidates(first_name, last_name, email)", { count: "exact" })
-    .in("candidate_id", candidateIds)
+    .in("candidate_id", idsToUse)
     .order(col, { ascending: asc });
   if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
   if (search && search.trim()) {

@@ -22,7 +22,7 @@ import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { fetchSubmissionsPaginated, fetchSubmissionsByRecruiterPaginated, fetchSubmissionsByCandidatePaginated, fetchSubmissionsByAgencyPaginated, fetchSubmissionsByTeamLead, updateSubmissionStatus, updateSubmission, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
-import { fetchCandidates, fetchCandidatesByRecruiter, fetchCandidatesBasic } from "../../dbscripts/functions/candidates";
+import { fetchCandidates, fetchCandidatesByRecruiter, fetchCandidatesBasic, fetchCandidatesByTeamLead } from "../../dbscripts/functions/candidates";
 import { uploadScreenCallFile, uploadVendorJobDescription } from "../../dbscripts/functions/storage";
 import { US_STATES } from "@/lib/usStates";
 
@@ -74,6 +74,7 @@ export default function Submissions() {
   const [newJobPortal, setNewJobPortal] = useState("");
   const [newJobLink, setNewJobLink] = useState("");
   const [page, setPage] = useState(1);
+  const [candidateFilter, setCandidateFilter] = useState<string>("all");
 
   const isPaginatedRole = !isTeamLead; // team lead uses fetchSubmissionsByTeamLead + client filter; others use paginated API
   const submissionsQueryFn = async () => {
@@ -86,15 +87,16 @@ export default function Submissions() {
     enabled: isTeamLead && !!profile?.id,
   });
   const { data: submissionsResult, isLoading: loadingPaginated } = useQuery({
-    queryKey: ["submissions", role, user?.id, profile?.linked_candidate_id, profile?.agency_id, page, PAGE_SIZE, search, statusFilter, sortBy, order],
+    queryKey: ["submissions", role, user?.id, profile?.linked_candidate_id, profile?.agency_id, page, PAGE_SIZE, search, statusFilter, sortBy, order, candidateFilter],
     queryFn: async () => {
       if (isCandidate) {
         if (!profile?.linked_candidate_id) return { data: [], total: 0 };
         return fetchSubmissionsByCandidatePaginated(profile.linked_candidate_id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order });
       }
-      if (isAgencyAdmin && profile?.agency_id) return fetchSubmissionsByAgencyPaginated(profile.agency_id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order });
-      if (isRecruiter && user?.id) return fetchSubmissionsByRecruiterPaginated(user.id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order });
-      return fetchSubmissionsPaginated({ page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order });
+      const candidateIdOpt = candidateFilter && candidateFilter !== "all" ? candidateFilter : undefined;
+      if (isAgencyAdmin && profile?.agency_id) return fetchSubmissionsByAgencyPaginated(profile.agency_id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
+      if (isRecruiter && user?.id) return fetchSubmissionsByRecruiterPaginated(user.id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
+      return fetchSubmissionsPaginated({ page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
     },
     enabled: isPaginatedRole && !!user,
   });
@@ -102,26 +104,28 @@ export default function Submissions() {
     const candidateName = `${s.candidates?.first_name || ""} ${s.candidates?.last_name || ""}`.toLowerCase();
     const matchSearch = !search.trim() || s.client_name?.toLowerCase().includes(search.toLowerCase()) || s.position?.toLowerCase().includes(search.toLowerCase()) || candidateName.includes(search.toLowerCase());
     const matchStatus = statusFilter === "all" || s.status === statusFilter;
-    return matchSearch && matchStatus;
+    const matchCandidate = candidateFilter === "all" || !candidateFilter || s.candidate_id === candidateFilter;
+    return matchSearch && matchStatus && matchCandidate;
   });
   const displaySubmissions = isTeamLead ? filteredTL.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : (submissionsResult?.data ?? []);
   const totalCount = isTeamLead ? filteredTL.length : (submissionsResult?.total ?? 0);
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
   const isLoading = isTeamLead ? loadingTL : loadingPaginated;
-  useEffect(() => setPage(1), [search, statusFilter, sortBy, order]);
+  useEffect(() => setPage(1), [search, statusFilter, sortBy, order, candidateFilter]);
 
-  // fetch candidates for Add Application dropdown
+  // fetch candidates for Add Application dropdown and for filter dropdown (admin: all, agency: agency, recruiter: assigned, team lead: under TL)
   const candidatesQueryFn = async () => {
     if (isAdmin || isManager) return fetchCandidates();
     if (isAgencyAdmin && profile?.agency_id) return fetchCandidatesBasic(profile.agency_id);
     if (isRecruiter && user?.id) return fetchCandidatesByRecruiter(user.id);
+    if (isTeamLead && profile?.id) return fetchCandidatesByTeamLead(profile.id);
     return [];
   };
 
   const { data: candidates = [], isLoading: candidatesLoading } = useQuery({
-    queryKey: ["candidates-dropdown", role, user?.id, profile?.agency_id],
+    queryKey: ["candidates-dropdown", role, user?.id, profile?.agency_id, profile?.id],
     queryFn: candidatesQueryFn,
-    enabled: isAdmin || isManager || (isRecruiter && !!user?.id) || (isAgencyAdmin && !!profile?.agency_id),
+    enabled: isAdmin || isManager || (isRecruiter && !!user?.id) || (isAgencyAdmin && !!profile?.agency_id) || (isTeamLead && !!profile?.id),
   });
 
   const updateStatus = useMutation({
@@ -247,6 +251,19 @@ export default function Submissions() {
               ))}
             </SelectContent>
           </Select>
+          {!isCandidate && (
+            <Select value={candidateFilter} onValueChange={setCandidateFilter}>
+              <SelectTrigger className="w-48">
+                <SelectValue placeholder="Candidate" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All candidates</SelectItem>
+                {(candidates || []).filter((c: any) => c && c.id).map((c: any) => (
+                  <SelectItem key={c.id} value={c.id}>{c.first_name} {c.last_name || ""}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           {isPaginatedRole && (
             <>
               <Select value={sortBy} onValueChange={setSortBy}>

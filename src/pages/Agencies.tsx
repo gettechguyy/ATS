@@ -11,11 +11,11 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Building2, Plus, UserPlus } from "lucide-react";
+import { Building2, Plus, UserPlus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Navigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchAgencies, createAgency } from "../../dbscripts/functions/agencies";
+import { fetchAgencies, createAgency, updateAgency } from "../../dbscripts/functions/agencies";
 
 export default function Agencies() {
   const { isAdmin, user, createUser } = useAuth();
@@ -27,6 +27,9 @@ export default function Agencies() {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [adminFullName, setAdminFullName] = useState("");
+  const [editAgencyOpen, setEditAgencyOpen] = useState(false);
+  const [editingAgency, setEditingAgency] = useState<{ id: string; name: string } | null>(null);
+  const [editAgencyName, setEditAgencyName] = useState("");
 
   const { data: agencies = [], isLoading } = useQuery({
     queryKey: ["agencies"],
@@ -85,6 +88,26 @@ export default function Agencies() {
     createAgencyAdminMutation.mutate();
   };
 
+  const updateAgencyMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      await updateAgency(id, { name: name.trim() });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agencies"] });
+      setEditAgencyOpen(false);
+      setEditingAgency(null);
+      setEditAgencyName("");
+      toast.success("Agency name updated");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const handleEditAgency = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAgency?.id || !editAgencyName.trim()) return;
+    updateAgencyMutation.mutate({ id: editingAgency.id, name: editAgencyName.trim() });
+  };
+
   if (!isAdmin) return <Navigate to="/" replace />;
 
   return (
@@ -136,7 +159,7 @@ export default function Agencies() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead className="w-40">Actions</TableHead>
+                  <TableHead className="w-48">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -150,16 +173,29 @@ export default function Agencies() {
                       <TableCell className="font-medium">{a.name}</TableCell>
                       <TableCell className="capitalize text-muted-foreground">{a.type || "out"}</TableCell>
                       <TableCell>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedAgency({ id: a.id, name: a.name });
-                            setCreateAdminOpen(true);
-                          }}
-                        >
-                          <UserPlus className="mr-1 h-4 w-4" /> Create admin
-                        </Button>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setEditingAgency({ id: a.id, name: a.name });
+                              setEditAgencyName(a.name);
+                              setEditAgencyOpen(true);
+                            }}
+                          >
+                            <Pencil className="mr-1 h-4 w-4" /> Edit
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedAgency({ id: a.id, name: a.name });
+                              setCreateAdminOpen(true);
+                            }}
+                          >
+                            <UserPlus className="mr-1 h-4 w-4" /> Create admin
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))
@@ -169,6 +205,26 @@ export default function Agencies() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={editAgencyOpen} onOpenChange={(open) => { setEditAgencyOpen(open); if (!open) { setEditingAgency(null); setEditAgencyName(""); } }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit agency</DialogTitle></DialogHeader>
+          <form onSubmit={handleEditAgency} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Agency Name *</Label>
+              <Input
+                value={editAgencyName}
+                onChange={(e) => setEditAgencyName(e.target.value)}
+                placeholder="Agency name"
+                required
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={updateAgencyMutation.isPending}>
+              {updateAgencyMutation.isPending ? "Saving..." : "Save"}
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={createAdminOpen} onOpenChange={(open) => { setCreateAdminOpen(open); if (!open) setSelectedAgency(null); }}>
         <DialogContent>

@@ -92,6 +92,17 @@ export async function fetchCandidatesBasic(agencyId?: string | null) {
   return data || [];
 }
 
+/** Candidates assigned to this team lead (team_lead_id = profile id). */
+export async function fetchCandidatesByTeamLead(teamLeadProfileId: string) {
+  const { data, error } = await supabase
+    .from("candidates")
+    .select("id, first_name, last_name, email, recruiter_id, team_lead_id, agency_id")
+    .eq("team_lead_id", teamLeadProfileId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return data || [];
+}
+
 const VISA_STATUSES = ["OPT", "H1B", "GC", "Citizen", "Other"] as const;
 
 export async function createCandidate(candidate: {
