@@ -15,7 +15,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, Plus, FileText, Calendar, Pencil, ChevronDown, Download } from "lucide-react";
+import { ArrowLeft, Plus, FileText, Calendar, Pencil, ChevronDown, Download, Eye, EyeOff, ChevronLeft, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useEffect } from "react";
@@ -27,12 +27,13 @@ import { US_STATES } from "@/lib/usStates";
 import { fetchCandidateById, updateCandidateStatus, updateCandidate as updateCandidateFn } from "../../dbscripts/functions/candidates";
 import { fetchEducationsByCandidate, createEducation, deleteEducation } from "../../dbscripts/functions/educations";
 import { fetchExperiencesByCandidate, createExperience, deleteExperience } from "../../dbscripts/functions/experiences";
-import { fetchSubmissionsByCandidate, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
+import { fetchSubmissionsByCandidatePaginated, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
 import { fetchProfileName, fetchProfilesBySelect, fetchProfilesByRole } from "../../dbscripts/functions/profiles";
 import { fetchAllUserRoles } from "../../dbscripts/functions/userRoles";
 import { fetchAgencies } from "../../dbscripts/functions/agencies";
 
 const CANDIDATE_STATUSES = ["New", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
+const APPLICATIONS_PAGE_SIZE = 10;
 const VISA_STATUSES = ["CPT", "OPT", "STEM OPT", "H1-B", "H4-EAD", "GC-EAD", "Green Card", "US Citizen", "Other"] as const;
 
 const MASK = "*******";
@@ -75,11 +76,15 @@ export default function CandidateDetail() {
   const [marketingOther, setMarketingOther] = useState("");
   const [marketingSubmittedLocal, setMarketingSubmittedLocal] = useState(false);
   const [marketingSubmitting, setMarketingSubmitting] = useState(false);
+  const [showGmailPass, setShowGmailPass] = useState(false);
+  const [showLinkedInPass, setShowLinkedInPass] = useState(false);
+  const [showGoVoicePass, setShowGoVoicePass] = useState(false);
   // collapse states for sections
   const [profOpen, setProfOpen] = useState(false);
   const [eduOpen, setEduOpen] = useState(false);
   const [expOpen, setExpOpen] = useState(false);
   const [marketingOpen, setMarketingOpen] = useState(false);
+  const [applicationsPage, setApplicationsPage] = useState(1);
 
   const isOwnProfile = isCandidate && profile?.linked_candidate_id === id;
   if (isCandidate && !isOwnProfile) return <Navigate to="/" replace />;
@@ -133,11 +138,15 @@ export default function CandidateDetail() {
     }
   }, [candidate?.visa_status]);
 
-  const { data: submissions } = useQuery({
-    queryKey: ["candidate-submissions", id],
-    queryFn: () => fetchSubmissionsByCandidate(id!),
+  const { data: submissionsResult } = useQuery({
+    queryKey: ["candidate-submissions", id, applicationsPage, APPLICATIONS_PAGE_SIZE],
+    queryFn: () => fetchSubmissionsByCandidatePaginated(id!, { page: applicationsPage, pageSize: APPLICATIONS_PAGE_SIZE }),
     enabled: !!id,
   });
+  const submissions = submissionsResult?.data ?? [];
+  const submissionsTotal = submissionsResult?.total ?? 0;
+  const applicationsTotalPages = Math.max(1, Math.ceil(submissionsTotal / APPLICATIONS_PAGE_SIZE));
+  useEffect(() => setApplicationsPage(1), [id]);
   const { data: educations } = useQuery({
     queryKey: ["candidate-educations", id],
     queryFn: () => fetchEducationsByCandidate(id!),
@@ -499,7 +508,7 @@ export default function CandidateDetail() {
         <Card className="lg:col-span-2">
           <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle className="flex items-center gap-2 text-base">
-              <FileText className="h-4 w-4" /> Applications ({submissions?.length || 0})
+              <FileText className="h-4 w-4" /> Applications ({submissionsTotal})
             </CardTitle>
             {(isAdmin || isRecruiter) && (
             <Dialog open={subDialogOpen} onOpenChange={setSubDialogOpen}>
@@ -599,6 +608,31 @@ export default function CandidateDetail() {
                 )}
               </TableBody>
             </Table>
+            {submissionsTotal > 0 && (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
+                <p className="text-sm text-muted-foreground">
+                  Showing {(applicationsPage - 1) * APPLICATIONS_PAGE_SIZE + 1}–{Math.min(applicationsPage * APPLICATIONS_PAGE_SIZE, submissionsTotal)} of {submissionsTotal}
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setApplicationsPage((p) => Math.max(1, p - 1))} disabled={applicationsPage <= 1}>
+                    <ChevronLeft className="h-4 w-4" /> Previous
+                  </Button>
+                  <Select value={String(applicationsPage)} onValueChange={(v) => setApplicationsPage(Number(v))}>
+                    <SelectTrigger className="w-[7rem] h-8">
+                      <SelectValue>Page {applicationsPage} of {applicationsTotalPages}</SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Array.from({ length: applicationsTotalPages }, (_, i) => i + 1).map((p) => (
+                        <SelectItem key={p} value={String(p)}>Page {p}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button variant="outline" size="sm" onClick={() => setApplicationsPage((p) => Math.min(applicationsTotalPages, p + 1))} disabled={applicationsPage >= applicationsTotalPages}>
+                    Next <ChevronRight className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
         {/* Professional Details */}
@@ -844,7 +878,19 @@ export default function CandidateDetail() {
                 </div>
                 <div className="space-y-2">
                   <Label>GMail Password</Label>
-                  {(isOwnProfile || isAdmin || isManager) ? <Input type="password" value={marketingGmailPass} onChange={(e) => setMarketingGmailPass(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} /> : ((isAdmin || isManager) ? <div className="text-sm">{marketingGmailPass || "—"}</div> : null)}
+                  {(isOwnProfile || isAdmin || isManager) ? (
+                    <div className="relative">
+                      <Input type={showGmailPass ? "text" : "password"} value={marketingGmailPass} onChange={(e) => setMarketingGmailPass(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} className="pr-9" />
+                      <button type="button" onClick={() => setShowGmailPass((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label={showGmailPass ? "Hide password" : "Show password"}>
+                        {showGmailPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  ) : isRecruiter ? (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className={showGmailPass ? "" : "font-mono"}>{showGmailPass ? (marketingGmailPass || "—") : (marketingGmailPass ? "••••••••" : "—")}</span>
+                      <button type="button" onClick={() => setShowGmailPass((v) => !v)} className="text-muted-foreground hover:text-foreground shrink-0" aria-label={showGmailPass ? "Hide password" : "Show password"}>{showGmailPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                    </div>
+                  ) : (isAdmin || isManager) ? <div className="text-sm">{marketingGmailPass || "—"}</div> : null}
                 </div>
                 <div className="space-y-2">
                   <Label>LinkedIn</Label>
@@ -852,7 +898,19 @@ export default function CandidateDetail() {
                 </div>
                 <div className="space-y-2">
                   <Label>LinkedIn Password</Label>
-                  {(isOwnProfile || isAdmin || isManager) ? <Input type="password" value={marketingLinkedInPass} onChange={(e) => setMarketingLinkedInPass(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} /> : ((isAdmin || isManager) ? <div className="text-sm">{marketingLinkedInPass || "—"}</div> : null)}
+                  {(isOwnProfile || isAdmin || isManager) ? (
+                    <div className="relative">
+                      <Input type={showLinkedInPass ? "text" : "password"} value={marketingLinkedInPass} onChange={(e) => setMarketingLinkedInPass(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} className="pr-9" />
+                      <button type="button" onClick={() => setShowLinkedInPass((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label={showLinkedInPass ? "Hide password" : "Show password"}>
+                        {showLinkedInPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  ) : isRecruiter ? (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className={showLinkedInPass ? "" : "font-mono"}>{showLinkedInPass ? (marketingLinkedInPass || "—") : (marketingLinkedInPass ? "••••••••" : "—")}</span>
+                      <button type="button" onClick={() => setShowLinkedInPass((v) => !v)} className="text-muted-foreground hover:text-foreground shrink-0" aria-label={showLinkedInPass ? "Hide password" : "Show password"}>{showLinkedInPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                    </div>
+                  ) : (isAdmin || isManager) ? <div className="text-sm">{marketingLinkedInPass || "—"}</div> : null}
                 </div>
                 <div className="space-y-2">
                   <Label>GoVoice</Label>
@@ -860,7 +918,19 @@ export default function CandidateDetail() {
                 </div>
                 <div className="space-y-2">
                   <Label>GoVoice Password</Label>
-                  {(isOwnProfile || isAdmin || isManager) ? <Input type="password" value={marketingGoVoicePass} onChange={(e) => setMarketingGoVoicePass(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} /> : ((isAdmin || isManager) ? <div className="text-sm">{marketingGoVoicePass || "—"}</div> : null)}
+                  {(isOwnProfile || isAdmin || isManager) ? (
+                    <div className="relative">
+                      <Input type={showGoVoicePass ? "text" : "password"} value={marketingGoVoicePass} onChange={(e) => setMarketingGoVoicePass(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} className="pr-9" />
+                      <button type="button" onClick={() => setShowGoVoicePass((v) => !v)} className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground" aria-label={showGoVoicePass ? "Hide password" : "Show password"}>
+                        {showGoVoicePass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  ) : isRecruiter ? (
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className={showGoVoicePass ? "" : "font-mono"}>{showGoVoicePass ? (marketingGoVoicePass || "—") : (marketingGoVoicePass ? "••••••••" : "—")}</span>
+                      <button type="button" onClick={() => setShowGoVoicePass((v) => !v)} className="text-muted-foreground hover:text-foreground shrink-0" aria-label={showGoVoicePass ? "Hide password" : "Show password"}>{showGoVoicePass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                    </div>
+                  ) : (isAdmin || isManager) ? <div className="text-sm">{marketingGoVoicePass || "—"}</div> : null}
                 </div>
                 <div className="space-y-2 col-span-2">
                   <Label>Other Marketing Notes</Label>
