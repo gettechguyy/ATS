@@ -471,6 +471,23 @@ export type Database = {
         Args: { p_token: string; p_password: string }
         Returns: Json
       }
+      update_app_user_password: {
+        Args: {
+          p_admin_user_id: string
+          p_target_user_id: string
+          p_password: string
+        }
+        Returns: Json
+      }
+      update_app_user_details: {
+        Args: {
+          p_admin_user_id: string
+          p_target_user_id: string
+          p_full_name?: string
+          p_email?: string
+        }
+        Returns: Json
+      }
     }
     Enums: {
       app_role: "admin" | "recruiter" | "candidate" | "manager" | "team_lead" | "agency_admin"

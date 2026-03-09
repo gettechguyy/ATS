@@ -117,3 +117,25 @@ export async function updateAppUserPassword(
   if (error) return { data: null, error: error as Error };
   return { data: data ?? null, error: null };
 }
+
+export async function updateAppUserDetails(
+  adminUserId: string,
+  targetUserId: string,
+  details: { fullName?: string; email?: string }
+): Promise<{ data: unknown | null; error: Error | null }> {
+  if (!adminUserId || !targetUserId) {
+    return { data: null, error: new Error("adminUserId and targetUserId required") };
+  }
+  const args: { p_admin_user_id: string; p_target_user_id: string; p_full_name?: string; p_email?: string } = {
+    p_admin_user_id: adminUserId,
+    p_target_user_id: targetUserId,
+  };
+  if (details.fullName != null && details.fullName.trim() !== "") args.p_full_name = details.fullName.trim();
+  if (details.email != null && details.email.trim() !== "") args.p_email = details.email.trim().toLowerCase();
+  if (!args.p_full_name && !args.p_email) {
+    return { data: null, error: new Error("Provide at least fullName or email to update") };
+  }
+  const { data, error } = await supabase.rpc("update_app_user_details", args);
+  if (error) return { data: null, error: error as Error };
+  return { data: data ?? null, error: null };
+}

@@ -19,7 +19,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Users, Shield, Plus, Trash2 } from "lucide-react";
+import { Users, Shield, Plus, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Navigate } from "react-router-dom";
@@ -29,7 +29,7 @@ import { fetchAllProfiles, fetchProfilesByAgency, updateProfile } from "../../db
 import { fetchAllUserRoles, updateUserRole, insertUserRole } from "../../dbscripts/functions/userRoles";
 import { fetchCandidatesBasic, updateCandidate } from "../../dbscripts/functions/candidates";
 import { fetchAgencies } from "../../dbscripts/functions/agencies";
-import { updateAppUserPassword } from "@/lib/authApi";
+import { updateAppUserPassword, updateAppUserDetails } from "@/lib/authApi";
 
 const ROLES = ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] as const;
 
@@ -146,6 +146,10 @@ export default function UserManagement() {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [passwordTargetUser, setPasswordTargetUser] = useState<any | null>(null);
   const [newPassword, setNewPassword] = useState("");
+  const [editDetailsDialogOpen, setEditDetailsDialogOpen] = useState(false);
+  const [editDetailsTargetUser, setEditDetailsTargetUser] = useState<any | null>(null);
+  const [editFullName, setEditFullName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
 
   const assignCandidatesMutation = useMutation({
     mutationFn: async ({ userId, candidateIds }: { userId: string; candidateIds: string[] }) => {
@@ -175,6 +179,21 @@ export default function UserManagement() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
       toast.success("User status updated");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const updateDetailsMutation = useMutation({
+    mutationFn: async ({ targetUserId, fullName, email }: { targetUserId: string; fullName?: string; email?: string }) => {
+      if (!user?.id) throw new Error("Not authenticated");
+      const { error } = await updateAppUserDetails(user.id, targetUserId, { fullName, email });
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+      toast.success("User details updated");
+      setEditDetailsDialogOpen(false);
+      setEditDetailsTargetUser(null);
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -331,7 +350,7 @@ export default function UserManagement() {
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Linked Candidate</TableHead>
-                  <TableHead>Change Password</TableHead>
+                  <TableHead>Edit / Password</TableHead>
                   <TableHead>Active</TableHead>
                   <TableHead>Joined</TableHead>
                 </TableRow>
@@ -410,7 +429,15 @@ export default function UserManagement() {
                       </TableCell>
                       <TableCell>
                         {(isAdmin || isManager || isTeamLead || isAgencyAdmin) && (
-                          <div className="mt-1">
+                          <div className="flex flex-wrap gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => {
+                              setEditDetailsTargetUser(u);
+                              setEditFullName(u.full_name ?? "");
+                              setEditEmail(u.email ?? "");
+                              setEditDetailsDialogOpen(true);
+                            }}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
                             <Button size="sm" variant="ghost" onClick={() => { setPasswordTargetUser(u); setNewPassword(""); setPasswordDialogOpen(true); }}>
                               Change Password
                             </Button>
@@ -485,6 +512,37 @@ export default function UserManagement() {
                 if (!passwordTargetUser) return;
                 passwordMutation.mutate({ targetUserId: passwordTargetUser.user_id || passwordTargetUser.id, password: newPassword });
               }}>{passwordMutation.isPending ? "Saving..." : "Save"}</Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {/* Edit user details Dialog */}
+      <Dialog open={editDetailsDialogOpen} onOpenChange={(open) => {
+        setEditDetailsDialogOpen(open);
+        if (!open) setEditDetailsTargetUser(null);
+      }}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Edit user: {editDetailsTargetUser?.full_name}</DialogTitle></DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Full Name</Label>
+              <Input value={editFullName} onChange={(e) => setEditFullName(e.target.value)} placeholder="Full name" />
+            </div>
+            <div className="space-y-2">
+              <Label>Email</Label>
+              <Input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="Email" />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => { setEditDetailsDialogOpen(false); setEditDetailsTargetUser(null); }}>Cancel</Button>
+              <Button disabled={updateDetailsMutation.isPending || (!editFullName.trim() && !editEmail.trim())} onClick={() => {
+                if (!editDetailsTargetUser) return;
+                const targetUserId = editDetailsTargetUser.user_id || editDetailsTargetUser.id;
+                updateDetailsMutation.mutate({
+                  targetUserId,
+                  fullName: editFullName.trim() || undefined,
+                  email: editEmail.trim() || undefined,
+                });
+              }}>{updateDetailsMutation.isPending ? "Saving..." : "Save"}</Button>
             </div>
           </div>
         </DialogContent>

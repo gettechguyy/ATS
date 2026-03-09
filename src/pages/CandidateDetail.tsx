@@ -689,8 +689,7 @@ export default function CandidateDetail() {
               {(isOwnProfile || isAdmin) && (
                 <div className="flex gap-2">
                   <Button onClick={async () => {
-                    // Validate mandatory professional fields
-                    if (!degree || degree === "") { toast.error("Degree is required"); return; }
+                    // Validate mandatory professional fields (degree is optional; add via Education section if needed)
                     if (!technology || technology.trim() === "") { toast.error("Technology is required"); return; }
                     if (experienceYears === "" || experienceYears === null) { toast.error("Experience (years) is required"); return; }
                     if (!primarySkills || primarySkills.trim() === "") { toast.error("Primary skills are required"); return; }
@@ -841,33 +840,58 @@ export default function CandidateDetail() {
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>GMail</Label>
-                  {isOwnProfile ? <Input value={marketingGmail} onChange={(e) => setMarketingGmail(e.target.value)} disabled={marketingSubmittedLocal} /> : ((isAdmin || isManager || isRecruiter) ? <div className="text-sm">{marketingGmail || "—"}</div> : null)}
+                  {(isOwnProfile || isAdmin || isManager) ? <Input value={marketingGmail} onChange={(e) => setMarketingGmail(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} /> : ((isRecruiter) ? <div className="text-sm">{marketingGmail || "—"}</div> : null)}
                 </div>
                 <div className="space-y-2">
                   <Label>GMail Password</Label>
-                  {isOwnProfile ? <Input value={marketingGmailPass} onChange={(e) => setMarketingGmailPass(e.target.value)} disabled={marketingSubmittedLocal} /> : ((isAdmin || isManager) ? <div className="text-sm">{marketingGmailPass || "—"}</div> : null)}
+                  {(isOwnProfile || isAdmin || isManager) ? <Input type="password" value={marketingGmailPass} onChange={(e) => setMarketingGmailPass(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} /> : ((isAdmin || isManager) ? <div className="text-sm">{marketingGmailPass || "—"}</div> : null)}
                 </div>
                 <div className="space-y-2">
                   <Label>LinkedIn</Label>
-                  {isOwnProfile ? <Input value={marketingLinkedIn} onChange={(e) => setMarketingLinkedIn(e.target.value)} disabled={marketingSubmittedLocal} /> : ((isAdmin || isManager || isRecruiter) ? <div className="text-sm">{marketingLinkedIn || "—"}</div> : null)}
+                  {(isOwnProfile || isAdmin || isManager) ? <Input value={marketingLinkedIn} onChange={(e) => setMarketingLinkedIn(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} /> : ((isRecruiter) ? <div className="text-sm">{marketingLinkedIn || "—"}</div> : null)}
                 </div>
                 <div className="space-y-2">
                   <Label>LinkedIn Password</Label>
-                  {isOwnProfile ? <Input value={marketingLinkedInPass} onChange={(e) => setMarketingLinkedInPass(e.target.value)} disabled={marketingSubmittedLocal} /> : ((isAdmin || isManager) ? <div className="text-sm">{marketingLinkedInPass || "—"}</div> : null)}
+                  {(isOwnProfile || isAdmin || isManager) ? <Input type="password" value={marketingLinkedInPass} onChange={(e) => setMarketingLinkedInPass(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} /> : ((isAdmin || isManager) ? <div className="text-sm">{marketingLinkedInPass || "—"}</div> : null)}
                 </div>
                 <div className="space-y-2">
                   <Label>GoVoice</Label>
-                  {isOwnProfile ? <Input value={marketingGoVoice} onChange={(e) => setMarketingGoVoice(e.target.value)} disabled={marketingSubmittedLocal} /> : ((isAdmin || isManager || isRecruiter) ? <div className="text-sm">{marketingGoVoice || "—"}</div> : null)}
+                  {(isOwnProfile || isAdmin || isManager) ? <Input value={marketingGoVoice} onChange={(e) => setMarketingGoVoice(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} /> : ((isRecruiter) ? <div className="text-sm">{marketingGoVoice || "—"}</div> : null)}
                 </div>
                 <div className="space-y-2">
                   <Label>GoVoice Password</Label>
-                  {isOwnProfile ? <Input value={marketingGoVoicePass} onChange={(e) => setMarketingGoVoicePass(e.target.value)} disabled={marketingSubmittedLocal} /> : ((isAdmin || isManager) ? <div className="text-sm">{marketingGoVoicePass || "—"}</div> : null)}
+                  {(isOwnProfile || isAdmin || isManager) ? <Input type="password" value={marketingGoVoicePass} onChange={(e) => setMarketingGoVoicePass(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} /> : ((isAdmin || isManager) ? <div className="text-sm">{marketingGoVoicePass || "—"}</div> : null)}
                 </div>
                 <div className="space-y-2 col-span-2">
                   <Label>Other Marketing Notes</Label>
-                  {isOwnProfile ? <Textarea value={marketingOther} onChange={(e) => setMarketingOther(e.target.value)} disabled={marketingSubmittedLocal} /> : ((isAdmin || isManager || isRecruiter) ? <div className="text-sm whitespace-pre-wrap">{marketingOther || "—"}</div> : null)}
+                  {(isOwnProfile || isAdmin || isManager) ? <Textarea value={marketingOther} onChange={(e) => setMarketingOther(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} /> : ((isRecruiter) ? <div className="text-sm whitespace-pre-wrap">{marketingOther || "—"}</div> : null)}
                 </div>
               </div>
+              {(isAdmin || isManager) && !isOwnProfile && (
+                <div className="flex gap-2">
+                  <Button
+                    disabled={updateCandidate.isPending}
+                    onClick={async () => {
+                      try {
+                        await updateCandidate.mutateAsync({
+                          marketing_gmail: marketingGmail || null,
+                          marketing_gmail_pass: marketingGmailPass || null,
+                          marketing_linkedin: marketingLinkedIn || null,
+                          marketing_linkedin_pass: marketingLinkedInPass || null,
+                          marketing_govoice: marketingGoVoice || null,
+                          marketing_govoice_pass: marketingGoVoicePass || null,
+                          marketing_other: marketingOther || null,
+                        });
+                        toast.success("Marketing details saved.");
+                      } catch {
+                        toast.error("Failed to save marketing details");
+                      }
+                    }}
+                  >
+                    {updateCandidate.isPending ? "Saving..." : "Save Marketing Details"}
+                  </Button>
+                </div>
+              )}
               {isOwnProfile && !marketingSubmittedLocal && (
                 <div className="flex gap-2">
                   <Button
