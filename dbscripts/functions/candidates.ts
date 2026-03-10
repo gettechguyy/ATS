@@ -86,7 +86,7 @@ export async function fetchCandidateById(id: string) {
 export async function fetchCandidatesBasic(agencyId?: string | null) {
   let q = supabase
     .from("candidates")
-    .select("id, first_name, last_name, email, recruiter_id, team_lead_id, agency_id");
+    .select("id, first_name, last_name, email, recruiter_id, team_lead_id, agency_id, technology");
   if (agencyId != null) q = q.eq("agency_id", agencyId);
   const { data } = await q;
   return data || [];

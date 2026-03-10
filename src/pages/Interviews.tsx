@@ -10,7 +10,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { Eye, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchAllInterviewsPaginated, fetchInterviewsByCandidatePaginated, fetchInterviewsByRecruiterPaginated, fetchInterviewsByAgencyPaginated } from "../../dbscripts/functions/interviews";
@@ -48,30 +48,6 @@ export default function Interviews() {
         <p className="text-sm text-muted-foreground">{isCandidate ? "Your scheduled interviews" : "All scheduled interviews"}</p>
       </div>
 
-      <Card className="mb-4">
-        <CardContent className="flex flex-wrap items-center gap-3 p-4">
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-44">
-              <SelectValue placeholder="Sort by" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="scheduled_at">Scheduled date</SelectItem>
-              <SelectItem value="round_number">Round</SelectItem>
-              <SelectItem value="created_at">Date added</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={order} onValueChange={(v) => setOrder(v as "asc" | "desc")}>
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="desc">Newest first</SelectItem>
-              <SelectItem value="asc">Oldest first</SelectItem>
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
@@ -85,8 +61,16 @@ export default function Interviews() {
                   <TableHead>Candidate</TableHead>
                   <TableHead>Client</TableHead>
                   <TableHead>Position</TableHead>
-                  <TableHead>Round</TableHead>
-                  <TableHead>Date/Time</TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("round_number"); setOrder(sortBy === "round_number" ? (order === "asc" ? "desc" : "asc") : "desc"); }}>
+                      Round {sortBy === "round_number" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("scheduled_at"); setOrder(sortBy === "scheduled_at" ? (order === "asc" ? "desc" : "asc") : "desc"); }}>
+                      Date/Time {sortBy === "scheduled_at" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                    </button>
+                  </TableHead>
                   <TableHead>Mode</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead className="w-12"></TableHead>

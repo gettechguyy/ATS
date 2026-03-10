@@ -17,7 +17,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Search, Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { Search, Eye, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -264,30 +264,6 @@ export default function Submissions() {
               </SelectContent>
             </Select>
           )}
-          {isPaginatedRole && (
-            <>
-              <Select value={sortBy} onValueChange={setSortBy}>
-                <SelectTrigger className="w-40">
-                  <SelectValue placeholder="Sort by" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="created_at">Date</SelectItem>
-                  <SelectItem value="client_name">Client</SelectItem>
-                  <SelectItem value="position">Position</SelectItem>
-                  <SelectItem value="status">Status</SelectItem>
-                </SelectContent>
-              </Select>
-              <Select value={order} onValueChange={(v) => setOrder(v as "asc" | "desc")}>
-                <SelectTrigger className="w-36">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="desc">Newest first</SelectItem>
-                  <SelectItem value="asc">Oldest first</SelectItem>
-                </SelectContent>
-              </Select>
-            </>
-          )}
         </CardContent>
       </Card>
 
@@ -304,19 +280,43 @@ export default function Submissions() {
               <TableHeader>
                 <TableRow>
                   {!isCandidate && <TableHead>Candidate</TableHead>}
-                  <TableHead>Client</TableHead>
-                  <TableHead>Position</TableHead>
+                  <TableHead>
+                    {isPaginatedRole ? (
+                      <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("client_name"); setOrder(sortBy === "client_name" ? (order === "asc" ? "desc" : "asc") : "asc"); }}>
+                        Client {sortBy === "client_name" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                      </button>
+                    ) : "Client"}
+                  </TableHead>
+                  <TableHead>
+                    {isPaginatedRole ? (
+                      <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("position"); setOrder(sortBy === "position" ? (order === "asc" ? "desc" : "asc") : "asc"); }}>
+                        Position {sortBy === "position" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                      </button>
+                    ) : "Position"}
+                  </TableHead>
                   {isCandidate ? (
                     <>
                       <TableHead>Job Type</TableHead>
                       <TableHead>Location</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Date</TableHead>
+                      <TableHead>
+                        {isPaginatedRole ? (
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("created_at"); setOrder(sortBy === "created_at" ? (order === "asc" ? "desc" : "asc") : "desc"); }}>
+                            Date {sortBy === "created_at" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                          </button>
+                        ) : "Date"}
+                      </TableHead>
                     </>
                   ) : (
                     <>
                       <TableHead>Status</TableHead>
-                      <TableHead>Date</TableHead>
+                      <TableHead>
+                        {isPaginatedRole ? (
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("created_at"); setOrder(sortBy === "created_at" ? (order === "asc" ? "desc" : "asc") : "desc"); }}>
+                            Date {sortBy === "created_at" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                          </button>
+                        ) : "Date"}
+                      </TableHead>
                       <TableHead className="w-12"></TableHead>
                     </>
                   )}

@@ -19,7 +19,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent } from "@/components/ui/card";
-import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from "lucide-react";
 import { toast } from "sonner";
 import { Link, Navigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -269,27 +269,6 @@ export default function Candidates() {
               ))}
             </SelectContent>
           </Select>
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-40">
-              <SelectValue placeholder="Sort by" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="first_name">First name</SelectItem>
-              <SelectItem value="last_name">Last name</SelectItem>
-              <SelectItem value="email">Email</SelectItem>
-              <SelectItem value="created_at">Date added</SelectItem>
-              <SelectItem value="status">Status</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={order} onValueChange={(v) => setOrder(v as "asc" | "desc")}>
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="desc">Newest first</SelectItem>
-              <SelectItem value="asc">Oldest first</SelectItem>
-            </SelectContent>
-          </Select>
         </CardContent>
       </Card>
 
@@ -303,8 +282,16 @@ export default function Candidates() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("first_name"); setOrder(sortBy === "first_name" ? (order === "asc" ? "desc" : "asc") : "asc"); }}>
+                      Name {sortBy === "first_name" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("email"); setOrder(sortBy === "email" ? (order === "asc" ? "desc" : "asc") : "asc"); }}>
+                      Email {sortBy === "email" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                    </button>
+                  </TableHead>
                   <TableHead>Phone</TableHead>
                   <TableHead>Visa Status</TableHead>
                   <TableHead>Status</TableHead>

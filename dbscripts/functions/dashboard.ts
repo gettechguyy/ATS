@@ -8,6 +8,10 @@ export type DashboardStatsOptions = {
   // Optional date range (inclusive). Can be Date or ISO string.
   startDate?: string | Date | null;
   endDate?: string | Date | null;
+  // Optional filters for admin / agency_admin dashboard.
+  filterCandidateId?: string | null;
+  filterTechnology?: string | null;
+  filterRecruiterId?: string | null;
 };
 
 export async function fetchDashboardStats(options?: DashboardStatsOptions) {
@@ -78,6 +82,14 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
   if (isAgencyScoped) {
     candidatesQuery = candidatesQuery.eq("agency_id", agencyId!);
   }
+
+  const filterCandidateId = options?.filterCandidateId ?? null;
+  const filterTechnology = options?.filterTechnology ?? null;
+  const filterRecruiterId = options?.filterRecruiterId ?? null;
+  const hasFilter = !!(filterCandidateId || filterTechnology || filterRecruiterId);
+  if (filterCandidateId) candidatesQuery = candidatesQuery.eq("id", filterCandidateId);
+  if (filterRecruiterId) candidatesQuery = candidatesQuery.eq("recruiter_id", filterRecruiterId);
+  if (filterTechnology) candidatesQuery = (candidatesQuery as any).eq("technology", filterTechnology);
 
   let c: any[];
   let s: any[];
@@ -169,16 +181,47 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
     }
     c = (await supabase.from("candidates").select("id, status, recruiter_id").in("id", candidateIds)).data || [];
   } else {
-    const [candidatesRes, submissionsRes, interviewsRes, offersRes] = await Promise.all([
-      candidatesQuery,
-      submissionsQuery,
-      interviewsQuery,
-      offersQuery,
-    ]);
-    c = candidatesRes.data || [];
-    s = submissionsRes.data || [];
-    i = interviewsRes.data || [];
-    o = offersRes.data || [];
+    if (hasFilter) {
+      const candidatesRes = await candidatesQuery;
+      c = candidatesRes.data || [];
+      const candidateIds = c.map((x: any) => x.id);
+      if (filterCandidateId || filterTechnology) {
+        if (candidateIds.length === 0) {
+          s = [];
+          i = [];
+          o = [];
+        } else {
+          const [submissionsRes, interviewsRes, offersRes] = await Promise.all([
+            submissionsQuery.in("candidate_id", candidateIds),
+            interviewsQuery.in("candidate_id", candidateIds),
+            offersQuery.in("candidate_id", candidateIds),
+          ]);
+          s = submissionsRes.data || [];
+          i = interviewsRes.data || [];
+          o = offersRes.data || [];
+        }
+      } else {
+        const [submissionsRes, interviewsRes, offersRes] = await Promise.all([
+          submissionsQuery.eq("recruiter_id", filterRecruiterId!),
+          interviewsQuery.eq("created_by", filterRecruiterId!),
+          offersQuery.eq("created_by", filterRecruiterId!),
+        ]);
+        s = submissionsRes.data || [];
+        i = interviewsRes.data || [];
+        o = offersRes.data || [];
+      }
+    } else {
+      const [candidatesRes, submissionsRes, interviewsRes, offersRes] = await Promise.all([
+        candidatesQuery,
+        submissionsQuery,
+        interviewsQuery,
+        offersQuery,
+      ]);
+      c = candidatesRes.data || [];
+      s = submissionsRes.data || [];
+      i = interviewsRes.data || [];
+      o = offersRes.data || [];
+    }
   }
   }
 

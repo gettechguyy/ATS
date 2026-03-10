@@ -35,6 +35,7 @@ import { fetchAgencies } from "../../dbscripts/functions/agencies";
 const CANDIDATE_STATUSES = ["New", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
 const APPLICATIONS_PAGE_SIZE = 10;
 const VISA_STATUSES = ["CPT", "OPT", "STEM OPT", "H1-B", "H4-EAD", "GC-EAD", "Green Card", "US Citizen", "Other"] as const;
+const GENDER_OPTIONS = ["Male", "Female", "Non-binary", "Prefer not to say", "Other"] as const;
 
 const MASK = "*******";
 
@@ -49,6 +50,7 @@ export default function CandidateDetail() {
   const [editCity, setEditCity] = useState("");
   const [editState, setEditState] = useState("");
   const [editZip, setEditZip] = useState("");
+  const [editGender, setEditGender] = useState("");
   // Education / professional / marketing local state
   const [degree, setDegree] = useState("");
   const [institution, setInstitution] = useState("");
@@ -107,6 +109,7 @@ export default function CandidateDetail() {
       setEditCity((candidate as any).city || "");
       setEditState((candidate as any).state || "");
       setEditZip((candidate as any).zip || "");
+      setEditGender((candidate as any).gender || "");
     }
     if (candidate) {
       setDegree((candidate as any).degree || "");
@@ -326,6 +329,7 @@ export default function CandidateDetail() {
                           email: (fd.get("email") as string) || null,
                           phone: (fd.get("phone") as string) || null,
                           visa_status: editVisa,
+                          gender: editGender || null,
                           city: editCity || null,
                           state: editState || null,
                           zip: editZip || null,
@@ -350,6 +354,18 @@ export default function CandidateDetail() {
                         <Label>Phone</Label>
                         <Input name="phone" defaultValue={candidate.phone || ""} />
                       </div>
+                    <div className="space-y-2">
+                      <Label>Gender</Label>
+                      <Select value={editGender || "none"} onValueChange={(v) => setEditGender(v === "none" ? "" : v)}>
+                        <SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">—</SelectItem>
+                          {GENDER_OPTIONS.map((g) => (
+                            <SelectItem key={g} value={g}>{g}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
                     <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label>City</Label>
@@ -406,6 +422,35 @@ export default function CandidateDetail() {
                 {Boolean(candidate.email) && <div><span className="text-muted-foreground">Email:</span> {displayEmail}</div>}
                 {Boolean(candidate.phone) && <div><span className="text-muted-foreground">Phone:</span> {displayPhone}</div>}
               </>
+            )}
+            {showVisaStatus && (
+              <div className="flex items-center gap-2">
+                <span className="text-muted-foreground">Gender:</span>
+                {(isOwnProfile || (isAdmin && !isAgencyAdmin)) ? (
+                  <Select
+                    value={editGender || "none"}
+                    onValueChange={async (v) => {
+                      const val = v === "none" ? "" : v;
+                      setEditGender(val);
+                      try {
+                        await updateCandidate.mutateAsync({ gender: val || null });
+                      } catch {
+                        /* handled by mutation */
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-7 w-[180px]"><SelectValue placeholder="Select gender" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">—</SelectItem>
+                      {GENDER_OPTIONS.map((g) => (
+                        <SelectItem key={g} value={g}>{g}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <span>{(candidate as any).gender || "—"}</span>
+                )}
+              </div>
             )}
             {canAssignRecruiter && recruiters && (
               <div className="space-y-1">
@@ -647,7 +692,7 @@ export default function CandidateDetail() {
             <div style={{ maxHeight: profOpen ? '2000px' : '0px', overflow: 'hidden', transition: 'max-height 320ms ease' }}>
               <CardContent className="space-y-4">
               {/* Resume & Cover Letter Upload */}
-              <div className="flex gap-4 items-center">
+              <div className="flex gap-4 items-center flex-wrap">
                 <div><span className="text-muted-foreground">Resume:</span></div>
                 <div>
                   {(isOwnProfile || isAdmin) ? (
@@ -656,9 +701,14 @@ export default function CandidateDetail() {
                       currentUrl={candidate.resume_url}
                       onUploaded={(url: string) => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
                     />
-                  ) : ((isAdmin || isManager || isRecruiter || isOwnProfile) ? (
-                    candidate.resume_url ? <a href={candidate.resume_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-xs text-info underline">View Resume</a> : <span className="ml-2 text-xs text-muted-foreground">—</span>
-                  ) : <span className="ml-2 text-xs text-muted-foreground">—</span>)}
+                  ) : (isAdmin || isManager || isRecruiter || isAgencyAdmin || isOwnProfile) ? (
+                    candidate.resume_url ? (
+                      <span className="ml-2 inline-flex items-center gap-2">
+                        <a href={candidate.resume_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View Resume</a>
+                        <a href={candidate.resume_url} target="_blank" rel="noopener noreferrer" download className="text-muted-foreground hover:text-foreground" title="Download resume" aria-label="Download resume"><Download className="h-4 w-4" /></a>
+                      </span>
+                    ) : <span className="ml-2 text-xs text-muted-foreground">—</span>
+                  ) : <span className="ml-2 text-xs text-muted-foreground">—</span>}
                 </div>
                 <div className="ml-6"><span className="text-muted-foreground">Cover Letter:</span></div>
                 <div>
@@ -668,9 +718,14 @@ export default function CandidateDetail() {
                       currentUrl={(candidate as any).cover_letter_url || null}
                       onUploaded={(url: string) => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
                     />
-                  ) : ((isAdmin || isManager || isRecruiter || isOwnProfile) ? (
-                    (candidate as any).cover_letter_url ? <a href={(candidate as any).cover_letter_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-xs text-info underline">View Cover Letter</a> : <span className="ml-2 text-xs text-muted-foreground">—</span>
-                  ) : <span className="ml-2 text-xs text-muted-foreground">—</span>)}
+                  ) : (isAdmin || isManager || isRecruiter || isAgencyAdmin || isOwnProfile) ? (
+                    (candidate as any).cover_letter_url ? (
+                      <span className="ml-2 inline-flex items-center gap-2">
+                        <a href={(candidate as any).cover_letter_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View Cover Letter</a>
+                        <a href={(candidate as any).cover_letter_url} target="_blank" rel="noopener noreferrer" download className="text-muted-foreground hover:text-foreground" title="Download cover letter" aria-label="Download cover letter"><Download className="h-4 w-4" /></a>
+                      </span>
+                    ) : <span className="ml-2 text-xs text-muted-foreground">—</span>
+                  ) : <span className="ml-2 text-xs text-muted-foreground">—</span>}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">

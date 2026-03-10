@@ -10,7 +10,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Eye, ChevronLeft, ChevronRight } from "lucide-react";
+import { Eye, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -61,31 +61,6 @@ export default function Offers() {
         <p className="text-sm text-muted-foreground">{isCandidate ? "Your offers" : "Track all offers and acceptance status"}</p>
       </div>
 
-      <Card className="mb-4">
-        <CardContent className="flex flex-wrap items-center gap-3 p-4">
-          <Select value={sortBy} onValueChange={setSortBy}>
-            <SelectTrigger className="w-44">
-              <SelectValue placeholder="Sort by" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="offered_at">Offer date</SelectItem>
-              <SelectItem value="salary">Salary</SelectItem>
-              <SelectItem value="tentative_start_date">Start date</SelectItem>
-              <SelectItem value="created_at">Date added</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={order} onValueChange={(v) => setOrder(v as "asc" | "desc")}>
-            <SelectTrigger className="w-36">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="desc">Newest first</SelectItem>
-              <SelectItem value="asc">Oldest first</SelectItem>
-            </SelectContent>
-          </Select>
-        </CardContent>
-      </Card>
-
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
@@ -99,11 +74,23 @@ export default function Offers() {
                   <TableHead>Candidate</TableHead>
                   <TableHead>Client</TableHead>
                   <TableHead>Position</TableHead>
-                  <TableHead>Salary</TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("salary"); setOrder(sortBy === "salary" ? (order === "asc" ? "desc" : "asc") : "desc"); }}>
+                      Salary {sortBy === "salary" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                    </button>
+                  </TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Start Date</TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("tentative_start_date"); setOrder(sortBy === "tentative_start_date" ? (order === "asc" ? "desc" : "asc") : "desc"); }}>
+                      Start Date {sortBy === "tentative_start_date" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                    </button>
+                  </TableHead>
                   <TableHead>Notes</TableHead>
-                  <TableHead>Date</TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("offered_at"); setOrder(sortBy === "offered_at" ? (order === "asc" ? "desc" : "asc") : "desc"); }}>
+                      Date {sortBy === "offered_at" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                    </button>
+                  </TableHead>
                   <TableHead className="w-12"></TableHead>
                 </TableRow>
               </TableHeader>

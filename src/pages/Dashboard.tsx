@@ -10,10 +10,23 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
 import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, subDays } from "date-fns";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
+import { fetchCandidatesBasic } from "../../dbscripts/functions/candidates";
+import { fetchProfilesByRole } from "../../dbscripts/functions/profiles";
 
 export default function Dashboard() {
   const { user, isAdmin, isRecruiter, isCandidate, isManager, isAgencyAdmin, role, profile } = useAuth();
   const [dateRange, setDateRange] = useState<{ from?: Date | null; to?: Date | null } | undefined>(undefined);
+  const [filterCandidateId, setFilterCandidateId] = useState<string>("");
+  const [filterTechnology, setFilterTechnology] = useState<string>("");
+  const [filterRecruiterId, setFilterRecruiterId] = useState<string>("");
 
   const effectiveRole = (typeof role === "string" ? role.toLowerCase() : role) ?? "recruiter";
   const dashboardUserId =
@@ -22,6 +35,29 @@ export default function Dashboard() {
       : effectiveRole === "recruiter"
         ? user?.id
         : profile?.id ?? user?.id;
+
+  const showFilterDropdowns = isAdmin || isAgencyAdmin;
+  const filterAgencyId = isAgencyAdmin ? profile?.agency_id ?? null : undefined;
+
+  const { data: filterCandidates } = useQuery({
+    queryKey: ["dashboard-filter-candidates", filterAgencyId],
+    queryFn: () => fetchCandidatesBasic(filterAgencyId ?? undefined),
+    enabled: showFilterDropdowns,
+  });
+  const { data: filterRecruiters } = useQuery({
+    queryKey: ["dashboard-filter-recruiters", filterAgencyId],
+    queryFn: () => fetchProfilesByRole("recruiter", filterAgencyId ?? undefined),
+    enabled: showFilterDropdowns,
+  });
+  const technologyOptions = useMemo(() => {
+    if (!filterCandidates?.length) return [];
+    const set = new Set<string>();
+    (filterCandidates as any[]).forEach((c: any) => {
+      const t = c?.technology?.trim();
+      if (t) set.add(t);
+    });
+    return Array.from(set).sort();
+  }, [filterCandidates]);
 
   const { data: stats, isLoading } = useQuery({
     queryKey: [
@@ -32,6 +68,9 @@ export default function Dashboard() {
       profile?.agency_id,
       dateRange?.from ? dateRange.from.toISOString() : null,
       dateRange?.to ? dateRange.to.toISOString() : null,
+      showFilterDropdowns ? filterCandidateId : null,
+      showFilterDropdowns ? filterTechnology : null,
+      showFilterDropdowns ? filterRecruiterId : null,
     ],
     queryFn: () =>
       fetchDashboardStats({
@@ -41,6 +80,9 @@ export default function Dashboard() {
         agencyId: isAgencyAdmin ? profile?.agency_id ?? null : null,
         startDate: dateRange?.from ?? null,
         endDate: dateRange?.to ?? null,
+        filterCandidateId: showFilterDropdowns && filterCandidateId ? filterCandidateId : null,
+        filterTechnology: showFilterDropdowns && filterTechnology ? filterTechnology : null,
+        filterRecruiterId: showFilterDropdowns && filterRecruiterId ? filterRecruiterId : null,
       }),
     enabled: !!user,
   });
@@ -141,8 +183,8 @@ export default function Dashboard() {
         </p>
       </div>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <div className="flex gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-4">
+        <div className="flex flex-wrap gap-2">
           <Button variant="outline" size="sm" onClick={() => selectPreset("today")}>Today</Button>
           <Button variant="outline" size="sm" onClick={() => selectPreset("yesterday")}>Yesterday</Button>
           <Button variant="outline" size="sm" onClick={() => selectPreset("thisWeek")}>This Week</Button>
@@ -160,6 +202,56 @@ export default function Dashboard() {
             />
           </PopoverContent>
         </Popover>
+        {showFilterDropdowns && (
+          <div className="flex flex-wrap items-center gap-3 border-l pl-4">
+            <div className="flex items-center gap-2">
+              <Label className="text-sm text-muted-foreground whitespace-nowrap">Candidate</Label>
+              <Select value={filterCandidateId || "all"} onValueChange={(v) => setFilterCandidateId(v === "all" ? "" : v)}>
+                <SelectTrigger className="w-[180px] h-8">
+                  <SelectValue placeholder="All candidates" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All candidates</SelectItem>
+                  {(filterCandidates || []).map((c: any) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {[c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || c.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm text-muted-foreground whitespace-nowrap">Technology</Label>
+              <Select value={filterTechnology || "all"} onValueChange={(v) => setFilterTechnology(v === "all" ? "" : v)}>
+                <SelectTrigger className="w-[140px] h-8">
+                  <SelectValue placeholder="All" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  {technologyOptions.map((t) => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm text-muted-foreground whitespace-nowrap">Recruiter</Label>
+              <Select value={filterRecruiterId || "all"} onValueChange={(v) => setFilterRecruiterId(v === "all" ? "" : v)}>
+                <SelectTrigger className="w-[160px] h-8">
+                  <SelectValue placeholder="All recruiters" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All recruiters</SelectItem>
+                  {(filterRecruiters || []).map((r: any) => (
+                    <SelectItem key={r.user_id} value={r.user_id}>
+                      {r.full_name || r.email || r.user_id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
