@@ -15,6 +15,9 @@ import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import {
+  Sheet, SheetContent, SheetHeader, SheetTitle,
+} from "@/components/ui/sheet";
+import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { Search, Eye, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from "lucide-react";
@@ -23,10 +26,15 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
 import { fetchSubmissionsPaginated, fetchSubmissionsByRecruiterPaginated, fetchSubmissionsByCandidatePaginated, fetchSubmissionsByAgencyPaginated, fetchSubmissionsByTeamLead, updateSubmissionStatus, updateSubmission, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
 import { fetchCandidates, fetchCandidatesByRecruiter, fetchCandidatesBasic, fetchCandidatesByTeamLead } from "../../dbscripts/functions/candidates";
+import { fetchAgencies } from "../../dbscripts/functions/agencies";
+import { fetchProfilesByRole } from "../../dbscripts/functions/profiles";
 import { uploadScreenCallFile, uploadVendorJobDescription } from "../../dbscripts/functions/storage";
 import { US_STATES } from "@/lib/usStates";
 
 const PAGE_SIZE = 10;
+const CANDIDATES_PAGE_SIZE = 10; // candidates per page in main table (non-candidate view)
+const SUBMISSIONS_FETCH_SIZE = 5000; // fetch this many submissions to group by candidate
+const APPLICATIONS_SHEET_PAGE_SIZE = 10;
 const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Screen Call", "Interview", "Rejected", "Offered"] as const;
 
 const statusColors: Record<string, string> = {
@@ -75,6 +83,8 @@ export default function Submissions() {
   const [newJobLink, setNewJobLink] = useState("");
   const [page, setPage] = useState(1);
   const [candidateFilter, setCandidateFilter] = useState<string>("all");
+  const [applicationsSheet, setApplicationsSheet] = useState<{ candidateName: string; submissions: any[] } | null>(null);
+  const [applicationsSheetPage, setApplicationsSheetPage] = useState(1);
 
   const isPaginatedRole = !isTeamLead; // team lead uses fetchSubmissionsByTeamLead + client filter; others use paginated API
   const submissionsQueryFn = async () => {
@@ -87,16 +97,16 @@ export default function Submissions() {
     enabled: isTeamLead && !!profile?.id,
   });
   const { data: submissionsResult, isLoading: loadingPaginated } = useQuery({
-    queryKey: ["submissions", role, user?.id, profile?.linked_candidate_id, profile?.agency_id, page, PAGE_SIZE, search, statusFilter, sortBy, order, candidateFilter],
+    queryKey: ["submissions", role, user?.id, profile?.linked_candidate_id, profile?.agency_id, isCandidate ? page : 1, isCandidate ? PAGE_SIZE : SUBMISSIONS_FETCH_SIZE, search, statusFilter, sortBy, order, candidateFilter],
     queryFn: async () => {
       if (isCandidate) {
         if (!profile?.linked_candidate_id) return { data: [], total: 0 };
         return fetchSubmissionsByCandidatePaginated(profile.linked_candidate_id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order });
       }
       const candidateIdOpt = candidateFilter && candidateFilter !== "all" ? candidateFilter : undefined;
-      if (isAgencyAdmin && profile?.agency_id) return fetchSubmissionsByAgencyPaginated(profile.agency_id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
-      if (isRecruiter && user?.id) return fetchSubmissionsByRecruiterPaginated(user.id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
-      return fetchSubmissionsPaginated({ page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
+      if (isAgencyAdmin && profile?.agency_id) return fetchSubmissionsByAgencyPaginated(profile.agency_id, { page: 1, pageSize: SUBMISSIONS_FETCH_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
+      if (isRecruiter && user?.id) return fetchSubmissionsByRecruiterPaginated(user.id, { page: 1, pageSize: SUBMISSIONS_FETCH_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
+      return fetchSubmissionsPaginated({ page: 1, pageSize: SUBMISSIONS_FETCH_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
     },
     enabled: isPaginatedRole && !!user,
   });
@@ -107,9 +117,25 @@ export default function Submissions() {
     const matchCandidate = candidateFilter === "all" || !candidateFilter || s.candidate_id === candidateFilter;
     return matchSearch && matchStatus && matchCandidate;
   });
-  const displaySubmissions = isTeamLead ? filteredTL.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE) : (submissionsResult?.data ?? []);
-  const totalCount = isTeamLead ? filteredTL.length : (submissionsResult?.total ?? 0);
-  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+  const allSubmissionsForGrouping = isTeamLead ? filteredTL : (submissionsResult?.data ?? []);
+  const groupedByCandidateFull = !isCandidate && allSubmissionsForGrouping.length > 0
+    ? (() => {
+        const map = new Map<string, { candidateId: string; candidateName: string; recruiterId: string | null; agencyId: string | null; submissions: any[] }>();
+        for (const s of allSubmissionsForGrouping as any[]) {
+          const cid = s.candidate_id;
+          const name = `${s.candidates?.first_name ?? ""} ${s.candidates?.last_name ?? ""}`.trim() || "—";
+          const recId = s.candidates?.recruiter_id ?? null;
+          const agId = s.candidates?.agency_id ?? null;
+          if (!map.has(cid)) map.set(cid, { candidateId: cid, candidateName: name, recruiterId: recId, agencyId: agId, submissions: [] });
+          map.get(cid)!.submissions.push(s);
+        }
+        return Array.from(map.values());
+      })()
+    : [];
+  const displaySubmissions = isCandidate ? (submissionsResult?.data ?? []) : [];
+  const displayCandidates = !isCandidate ? groupedByCandidateFull.slice((page - 1) * CANDIDATES_PAGE_SIZE, page * CANDIDATES_PAGE_SIZE) : [];
+  const totalCount = isCandidate ? (submissionsResult?.total ?? 0) : groupedByCandidateFull.length;
+  const totalPages = isCandidate ? Math.max(1, Math.ceil(totalCount / PAGE_SIZE)) : Math.max(1, Math.ceil(totalCount / CANDIDATES_PAGE_SIZE));
   const isLoading = isTeamLead ? loadingTL : loadingPaginated;
   useEffect(() => setPage(1), [search, statusFilter, sortBy, order, candidateFilter]);
 
@@ -127,6 +153,22 @@ export default function Submissions() {
     queryFn: candidatesQueryFn,
     enabled: isAdmin || isManager || (isRecruiter && !!user?.id) || (isAgencyAdmin && !!profile?.agency_id) || (isTeamLead && !!profile?.id),
   });
+
+  const { data: agencies = [] } = useQuery({
+    queryKey: ["agencies-submissions"],
+    queryFn: fetchAgencies,
+    enabled: !isCandidate,
+  });
+  const { data: recruiters = [] } = useQuery({
+    queryKey: ["recruiters-submissions", isAgencyAdmin ? profile?.agency_id : "all"],
+    queryFn: () => fetchProfilesByRole("recruiter", isAgencyAdmin ? profile?.agency_id ?? undefined : undefined),
+    enabled: !isCandidate,
+  });
+
+  const getRecruiterName = (recruiterId: string | null) =>
+    !recruiterId ? "—" : (recruiters as any[]).find((r: any) => r.user_id === recruiterId)?.full_name ?? "—";
+  const getAgencyName = (agencyId: string | null) =>
+    !agencyId ? "—" : (agencies as any[]).find((a: any) => a.id === agencyId)?.name ?? "—";
 
   const updateStatus = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: string }) => {
@@ -279,23 +321,22 @@ export default function Submissions() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  {!isCandidate && <TableHead>Candidate</TableHead>}
-                  <TableHead>
-                    {isPaginatedRole ? (
-                      <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("client_name"); setOrder(sortBy === "client_name" ? (order === "asc" ? "desc" : "asc") : "asc"); }}>
-                        Client {sortBy === "client_name" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
-                      </button>
-                    ) : "Client"}
-                  </TableHead>
-                  <TableHead>
-                    {isPaginatedRole ? (
-                      <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("position"); setOrder(sortBy === "position" ? (order === "asc" ? "desc" : "asc") : "asc"); }}>
-                        Position {sortBy === "position" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
-                      </button>
-                    ) : "Position"}
-                  </TableHead>
                   {isCandidate ? (
                     <>
+                      <TableHead>
+                        {isPaginatedRole ? (
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("client_name"); setOrder(sortBy === "client_name" ? (order === "asc" ? "desc" : "asc") : "asc"); }}>
+                            Client {sortBy === "client_name" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                          </button>
+                        ) : "Client"}
+                      </TableHead>
+                      <TableHead>
+                        {isPaginatedRole ? (
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("position"); setOrder(sortBy === "position" ? (order === "asc" ? "desc" : "asc") : "asc"); }}>
+                            Position {sortBy === "position" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                          </button>
+                        ) : "Position"}
+                      </TableHead>
                       <TableHead>Job Type</TableHead>
                       <TableHead>Location</TableHead>
                       <TableHead>Status</TableHead>
@@ -309,75 +350,60 @@ export default function Submissions() {
                     </>
                   ) : (
                     <>
-                      <TableHead>Status</TableHead>
-                      <TableHead>
-                        {isPaginatedRole ? (
-                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("created_at"); setOrder(sortBy === "created_at" ? (order === "asc" ? "desc" : "asc") : "desc"); }}>
-                            Date {sortBy === "created_at" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
-                          </button>
-                        ) : "Date"}
-                      </TableHead>
-                      <TableHead className="w-12"></TableHead>
+                      <TableHead className="w-10"></TableHead>
+                      <TableHead>Candidate</TableHead>
+                      <TableHead>Recruiter</TableHead>
+                      <TableHead>Application count</TableHead>
+                      <TableHead>Agency</TableHead>
                     </>
                   )}
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {displaySubmissions.length === 0 ? (
+                {isCandidate ? (
+                  displaySubmissions.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">No applications found</TableCell>
+                    </TableRow>
+                  ) : (
+                    displaySubmissions.map((s: any) => (
+                      <TableRow key={s.id}>
+                        <TableCell>{s.client_name}</TableCell>
+                        <TableCell>{s.position}</TableCell>
+                        <TableCell className="text-muted-foreground">{s.job_type || "—"}</TableCell>
+                        <TableCell className="text-muted-foreground">{s.city ? `${s.city}${s.state ? `, ${s.state}` : ""}` : "—"}</TableCell>
+                        <TableCell>
+                          <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</TableCell>
+                      </TableRow>
+                    ))
+                  )
+                ) : displayCandidates.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={6} className="py-8 text-center text-muted-foreground">No applications found</TableCell>
+                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">No candidates with applications found</TableCell>
                   </TableRow>
                 ) : (
-                  displaySubmissions.map((s: any) => (
-                  <TableRow key={s.id}>
-                      {!isCandidate && <TableCell className="font-medium">{s.candidates?.first_name} {s.candidates?.last_name || ""}</TableCell>}
-                      <TableCell>{s.client_name}</TableCell>
-                      <TableCell>{s.position}</TableCell>
-                      {isCandidate ? (
-                        <>
-                          <TableCell className="text-muted-foreground">{s.job_type || "—"}</TableCell>
-                          <TableCell className="text-muted-foreground">{s.city ? `${s.city}${s.state ? `, ${s.state}` : ""}` : "—"}</TableCell>
-                          <TableCell>
-                            <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</TableCell>
-                        </>
-                      ) : (
-                        <>
-                          <TableCell>
-                            <Select
-                              value={s.status}
-                              onValueChange={(v) => {
-                                if (v === "Vendor Responded") {
-                                  setVendorSubmission(s);
-                                  setVendorDialogOpen(true);
-                                } else if (v === "Screen Call") {
-                                  setScreenSubmission(s);
-                                  setScreenDialogOpen(true);
-                                } else {
-                                  updateStatus.mutate({ id: s.id, status: v });
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="h-7 w-auto border-0 p-0">
-                                <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
-                              </SelectTrigger>
-                              <SelectContent>
-                                {SUBMISSION_STATUSES.map((st) => (
-                                  <SelectItem key={st} value={st}>{st}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</TableCell>
-                          <TableCell>
-                            <Button variant="ghost" size="icon" asChild>
-                              <Link to={`/submissions/${s.id}`}><Eye className="h-4 w-4" /></Link>
-                            </Button>
-                          </TableCell>
-                        </>
-                      )}
-                  </TableRow>
+                  displayCandidates.map((row) => (
+                    <TableRow key={row.candidateId}>
+                      <TableCell className="w-10 p-1">
+                        {row.submissions.length > 1 ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => { setApplicationsSheet({ candidateName: row.candidateName, submissions: row.submissions }); setApplicationsSheetPage(1); }}
+                            aria-label="Expand applications"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </Button>
+                        ) : null}
+                      </TableCell>
+                      <TableCell className="font-medium">{row.candidateName}</TableCell>
+                      <TableCell className="text-muted-foreground">{getRecruiterName(row.recruiterId)}</TableCell>
+                      <TableCell>{row.submissions.length}</TableCell>
+                      <TableCell className="text-muted-foreground">{getAgencyName(row.agencyId)}</TableCell>
+                    </TableRow>
                   ))
                 )}
               </TableBody>
@@ -387,7 +413,9 @@ export default function Submissions() {
         {!isLoading && totalCount > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
             <p className="text-sm text-muted-foreground">
-              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCount)} of {totalCount}
+              {isCandidate
+                ? `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, totalCount)} of ${totalCount} applications`
+                : `Showing ${(page - 1) * CANDIDATES_PAGE_SIZE + 1}–${Math.min(page * CANDIDATES_PAGE_SIZE, totalCount)} of ${totalCount} candidates`}
             </p>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
@@ -410,6 +438,90 @@ export default function Submissions() {
           </div>
         )}
       </Card>
+
+      {/* Left slider: candidate's applications (Client, Position, Status, Date) with pagination */}
+      <Sheet open={!!applicationsSheet} onOpenChange={(open) => !open && setApplicationsSheet(null)}>
+        <SheetContent side="left" className="w-[90vw] sm:w-1/2 sm:max-w-[50vw] overflow-y-auto flex flex-col">
+          <SheetHeader>
+            <SheetTitle>Applications — {applicationsSheet?.candidateName ?? ""}</SheetTitle>
+          </SheetHeader>
+          <div className="mt-4 flex-1 flex flex-col min-h-0">
+            {applicationsSheet?.submissions && applicationsSheet.submissions.length > 0 ? (
+              <>
+                <div className="flex-1 overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Client</TableHead>
+                        <TableHead>Position</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead className="w-12"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {(() => {
+                        const total = applicationsSheet.submissions.length;
+                        const sheetTotalPages = Math.max(1, Math.ceil(total / APPLICATIONS_SHEET_PAGE_SIZE));
+                        const from = (applicationsSheetPage - 1) * APPLICATIONS_SHEET_PAGE_SIZE;
+                        const to = Math.min(from + APPLICATIONS_SHEET_PAGE_SIZE, total);
+                        const pageSubmissions = applicationsSheet.submissions.slice(from, to);
+                        return pageSubmissions.map((s: any) => (
+                          <TableRow key={s.id}>
+                            <TableCell className="font-medium">{s.client_name}</TableCell>
+                            <TableCell>{s.position}</TableCell>
+                            <TableCell>
+                              <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</TableCell>
+                            <TableCell>
+                              <Button variant="ghost" size="icon" asChild>
+                                <Link to={`/submissions/${s.id}`}><Eye className="h-4 w-4" /></Link>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ));
+                      })()}
+                    </TableBody>
+                  </Table>
+                </div>
+                {(() => {
+                  const total = applicationsSheet.submissions.length;
+                  const sheetTotalPages = Math.max(1, Math.ceil(total / APPLICATIONS_SHEET_PAGE_SIZE));
+                  const from = (applicationsSheetPage - 1) * APPLICATIONS_SHEET_PAGE_SIZE;
+                  const to = Math.min(from + APPLICATIONS_SHEET_PAGE_SIZE, total);
+                  return (
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3 mt-3 shrink-0">
+                      <p className="text-sm text-muted-foreground">
+                        Showing {from + 1}–{to} of {total}
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Button variant="outline" size="sm" onClick={() => setApplicationsSheetPage((p) => Math.max(1, p - 1))} disabled={applicationsSheetPage <= 1}>
+                          <ChevronLeft className="h-4 w-4" /> Previous
+                        </Button>
+                        <Select value={String(applicationsSheetPage)} onValueChange={(v) => setApplicationsSheetPage(Number(v))}>
+                          <SelectTrigger className="w-[7rem] h-8">
+                            <SelectValue>Page {applicationsSheetPage} of {sheetTotalPages}</SelectValue>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: sheetTotalPages }, (_, i) => i + 1).map((p) => (
+                              <SelectItem key={p} value={String(p)}>Page {p}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button variant="outline" size="sm" onClick={() => setApplicationsSheetPage((p) => Math.min(sheetTotalPages, p + 1))} disabled={applicationsSheetPage >= sheetTotalPages}>
+                          Next <ChevronRight className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </>
+            ) : null}
+          </div>
+        </SheetContent>
+      </Sheet>
+
       {/* Add Application Dialog */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
         <DialogContent>

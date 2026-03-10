@@ -28,22 +28,29 @@ export type CandidatesPageOpts = {
   status?: string;
   sortBy?: string;
   order?: "asc" | "desc";
+  /** undefined = all, null = no agency assigned, string = that agency */
   agencyId?: string | null;
+  /** undefined = all, null = unassigned recruiter, string = that recruiter */
+  recruiterId?: string | null;
+  technology?: string | null;
 };
 
-function buildCandidatesQuery(recruiterId?: string, agencyId?: string | null, sortBy?: string, order?: "asc" | "desc") {
+function buildCandidatesQuery(recruiterId?: string | null, agencyId?: string | null, sortBy?: string, order?: "asc" | "desc", technology?: string | null) {
   const col = sortBy && CANDIDATES_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
   const asc = order === "asc";
   let q = supabase.from("candidates").select("*", { count: "exact" }).order(col, { ascending: asc });
-  if (recruiterId) q = q.eq("recruiter_id", recruiterId);
-  if (agencyId) q = q.eq("agency_id", agencyId);
+  if (recruiterId !== undefined && recruiterId !== null) q = q.eq("recruiter_id", recruiterId);
+  else if (recruiterId === null) q = q.is("recruiter_id", null);
+  if (agencyId !== undefined && agencyId !== null) q = q.eq("agency_id", agencyId);
+  else if (agencyId === null) q = q.is("agency_id", null);
+  if (technology != null && technology !== "") q = (q as any).eq("technology", technology);
   return q;
 }
 
-/** Server-side paginated + optional search, status, sort, agencyId. Returns { data, total } */
+/** Server-side paginated + optional search, status, sort, agencyId, recruiterId, technology. Returns { data, total } */
 export async function fetchCandidatesPaginated(opts: CandidatesPageOpts) {
-  const { page, pageSize, search, status, sortBy, order, agencyId } = opts;
-  let q = buildCandidatesQuery(undefined, agencyId ?? undefined, sortBy, order);
+  const { page, pageSize, search, status, sortBy, order, agencyId, recruiterId, technology } = opts;
+  let q = buildCandidatesQuery(recruiterId, agencyId, sortBy, order, technology ?? undefined);
   if (status && status !== "all") q = q.eq("status", status);
   if (search && search.trim()) {
     const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
@@ -58,8 +65,8 @@ export async function fetchCandidatesPaginated(opts: CandidatesPageOpts) {
 }
 
 export async function fetchCandidatesByRecruiterPaginated(recruiterId: string, opts: CandidatesPageOpts) {
-  const { page, pageSize, search, status, sortBy, order, agencyId } = opts;
-  let q = buildCandidatesQuery(recruiterId, agencyId ?? undefined, sortBy, order);
+  const { page, pageSize, search, status, sortBy, order, agencyId, technology } = opts;
+  let q = buildCandidatesQuery(recruiterId, agencyId ?? undefined, sortBy, order, technology ?? undefined);
   if (status && status !== "all") q = q.eq("status", status);
   if (search && search.trim()) {
     const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
@@ -90,6 +97,19 @@ export async function fetchCandidatesBasic(agencyId?: string | null) {
   if (agencyId != null) q = q.eq("agency_id", agencyId);
   const { data } = await q;
   return data || [];
+}
+
+/** Distinct technology values for filter dropdown (optionally scoped by agency). */
+export async function fetchCandidateTechnologies(agencyId?: string | null): Promise<string[]> {
+  let q = supabase.from("candidates").select("technology");
+  if (agencyId != null) q = q.eq("agency_id", agencyId);
+  const { data } = await q;
+  const set = new Set<string>();
+  (data || []).forEach((r: any) => {
+    const t = r?.technology?.trim();
+    if (t) set.add(t);
+  });
+  return Array.from(set).sort();
 }
 
 /** Candidates assigned to this team lead (team_lead_id = profile id). */
@@ -179,4 +199,42 @@ export async function updateCandidateVisaUrl(id: string, visaUrl: string) {
     .update(updateObj)
     .eq("id", id);
   if (error) throw error;
+}
+
+export type CandidateStats = {
+  applicationsCount: number;
+  screenCount: number;
+  interviewCount: number;
+  lastApplicationAt: string | null;
+};
+
+/** Get applications count, screen count, interview count, and last application date for each candidate id. */
+export async function fetchCandidateStats(candidateIds: string[]): Promise<Record<string, CandidateStats>> {
+  const result: Record<string, CandidateStats> = {};
+  candidateIds.forEach((id) => {
+    result[id] = { applicationsCount: 0, screenCount: 0, interviewCount: 0, lastApplicationAt: null };
+  });
+  if (candidateIds.length === 0) return result;
+
+  const [subsRes, intRes] = await Promise.all([
+    supabase.from("submissions").select("id, candidate_id, status, screen_scheduled_at, created_at").in("candidate_id", candidateIds),
+    supabase.from("interviews").select("id, candidate_id").in("candidate_id", candidateIds),
+  ]);
+  const subs = subsRes.data || [];
+  const interviews = intRes.data || [];
+
+  subs.forEach((s: any) => {
+    const cid = s.candidate_id;
+    if (!result[cid]) return;
+    result[cid].applicationsCount += 1;
+    if (s.status === "Screen Call" || s.screen_scheduled_at) result[cid].screenCount += 1;
+    if (!result[cid].lastApplicationAt || (s.created_at && s.created_at > result[cid].lastApplicationAt!)) {
+      result[cid].lastApplicationAt = s.created_at || null;
+    }
+  });
+  interviews.forEach((i: any) => {
+    const cid = i.candidate_id;
+    if (result[cid]) result[cid].interviewCount += 1;
+  });
+  return result;
 }

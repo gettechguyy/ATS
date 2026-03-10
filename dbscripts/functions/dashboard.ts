@@ -28,7 +28,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
 
   const emptyStats = () => ({
     totalCandidates: 0,
-    candidatesByStatus: { New: 0, "In Marketing": 0, Placed: 0, Backout: 0, "On Bench": 0, "In Training": 0 },
+    candidatesByStatus: { New: 0, "Ready For Assign": 0, "Ready For Marketing": 0, "In Marketing": 0, Placed: 0, Backout: 0, "On Bench": 0, "In Training": 0 },
     totalSubmissions: 0,
     totalInterviews: 0,
     scheduledInterviews: 0,
@@ -229,6 +229,8 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
     totalCandidates: c.length,
     candidatesByStatus: {
       New: c.filter((x: any) => x.status === "New").length,
+      "Ready For Assign": c.filter((x: any) => x.status === "Ready For Assign").length,
+      "Ready For Marketing": c.filter((x: any) => x.status === "Ready For Marketing").length,
       "In Marketing": c.filter((x: any) => x.status === "In Marketing").length,
       Placed: c.filter((x: any) => x.status === "Placed").length,
       Backout: c.filter((x: any) => x.status === "Backout").length,

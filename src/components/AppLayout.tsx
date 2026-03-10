@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, Outlet, Navigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   LayoutDashboard,
@@ -18,6 +19,13 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -25,6 +33,9 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
+import { fetchCandidateById } from "../../dbscripts/functions/candidates";
+import { fetchEducationsByCandidate } from "../../dbscripts/functions/educations";
+import { fetchExperiencesByCandidate } from "../../dbscripts/functions/experiences";
 
 const allNavItems = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },
@@ -38,11 +49,42 @@ const allNavItems = [
   { to: "/admin/users", icon: Shield, label: "User Management", roles: ["admin", "manager", "team_lead", "agency_admin"] },
 ];
 
+function useCandidateProfileComplete(candidateId: string | null) {
+  const { data: candidate } = useQuery({
+    queryKey: ["candidate-profile-complete", candidateId],
+    queryFn: () => fetchCandidateById(candidateId!),
+    enabled: !!candidateId,
+  });
+  const { data: educations } = useQuery({
+    queryKey: ["candidate-educations-complete", candidateId],
+    queryFn: () => fetchEducationsByCandidate(candidateId!),
+    enabled: !!candidateId,
+  });
+  const { data: experiences } = useQuery({
+    queryKey: ["candidate-experiences-complete", candidateId],
+    queryFn: () => fetchExperiencesByCandidate(candidateId!),
+    enabled: !!candidateId,
+  });
+  if (!candidateId || !candidate) return { complete: false, loading: !!candidateId };
+  const c = candidate as any;
+  const isBasic = Boolean(c?.first_name?.trim() && c?.last_name?.trim() && c?.visa_status && (c?.email?.trim() || c?.phone?.trim()));
+  const isProfessional = Boolean(
+    c?.technology?.trim() && c?.experience_years != null && c?.experience_years !== "" && c?.primary_skills?.trim() && c?.target_role?.trim() && c?.expected_salary != null && c?.interview_availability?.trim()
+  );
+  const complete = isBasic && isProfessional && (educations?.length ?? 0) >= 1 && (experiences?.length ?? 0) >= 1;
+  return { complete, loading: false };
+}
+
 export default function AppLayout() {
   const { user, profile, role, isAdmin, loading, signOut } = useAuth();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const isCandidate = role === "candidate";
+  const linkedCandidateId = profile?.linked_candidate_id ?? null;
+  const { complete: candidateProfileComplete, loading: candidateProfileLoading } = useCandidateProfileComplete(isCandidate ? linkedCandidateId : null);
+  const isOnOwnCandidatePage = isCandidate && linkedCandidateId && location.pathname === `/candidates/${linkedCandidateId}`;
+  const showCompleteProfileModal = isCandidate && !!linkedCandidateId && !candidateProfileLoading && !candidateProfileComplete && !isOnOwnCandidatePage;
 
   if (loading) {
     return (
@@ -210,6 +252,21 @@ export default function AppLayout() {
           <Outlet />
         </div>
       </main>
+
+      {/* Candidate: block navigation until profile is complete; show modal with link to profile page */}
+      <Dialog open={showCompleteProfileModal} onOpenChange={() => {}}>
+        <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()} onInteractOutside={(e) => e.preventDefault()}>
+          <DialogHeader>
+            <DialogTitle>Complete your profile</DialogTitle>
+            <DialogDescription>
+              Please fill in all required details: Basic details, Professional details, and add at least one Education and one Experience. You cannot use other screens until your profile is complete.
+            </DialogDescription>
+          </DialogHeader>
+          <Button asChild className="w-full">
+            <Link to={linkedCandidateId ? `/candidates/${linkedCandidateId}` : "/"}>Complete my profile</Link>
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

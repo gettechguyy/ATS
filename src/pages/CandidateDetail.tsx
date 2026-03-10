@@ -32,7 +32,7 @@ import { fetchProfileName, fetchProfilesBySelect, fetchProfilesByRole } from "..
 import { fetchAllUserRoles } from "../../dbscripts/functions/userRoles";
 import { fetchAgencies } from "../../dbscripts/functions/agencies";
 
-const CANDIDATE_STATUSES = ["New", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
+const CANDIDATE_STATUSES = ["New", "Ready For Assign", "Ready For Marketing", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
 const APPLICATIONS_PAGE_SIZE = 10;
 const VISA_STATUSES = ["CPT", "OPT", "STEM OPT", "H1-B", "H4-EAD", "GC-EAD", "Green Card", "US Citizen", "Other"] as const;
 const GENDER_OPTIONS = ["Male", "Female", "Non-binary", "Prefer not to say", "Other"] as const;
@@ -197,6 +197,7 @@ export default function CandidateDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["candidate-educations", id] });
+      queryClient.invalidateQueries({ queryKey: ["candidate", id] });
       toast.success("Education added");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -219,6 +220,7 @@ export default function CandidateDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["candidate-experiences", id] });
+      queryClient.invalidateQueries({ queryKey: ["candidate", id] });
       toast.success("Experience added");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -288,6 +290,24 @@ export default function CandidateDetail() {
     const agency = (agencies as any[]).find((a: any) => a.id === r.agency_id);
     return agency ? `${name} (${agency.name})` : name;
   };
+
+  const isBasicDetailsComplete = Boolean(
+    candidate?.first_name?.trim() && candidate?.last_name?.trim() && candidate?.visa_status && (candidate?.email?.trim() || candidate?.phone?.trim())
+  );
+  const isProfessionalDetailsComplete = Boolean(
+    (candidate as any)?.technology?.trim() &&
+    ((candidate as any)?.experience_years != null && (candidate as any)?.experience_years !== "") &&
+    (candidate as any)?.primary_skills?.trim() &&
+    (candidate as any)?.target_role?.trim() &&
+    (candidate as any)?.expected_salary != null &&
+    (candidate as any)?.interview_availability?.trim()
+  );
+  const canAddMarketingDetails = isBasicDetailsComplete && isProfessionalDetailsComplete && (educations?.length ?? 0) >= 1 && (experiences?.length ?? 0) >= 1;
+
+  useEffect(() => {
+    if (!id || !candidate || candidate.status !== "New" || !canAddMarketingDetails) return;
+    updateCandidateStatus(id, "Ready For Assign").then(() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })).catch(() => {});
+  }, [id, candidate?.id, candidate?.status, canAddMarketingDetails]);
 
   try {
     return (
@@ -457,7 +477,11 @@ export default function CandidateDetail() {
                 <Label className="text-muted-foreground">Assign recruiter</Label>
                 <Select
                   value={candidate.recruiter_id || "unassigned"}
-                  onValueChange={(v) => updateCandidate.mutate({ recruiter_id: v === "unassigned" ? null : v })}
+                  onValueChange={(v) => {
+                    const updates: Record<string, any> = { recruiter_id: v === "unassigned" ? null : v };
+                    if (v !== "unassigned") updates.status = "Ready For Marketing";
+                    updateCandidate.mutate(updates, { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["candidate", id] }) });
+                  }}
                 >
                   <SelectTrigger className="h-9"><SelectValue placeholder="Select recruiter" /></SelectTrigger>
                   <SelectContent>
@@ -912,21 +936,26 @@ export default function CandidateDetail() {
             </div>
           </Card>
         </div>
-        {/* Marketing Details */}
+        {/* Marketing Details — only available when Basic + Professional + at least 1 Education + 1 Experience */}
         <div className="lg:col-span-2">
           <Card>
             <CardHeader className="relative">
               <CardTitle className="text-base">Marketing Details</CardTitle>
-              <button type="button" className="absolute right-3 top-3 p-1 rounded hover:bg-muted" onClick={() => setMarketingOpen(v => !v)} aria-label="Toggle marketing details">
+              <button type="button" className="absolute right-3 top-3 p-1 rounded hover:bg-muted" onClick={() => canAddMarketingDetails && setMarketingOpen(v => !v)} aria-label="Toggle marketing details">
                 <ChevronDown className={`h-4 w-4 transition-transform ${marketingOpen ? 'rotate-180' : ''}`} />
               </button>
             </CardHeader>
             <div style={{ maxHeight: marketingOpen ? '2000px' : '0px', overflow: 'hidden', transition: 'max-height 320ms ease' }}>
               <CardContent className="space-y-4">
-              {isOwnProfile && marketingSubmittedLocal ? (
+              {!canAddMarketingDetails && (
+                <div className="p-4 rounded bg-muted text-muted-foreground text-sm">
+                  Complete Basic details, Professional details, and add at least one Education and one Experience to unlock Marketing Details.
+                </div>
+              )}
+              {canAddMarketingDetails && isOwnProfile && marketingSubmittedLocal ? (
                 <div className="p-4 bg-green-50 rounded">Thank you — you are ready for marketing.</div>
               ) : null}
-              <div className="grid grid-cols-2 gap-4">
+              {canAddMarketingDetails && (<><div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label>GMail</Label>
                   {(isOwnProfile || isAdmin || isManager) ? <Input value={marketingGmail} onChange={(e) => setMarketingGmail(e.target.value)} disabled={isOwnProfile && marketingSubmittedLocal} /> : ((isRecruiter) ? <div className="text-sm">{marketingGmail || "—"}</div> : null)}
@@ -1113,6 +1142,7 @@ export default function CandidateDetail() {
               {isOwnProfile && marketingSubmittedLocal && (
                 <div className="text-sm text-muted-foreground">You have submitted marketing details and cannot edit them. Contact your recruiter to request changes.</div>
               )}
+              </>)}
             </CardContent>
             </div>
           </Card>

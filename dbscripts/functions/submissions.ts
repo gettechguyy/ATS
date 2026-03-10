@@ -3,7 +3,7 @@ import { supabase } from "../../src/integrations/supabase/client";
 export async function fetchSubmissions() {
   const { data, error } = await supabase
     .from("submissions")
-    .select("*, candidates(first_name, last_name, email)")
+    .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data;
@@ -13,7 +13,7 @@ export async function fetchSubmissions() {
 export async function fetchSubmissionsByRecruiter(recruiterId: string) {
   const { data, error } = await supabase
     .from("submissions")
-    .select("*, candidates(first_name, last_name, email)")
+    .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)")
     .eq("recruiter_id", recruiterId)
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -23,7 +23,7 @@ export async function fetchSubmissionsByRecruiter(recruiterId: string) {
 export async function fetchSubmissionById(id: string) {
   const { data, error } = await supabase
     .from("submissions")
-    .select("*, candidates(first_name, last_name, email)")
+    .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)")
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
@@ -64,7 +64,7 @@ function buildSubmissionsQuery(recruiterId?: string, candidateId?: string, sortB
   const asc = order === "asc";
   let q = supabase
     .from("submissions")
-    .select("*, candidates(first_name, last_name, email)", { count: "exact" })
+    .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
     .order(col, { ascending: asc });
   if (recruiterId) q = q.eq("recruiter_id", recruiterId);
   if (candidateId) q = q.eq("candidate_id", candidateId);
@@ -127,7 +127,7 @@ export async function fetchSubmissionsByAgency(agencyId: string) {
   if (candidateIds.length === 0) return [];
   const { data, error } = await supabase
     .from("submissions")
-    .select("*, candidates(first_name, last_name, email)")
+    .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)")
     .in("candidate_id", candidateIds)
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -145,7 +145,7 @@ export async function fetchSubmissionsByAgencyPaginated(agencyId: string, opts: 
   const idsToUse = filterCandidateId && candidateIds.includes(filterCandidateId) ? [filterCandidateId] : candidateIds;
   let q = supabase
     .from("submissions")
-    .select("*, candidates(first_name, last_name, email)", { count: "exact" })
+    .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
     .in("candidate_id", idsToUse)
     .order(col, { ascending: asc });
   if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
@@ -169,7 +169,7 @@ export async function fetchSubmissionsByTeamLead(teamLeadProfileId: string) {
   // select submissions where candidate has team_lead_id = teamLeadProfileId
   const { data, error } = await supabase
     .from("submissions")
-    .select("*, candidates(first_name, last_name, email, team_lead_id)")
+    .select("*, candidates(first_name, last_name, email, team_lead_id, recruiter_id, agency_id)")
     .or(`candidate_id.in.(select id from candidates where team_lead_id.eq.${teamLeadProfileId}),recruiter_id.in.(select recruiter_id from candidates where team_lead_id.eq.${teamLeadProfileId})`)
     .order("created_at", { ascending: false });
   // Fallback: if supabase does not support subqueries in .or, run two queries and merge
@@ -180,7 +180,7 @@ export async function fetchSubmissionsByTeamLead(teamLeadProfileId: string) {
 
     const byCandidate: any = await (supabase as any)
       .from("submissions")
-      .select("*, candidates(first_name, last_name, email, team_lead_id)")
+      .select("*, candidates(first_name, last_name, email, team_lead_id, recruiter_id, agency_id)")
       .in("candidate_id", candidateIds.length ? candidateIds : []);
 
     const recruiterRes: any = await (supabase as any).from("candidates").select("recruiter_id").eq("team_lead_id", teamLeadProfileId);
@@ -188,7 +188,7 @@ export async function fetchSubmissionsByTeamLead(teamLeadProfileId: string) {
 
     const byRecruiter: any = await (supabase as any)
       .from("submissions")
-      .select("*, candidates(first_name, last_name, email, team_lead_id)")
+      .select("*, candidates(first_name, last_name, email, team_lead_id, recruiter_id, agency_id)")
       .in("recruiter_id", recruiterIds.length ? recruiterIds : []);
 
     const merged = [...(byCandidate.data || []), ...(byRecruiter.data || [])];
@@ -222,6 +222,11 @@ export async function createSubmission(submission: {
 
   const { error } = await supabase.from("submissions").insert(insertObj as any);
   if (error) throw error;
+
+  const { count } = await supabase.from("submissions").select("id", { count: "exact", head: true }).eq("candidate_id", submission.candidate_id);
+  if (count === 1) {
+    await supabase.from("candidates").update({ status: "In Marketing" as any }).eq("id", submission.candidate_id);
+  }
 }
 
 export async function updateSubmissionStatus(id: string, status: string) {
