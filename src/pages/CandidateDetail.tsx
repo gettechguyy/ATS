@@ -331,6 +331,8 @@ export default function CandidateDetail() {
   );
   const canAddMarketingDetails = isBasicDetailsComplete && isProfessionalDetailsComplete && (educations?.length ?? 0) >= 1 && (experiences?.length ?? 0) >= 1;
 
+  const safeStatus = (candidate?.status && (CANDIDATE_STATUSES as readonly string[]).includes(candidate.status)) ? candidate.status : "New";
+
   const hasSetReadyForAssignRef = useRef(false);
   useEffect(() => {
     if (!id || !candidate || candidate.status !== "New" || !canAddMarketingDetails || hasSetReadyForAssignRef.current) return;
@@ -584,7 +586,7 @@ export default function CandidateDetail() {
             {isAdmin && (
               <div className="pt-2">
                 <Label className="text-muted-foreground">Status (Admin only)</Label>
-                <Select value={candidate.status!} onValueChange={(v) => updateStatus.mutate(v)}>
+                <Select value={safeStatus} onValueChange={(v) => updateStatus.mutate(v)}>
                   <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {CANDIDATE_STATUSES.map((s) => (
@@ -597,7 +599,7 @@ export default function CandidateDetail() {
             {!isAdmin && (
               <div className="pt-2">
                 <span className="text-muted-foreground">Status:</span>{" "}
-                <Badge variant="outline">{candidate.status}</Badge>
+                <Badge variant="outline">{safeStatus}</Badge>
               </div>
             )}
           </CardContent>
