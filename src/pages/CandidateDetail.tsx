@@ -256,6 +256,28 @@ export default function CandidateDetail() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const isBasicDetailsComplete = Boolean(
+    candidate?.first_name?.trim() && candidate?.last_name?.trim() && candidate?.visa_status && (candidate?.email?.trim() || candidate?.phone?.trim())
+  );
+  const isProfessionalDetailsComplete = Boolean(
+    (candidate as any)?.technology?.trim() &&
+    ((candidate as any)?.experience_years != null && (candidate as any)?.experience_years !== "") &&
+    (candidate as any)?.primary_skills?.trim() &&
+    (candidate as any)?.target_role?.trim() &&
+    (candidate as any)?.expected_salary != null &&
+    (candidate as any)?.interview_availability?.trim()
+  );
+  const canAddMarketingDetails = isBasicDetailsComplete && isProfessionalDetailsComplete && (educations?.length ?? 0) >= 1 && (experiences?.length ?? 0) >= 1;
+
+  const safeStatus = (candidate?.status && (CANDIDATE_STATUSES as readonly string[]).includes(candidate.status)) ? candidate.status : "New";
+
+  const hasSetReadyForAssignRef = useRef(false);
+  useEffect(() => {
+    if (!id || !candidate || candidate.status !== "New" || !canAddMarketingDetails || hasSetReadyForAssignRef.current) return;
+    hasSetReadyForAssignRef.current = true;
+    updateCandidateStatus(id, "Ready For Assign").then(() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })).catch(() => {});
+  }, [id, candidate?.id, candidate?.status, canAddMarketingDetails]);
+
   if (isCandidate && !isOwnProfile) return <Navigate to="/" replace />;
 
   if (isLoading) {
@@ -317,28 +339,6 @@ export default function CandidateDetail() {
     const agency = (agencies as any[]).find((a: any) => a.id === r.agency_id);
     return agency ? `${name} (${agency.name})` : name;
   };
-
-  const isBasicDetailsComplete = Boolean(
-    candidate?.first_name?.trim() && candidate?.last_name?.trim() && candidate?.visa_status && (candidate?.email?.trim() || candidate?.phone?.trim())
-  );
-  const isProfessionalDetailsComplete = Boolean(
-    (candidate as any)?.technology?.trim() &&
-    ((candidate as any)?.experience_years != null && (candidate as any)?.experience_years !== "") &&
-    (candidate as any)?.primary_skills?.trim() &&
-    (candidate as any)?.target_role?.trim() &&
-    (candidate as any)?.expected_salary != null &&
-    (candidate as any)?.interview_availability?.trim()
-  );
-  const canAddMarketingDetails = isBasicDetailsComplete && isProfessionalDetailsComplete && (educations?.length ?? 0) >= 1 && (experiences?.length ?? 0) >= 1;
-
-  const safeStatus = (candidate?.status && (CANDIDATE_STATUSES as readonly string[]).includes(candidate.status)) ? candidate.status : "New";
-
-  const hasSetReadyForAssignRef = useRef(false);
-  useEffect(() => {
-    if (!id || !candidate || candidate.status !== "New" || !canAddMarketingDetails || hasSetReadyForAssignRef.current) return;
-    hasSetReadyForAssignRef.current = true;
-    updateCandidateStatus(id, "Ready For Assign").then(() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })).catch(() => {});
-  }, [id, candidate?.id, candidate?.status, canAddMarketingDetails]);
 
   try {
     return (
