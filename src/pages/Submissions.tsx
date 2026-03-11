@@ -124,8 +124,14 @@ export default function Submissions() {
         for (const s of allSubmissionsForGrouping as any[]) {
           const cid = s.candidate_id;
           const name = `${s.candidates?.first_name ?? ""} ${s.candidates?.last_name ?? ""}`.trim() || "—";
-          const recId = s.candidates?.recruiter_id ?? null;
-          const agId = s.candidates?.agency_id ?? null;
+        const recId = s.candidates?.recruiter_id ?? null;
+        const agId = s.candidates?.agency_id ?? null;
+
+        // Hard guard: for recruiters, only show candidates where candidate.recruiter_id = current user.
+        if (isRecruiter && user?.id && recId && recId !== user.id) continue;
+        // Hard guard: for agency admins, only show candidates belonging to their agency.
+        if (isAgencyAdmin && profile?.agency_id && agId && agId !== profile.agency_id) continue;
+
           if (!map.has(cid)) map.set(cid, { candidateId: cid, candidateName: name, recruiterId: recId, agencyId: agId, submissions: [] });
           map.get(cid)!.submissions.push(s);
         }
