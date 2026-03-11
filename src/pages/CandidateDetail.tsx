@@ -15,7 +15,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, Plus, FileText, Calendar, Pencil, ChevronDown, Download, Eye, EyeOff, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Plus, FileText, Calendar, Pencil, ChevronDown, Download, Eye, EyeOff, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useEffect } from "react";
@@ -91,7 +91,7 @@ export default function CandidateDetail() {
   const isOwnProfile = isCandidate && profile?.linked_candidate_id === id;
   if (isCandidate && !isOwnProfile) return <Navigate to="/" replace />;
 
-  const { data: candidate, isLoading } = useQuery({
+  const { data: candidate, isLoading, isError, error: candidateError, refetch: refetchCandidate } = useQuery({
     queryKey: ["candidate", id],
     queryFn: () => fetchCandidateById(id!),
     enabled: !!id,
@@ -258,11 +258,37 @@ export default function CandidateDetail() {
   });
 
   if (isLoading) {
-    return <div className="space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-48 w-full" /></div>;
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 rounded-lg border bg-card p-8">
+        <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+        <p className="text-sm font-medium text-muted-foreground">Loading candidate...</p>
+        <div className="flex flex-col gap-2 w-full max-w-md">
+          <Skeleton className="h-8 w-64" />
+          <Skeleton className="h-32 w-full" />
+          <Skeleton className="h-32 w-full" />
+        </div>
+      </div>
+    );
   }
 
-  if (!candidate) {
-    return <div className="text-center text-muted-foreground py-12">Candidate not found</div>;
+  if (isError || !candidate) {
+    return (
+      <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 rounded-lg border bg-card p-8">
+        <p className="text-center text-muted-foreground">
+          {isError ? (candidateError?.message || "Failed to load candidate") : "Candidate not found"}
+        </p>
+        <div className="flex gap-2">
+          <Button variant="outline" asChild>
+            <Link to="/candidates">Back to Candidates</Link>
+          </Button>
+          {isError && (
+            <Button variant="default" onClick={() => refetchCandidate()}>
+              Try again
+            </Button>
+          )}
+        </div>
+      </div>
+    );
   }
 
   if (isAgencyAdmin && candidate.agency_id !== profile?.agency_id) {

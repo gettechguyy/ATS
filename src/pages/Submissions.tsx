@@ -184,7 +184,7 @@ export default function Submissions() {
     mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
       await updateSubmission(id, payload);
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["submissions"] });
       toast.success("Submission updated");
       setVendorDialogOpen(false);
@@ -194,6 +194,12 @@ export default function Submissions() {
       setJobType("Remote");
       setCity("");
       setStateValue("");
+      const newStatus = variables.payload?.status;
+      if (newStatus) {
+        setApplicationsSheet((prev) =>
+          prev ? { ...prev, submissions: prev.submissions.map((sub) => (sub.id === variables.id ? { ...sub, status: newStatus } : sub)) } : null
+        );
+      }
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -471,7 +477,38 @@ export default function Submissions() {
                             <TableCell className="font-medium">{s.client_name}</TableCell>
                             <TableCell>{s.position}</TableCell>
                             <TableCell>
-                              <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
+                              <Select
+                                value={s.status}
+                                onValueChange={(v) => {
+                                  if (v === "Vendor Responded") {
+                                    setVendorSubmission(s);
+                                    setVendorDialogOpen(true);
+                                  } else if (v === "Screen Call") {
+                                    setScreenSubmission(s);
+                                    setScreenDialogOpen(true);
+                                  } else {
+                                    updateStatus.mutate(
+                                      { id: s.id, status: v },
+                                      {
+                                        onSuccess: () => {
+                                          setApplicationsSheet((prev) =>
+                                            prev ? { ...prev, submissions: prev.submissions.map((sub) => (sub.id === s.id ? { ...sub, status: v } : sub)) } : null
+                                          );
+                                        },
+                                      }
+                                    );
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="h-8 w-[140px]">
+                                  <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {SUBMISSION_STATUSES.map((st) => (
+                                    <SelectItem key={st} value={st}>{st}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </TableCell>
                             <TableCell className="text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</TableCell>
                             <TableCell>
