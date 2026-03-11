@@ -18,7 +18,7 @@ import {
 import { ArrowLeft, Plus, FileText, Calendar, Pencil, ChevronDown, Download, Eye, EyeOff, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import ResumeUpload from "@/components/ResumeUpload";
 import CoverLetterUpload from "@/components/CoverLetterUpload";
@@ -89,7 +89,6 @@ export default function CandidateDetail() {
   const [applicationsPage, setApplicationsPage] = useState(1);
 
   const isOwnProfile = isCandidate && profile?.linked_candidate_id === id;
-  if (isCandidate && !isOwnProfile) return <Navigate to="/" replace />;
 
   const { data: candidate, isLoading, isError, error: candidateError, refetch: refetchCandidate } = useQuery({
     queryKey: ["candidate", id],
@@ -257,6 +256,8 @@ export default function CandidateDetail() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  if (isCandidate && !isOwnProfile) return <Navigate to="/" replace />;
+
   if (isLoading) {
     return (
       <div className="flex min-h-[50vh] flex-col items-center justify-center gap-4 rounded-lg border bg-card p-8">
@@ -330,8 +331,10 @@ export default function CandidateDetail() {
   );
   const canAddMarketingDetails = isBasicDetailsComplete && isProfessionalDetailsComplete && (educations?.length ?? 0) >= 1 && (experiences?.length ?? 0) >= 1;
 
+  const hasSetReadyForAssignRef = useRef(false);
   useEffect(() => {
-    if (!id || !candidate || candidate.status !== "New" || !canAddMarketingDetails) return;
+    if (!id || !candidate || candidate.status !== "New" || !canAddMarketingDetails || hasSetReadyForAssignRef.current) return;
+    hasSetReadyForAssignRef.current = true;
     updateCandidateStatus(id, "Ready For Assign").then(() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })).catch(() => {});
   }, [id, candidate?.id, candidate?.status, canAddMarketingDetails]);
 
