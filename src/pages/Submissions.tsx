@@ -24,7 +24,7 @@ import { Search, Eye, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from "luci
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { fetchSubmissionsPaginated, fetchSubmissionsByRecruiterPaginated, fetchSubmissionsByCandidatePaginated, fetchSubmissionsByAgencyPaginated, fetchSubmissionsByTeamLead, updateSubmissionStatus, updateSubmission, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
+import { fetchSubmissionsPaginated, fetchSubmissionsByRecruiterPaginated, fetchSubmissionsForRecruiterCandidatesPaginated, fetchSubmissionsByCandidatePaginated, fetchSubmissionsByAgencyPaginated, fetchSubmissionsByTeamLead, updateSubmissionStatus, updateSubmission, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
 import { fetchCandidates, fetchCandidatesByRecruiter, fetchCandidatesBasic, fetchCandidatesByTeamLead } from "../../dbscripts/functions/candidates";
 import { fetchAgencies } from "../../dbscripts/functions/agencies";
 import { fetchProfilesByRole } from "../../dbscripts/functions/profiles";
@@ -105,7 +105,7 @@ export default function Submissions() {
       }
       const candidateIdOpt = candidateFilter && candidateFilter !== "all" ? candidateFilter : undefined;
       if (isAgencyAdmin && profile?.agency_id) return fetchSubmissionsByAgencyPaginated(profile.agency_id, { page: 1, pageSize: SUBMISSIONS_FETCH_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
-      if (isRecruiter && user?.id) return fetchSubmissionsByRecruiterPaginated(user.id, { page: 1, pageSize: SUBMISSIONS_FETCH_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
+      if (isRecruiter && user?.id) return fetchSubmissionsForRecruiterCandidatesPaginated(user.id, { page: 1, pageSize: SUBMISSIONS_FETCH_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
       return fetchSubmissionsPaginated({ page: 1, pageSize: SUBMISSIONS_FETCH_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
     },
     enabled: isPaginatedRole && !!user,

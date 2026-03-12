@@ -30,27 +30,32 @@ export type CandidatesPageOpts = {
   order?: "asc" | "desc";
   /** undefined = all, null = no agency assigned, string = that agency */
   agencyId?: string | null;
+  /** when true, only candidates with agency_id IS NOT NULL (used when filter is "Agency" but no specific agency chosen) */
+  agencyNotNullOnly?: boolean;
   /** undefined = all, null = unassigned recruiter, string = that recruiter */
   recruiterId?: string | null;
   technology?: string | null;
 };
 
-function buildCandidatesQuery(recruiterId?: string | null, agencyId?: string | null, sortBy?: string, order?: "asc" | "desc", technology?: string | null) {
+function buildCandidatesQuery(recruiterId?: string | null, agencyId?: string | null, agencyNotNullOnly?: boolean, sortBy?: string, order?: "asc" | "desc", technology?: string | null) {
   const col = sortBy && CANDIDATES_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
   const asc = order === "asc";
   let q = supabase.from("candidates").select("*", { count: "exact" }).order(col, { ascending: asc });
   if (recruiterId !== undefined && recruiterId !== null) q = q.eq("recruiter_id", recruiterId);
   else if (recruiterId === null) q = q.is("recruiter_id", null);
-  if (agencyId !== undefined && agencyId !== null) q = q.eq("agency_id", agencyId);
+  // Agency: specific ID takes precedence, then null (None), then agencyNotNullOnly (Agency filter but no selection)
+  const hasSpecificAgency = agencyId != null && String(agencyId).trim() !== "";
+  if (hasSpecificAgency) q = q.eq("agency_id", agencyId);
   else if (agencyId === null) q = q.is("agency_id", null);
+  else if (agencyNotNullOnly) q = q.not("agency_id", "is", null);
   if (technology != null && technology !== "") q = (q as any).eq("technology", technology);
   return q;
 }
 
 /** Server-side paginated + optional search, status, sort, agencyId, recruiterId, technology. Returns { data, total } */
 export async function fetchCandidatesPaginated(opts: CandidatesPageOpts) {
-  const { page, pageSize, search, status, sortBy, order, agencyId, recruiterId, technology } = opts;
-  let q = buildCandidatesQuery(recruiterId, agencyId, sortBy, order, technology ?? undefined);
+  const { page, pageSize, search, status, sortBy, order, agencyId, agencyNotNullOnly, recruiterId, technology } = opts;
+  let q = buildCandidatesQuery(recruiterId, agencyId, agencyNotNullOnly, sortBy, order, technology ?? undefined);
   if (status && status !== "all") q = q.eq("status", status);
   if (search && search.trim()) {
     const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
@@ -65,8 +70,8 @@ export async function fetchCandidatesPaginated(opts: CandidatesPageOpts) {
 }
 
 export async function fetchCandidatesByRecruiterPaginated(recruiterId: string, opts: CandidatesPageOpts) {
-  const { page, pageSize, search, status, sortBy, order, agencyId, technology } = opts;
-  let q = buildCandidatesQuery(recruiterId, agencyId ?? undefined, sortBy, order, technology ?? undefined);
+  const { page, pageSize, search, status, sortBy, order, agencyId, agencyNotNullOnly, technology } = opts;
+  let q = buildCandidatesQuery(recruiterId, agencyId ?? undefined, agencyNotNullOnly, sortBy, order, technology ?? undefined);
   if (status && status !== "all") q = q.eq("status", status);
   if (search && search.trim()) {
     const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");

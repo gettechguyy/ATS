@@ -83,7 +83,9 @@ export default function Candidates() {
     enabled: !isCandidate,
   });
 
-  const effectiveAgencyId = !canSeeAllCandidates ? undefined : agencyFilterKind === "all" ? undefined : agencyFilterKind === "none" ? null : agencyFilterId || undefined;
+  // All = no filter; None = only agency_id IS NULL; Agency = only that agency or (if none chosen) only agency_id IS NOT NULL
+  const effectiveAgencyId = !canSeeAllCandidates ? undefined : agencyFilterKind === "all" ? undefined : agencyFilterKind === "none" ? null : (agencyFilterId?.trim() || undefined);
+  const agencyNotNullOnly = canSeeAllCandidates && agencyFilterKind === "agency"; // when "Agency" filter is on, never show null-agency candidates
   const effectiveRecruiterId = !canSeeAllCandidates ? undefined : recruiterFilterKind === "all" ? undefined : recruiterFilterKind === "unassigned" ? null : recruiterFilterId || undefined;
 
   const { data: candidatesResult, isLoading } = useQuery({
@@ -98,6 +100,7 @@ export default function Candidates() {
         order,
         technology: technologyFilter === "all" ? undefined : technologyFilter,
         agencyId: effectiveAgencyId,
+        agencyNotNullOnly,
         recruiterId: effectiveRecruiterId,
       };
       if (isAgencyAdmin) {

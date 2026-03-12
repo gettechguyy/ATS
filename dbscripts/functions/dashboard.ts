@@ -95,6 +95,8 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
   let s: any[];
   let i: any[];
   let o: any[];
+  // Optional aggregated submissions count from RPC (get_candidate_application_counts)
+  let aggregatedSubmissionsTotal: number | null = null;
 
   if (isAgencyScoped) {
     // Agency admin: only candidates assigned to their agency and submissions for those candidates. Use created_by for interviews/offers to avoid long submission_id lists.
@@ -153,6 +155,28 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
     s = submissionsRes.data || [];
     i = interviewsRes.data || [];
     o = offersRes.data || [];
+
+    // Also use aggregated submissions-by-candidate RPC so recruiter dashboard totalSubmissions
+    // matches the Applications page logic. Only when no date range or technology/recruiter
+    // filters are applied, to avoid mismatches.
+    if (!startISO && !endISO && !filterTechnology && !filterRecruiterId) {
+      const anySupabase = supabase as any;
+      const { data, error } = await anySupabase.rpc("get_candidate_application_counts", {
+        p_recruiter_id: recruiterId,
+        p_agency_id: null,
+        p_status: null,
+        p_search: null,
+        p_candidate_id: filterCandidateId ?? null,
+        p_offset: 0,
+        p_limit: 10000,
+      });
+      if (!error && Array.isArray(data)) {
+        aggregatedSubmissionsTotal = data.reduce(
+          (sum: number, row: any) => sum + Number(row.application_count || 0),
+          0
+        );
+      }
+    }
   } else {
   if (isTeamLeadScoped) {
     // Limit candidates to those owned by team lead (team_lead_id = recruiterId (profile id)). Use created_by for interviews/offers to avoid long submission_id lists.
@@ -185,14 +209,21 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
       const candidatesRes = await candidatesQuery;
       c = candidatesRes.data || [];
       const candidateIds = c.map((x: any) => x.id);
+
       if (filterCandidateId || filterTechnology) {
+        // When filtering by candidate/technology (and optionally recruiter), restrict submissions
+        // to those candidates, and if a recruiter is also selected, only submissions created by
+        // that recruiter. This ensures a single candidate view can never exceed the recruiter total.
         if (candidateIds.length === 0) {
           s = [];
           i = [];
           o = [];
         } else {
+          let subQ = submissionsQuery.in("candidate_id", candidateIds);
+          if (filterRecruiterId) subQ = subQ.eq("recruiter_id", filterRecruiterId);
+
           const [submissionsRes, interviewsRes, offersRes] = await Promise.all([
-            submissionsQuery.in("candidate_id", candidateIds),
+            subQ,
             interviewsQuery.in("candidate_id", candidateIds),
             offersQuery.in("candidate_id", candidateIds),
           ]);
@@ -201,6 +232,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
           o = offersRes.data || [];
         }
       } else {
+        // Only recruiter filter: submissions/interviews/offers created by that recruiter.
         const [submissionsRes, interviewsRes, offersRes] = await Promise.all([
           submissionsQuery.eq("recruiter_id", filterRecruiterId!),
           interviewsQuery.eq("created_by", filterRecruiterId!),
@@ -237,7 +269,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
       "On Bench": c.filter((x: any) => x.status === "On Bench").length,
       "In Training": c.filter((x: any) => x.status === "In Training").length,
     },
-    totalSubmissions: s.length,
+    totalSubmissions: aggregatedSubmissionsTotal ?? s.length,
     // screen calls are tracked on the submissions row (status === 'Screen Call' or screen_scheduled_at set)
     totalScreenCalls: s.filter((x: any) => x.status === "Screen Call" || x.screen_scheduled_at).length,
     totalInterviews: i.length,
