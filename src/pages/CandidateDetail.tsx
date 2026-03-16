@@ -81,8 +81,8 @@ export default function CandidateDetail() {
   const [showGmailPass, setShowGmailPass] = useState(false);
   const [showLinkedInPass, setShowLinkedInPass] = useState(false);
   const [showGoVoicePass, setShowGoVoicePass] = useState(false);
-  // collapse states for sections
-  const [profOpen, setProfOpen] = useState(false);
+  // collapse states for sections — Professional Details starts expanded for recruiters so they can see assigned candidate details
+  const [profOpen, setProfOpen] = useState(isRecruiter);
   const [eduOpen, setEduOpen] = useState(false);
   const [expOpen, setExpOpen] = useState(false);
   const [marketingOpen, setMarketingOpen] = useState(false);
@@ -744,9 +744,9 @@ export default function CandidateDetail() {
                 <ChevronDown className={`h-4 w-4 transition-transform ${profOpen ? 'rotate-180' : ''}`} />
               </button>
             </CardHeader>
-            <div style={{ maxHeight: profOpen ? '2000px' : '0px', overflow: 'hidden', transition: 'max-height 320ms ease' }}>
+            <div style={{ maxHeight: (profOpen || isRecruiter) ? '2000px' : '0px', overflow: 'hidden', transition: 'max-height 320ms ease' }}>
               <CardContent className="space-y-4">
-              {/* Resume & Cover Letter Upload */}
+              {/* Resume & Cover Letter Upload — recruiters can always view (read-only) */}
               <div className="flex gap-4 items-center flex-wrap">
                 <div><span className="text-muted-foreground">Resume:</span></div>
                 <div>
@@ -972,7 +972,7 @@ export default function CandidateDetail() {
           <Card>
             <CardHeader className="relative">
               <CardTitle className="text-base">Marketing Details</CardTitle>
-              <button type="button" className="absolute right-3 top-3 p-1 rounded hover:bg-muted" onClick={() => canAddMarketingDetails && setMarketingOpen(v => !v)} aria-label="Toggle marketing details">
+              <button type="button" className="absolute right-3 top-3 p-1 rounded hover:bg-muted" onClick={() => setMarketingOpen((v) => !v)} aria-label="Toggle marketing details">
                 <ChevronDown className={`h-4 w-4 transition-transform ${marketingOpen ? 'rotate-180' : ''}`} />
               </button>
             </CardHeader>

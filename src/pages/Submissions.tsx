@@ -362,11 +362,11 @@ export default function Submissions() {
                     </>
                   ) : (
                     <>
-                      <TableHead className="w-10"></TableHead>
                       <TableHead>Candidate</TableHead>
                       <TableHead>Recruiter</TableHead>
                       <TableHead>Application count</TableHead>
                       <TableHead>Agency</TableHead>
+                      <TableHead className="w-10">Actions</TableHead>
                     </>
                   )}
                 </TableRow>
@@ -398,23 +398,23 @@ export default function Submissions() {
                 ) : (
                   displayCandidates.map((row) => (
                     <TableRow key={row.candidateId}>
+                      <TableCell className="font-medium">{row.candidateName}</TableCell>
+                      <TableCell className="text-muted-foreground">{getRecruiterName(row.recruiterId)}</TableCell>
+                      <TableCell>{row.submissions.length}</TableCell>
+                      <TableCell className="text-muted-foreground">{getAgencyName(row.agencyId)}</TableCell>
                       <TableCell className="w-10 p-1">
-                        {row.submissions.length > 1 ? (
+                        {row.submissions.length >= 1 ? (
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
                             onClick={() => { setApplicationsSheet({ candidateName: row.candidateName, submissions: row.submissions }); setApplicationsSheetPage(1); }}
-                            aria-label="Expand applications"
+                            aria-label="View applications"
                           >
                             <ChevronRight className="h-4 w-4" />
                           </Button>
                         ) : null}
                       </TableCell>
-                      <TableCell className="font-medium">{row.candidateName}</TableCell>
-                      <TableCell className="text-muted-foreground">{getRecruiterName(row.recruiterId)}</TableCell>
-                      <TableCell>{row.submissions.length}</TableCell>
-                      <TableCell className="text-muted-foreground">{getAgencyName(row.agencyId)}</TableCell>
                     </TableRow>
                   ))
                 )}
