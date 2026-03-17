@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
@@ -102,6 +103,17 @@ export default function Agencies() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const toggleAgencyActiveMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) => {
+      await updateAgency(id, { is_active: isActive });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["agencies"] });
+      toast.success("Agency status updated");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
   const handleEditAgency = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingAgency?.id || !editAgencyName.trim()) return;
@@ -159,19 +171,33 @@ export default function Agencies() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Type</TableHead>
-                  <TableHead className="w-48">Actions</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="w-64">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {agencies.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={3} className="py-8 text-center text-muted-foreground">No agencies yet. Add an agency to get started.</TableCell>
+                    <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">No agencies yet. Add an agency to get started.</TableCell>
                   </TableRow>
                 ) : (
                   agencies.map((a: any) => (
                     <TableRow key={a.id}>
                       <TableCell className="font-medium">{a.name}</TableCell>
                       <TableCell className="capitalize text-muted-foreground">{a.type || "out"}</TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={a.is_active !== false}
+                            onCheckedChange={(val) =>
+                              toggleAgencyActiveMutation.mutate({ id: a.id, isActive: val })
+                            }
+                          />
+                          <span className="text-xs text-muted-foreground">
+                            {a.is_active === false ? "Inactive" : "Active"}
+                          </span>
+                        </div>
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Button

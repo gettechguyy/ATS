@@ -23,10 +23,11 @@ export async function createAgency(payload: { name: string; type?: "in" | "out" 
   return data;
 }
 
-export async function updateAgency(id: string, payload: { name?: string; type?: "in" | "out" }) {
+export async function updateAgency(id: string, payload: { name?: string; type?: "in" | "out"; is_active?: boolean }) {
   const updates: Record<string, unknown> = {};
   if (payload.name !== undefined) updates.name = payload.name.trim();
   if (payload.type !== undefined) updates.type = payload.type;
+  if (payload.is_active !== undefined) updates.is_active = payload.is_active;
   if (Object.keys(updates).length === 0) return;
   const { error } = await supabase.from("agencies").update(updates as any).eq("id", id);
   if (error) throw error;

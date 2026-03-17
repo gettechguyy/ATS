@@ -76,6 +76,7 @@ export default function Candidates() {
     enabled: !isAgencyAdmin,
   });
 
+  const activeAgencies = (agencies || []).filter((a: any) => a.is_active !== false);
   const effectiveAgencyForTech = agencyFilterKind === "agency" && agencyFilterId ? agencyFilterId : undefined;
   const { data: technologyOptions } = useQuery({
     queryKey: ["candidate-technologies", isAgencyAdmin ? profile?.agency_id : effectiveAgencyForTech ?? "all"],
@@ -336,7 +337,7 @@ export default function Candidates() {
                     <SelectValue placeholder="Select agency" />
                   </SelectTrigger>
                   <SelectContent>
-                    {(agencies || []).map((a: any) => (
+                    {activeAgencies.map((a: any) => (
                       <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -433,7 +434,7 @@ export default function Candidates() {
                       {isAdmin && !isAgencyAdmin && (
                         <TableCell>
                           <Select
-                            value={agencies?.some((a: any) => a.id === c.agency_id) ? (c.agency_id ?? "none") : "none"}
+                            value={activeAgencies.some((a: any) => a.id === c.agency_id && a.is_active !== false) ? (c.agency_id ?? "none") : "none"}
                             onValueChange={(v) => updateAgencyMutation.mutate({ candidateId: c.id, agencyId: v === "none" ? null : v })}
                           >
                             <SelectTrigger className="w-44 h-8">
@@ -441,7 +442,7 @@ export default function Candidates() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="none">— None —</SelectItem>
-                              {(agencies || []).map((a: any) => (
+                              {activeAgencies.map((a: any) => (
                                 <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
                               ))}
                             </SelectContent>
@@ -490,10 +491,10 @@ export default function Candidates() {
                         <TableCell className="text-muted-foreground">
                           {stats?.lastApplicationAt ? new Date(stats.lastApplicationAt).toLocaleDateString() : "—"}
                         </TableCell>
-                        {isAdmin && !isAgencyAdmin && (
+                      {isAdmin && !isAgencyAdmin && (
                           <TableCell>
                             <Select
-                              value={agencies?.some((a: any) => a.id === c.agency_id) ? (c.agency_id ?? "none") : "none"}
+                            value={activeAgencies.some((a: any) => a.id === c.agency_id && a.is_active !== false) ? (c.agency_id ?? "none") : "none"}
                               onValueChange={(v) => updateAgencyMutation.mutate({ candidateId: c.id, agencyId: v === "none" ? null : v })}
                             >
                               <SelectTrigger className="w-44 h-8">
@@ -501,7 +502,7 @@ export default function Candidates() {
                               </SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="none">— None —</SelectItem>
-                                {(agencies || []).map((a: any) => (
+                              {activeAgencies.map((a: any) => (
                                   <SelectItem key={a.id} value={a.id}>{a.name}</SelectItem>
                                 ))}
                               </SelectContent>
