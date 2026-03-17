@@ -10,6 +10,7 @@ import Dashboard from "@/pages/Dashboard";
 import Candidates from "@/pages/Candidates";
 import CandidateDetail from "@/pages/CandidateDetail";
 import Submissions from "@/pages/Submissions";
+import VendorSubmissions from "@/pages/VendorSubmissions";
 import SubmissionDetail from "@/pages/SubmissionDetail";
 import Interviews from "@/pages/Interviews";
 import ScreensPage from "@/pages/Screens";
@@ -40,6 +41,7 @@ const App = () => (
               <Route path="/my-profile" element={<MyProfile />} />
               <Route path="/submissions" element={<Submissions />} />
               <Route path="/submissions/:id" element={<SubmissionDetail />} />
+              <Route path="/submissions-vendor" element={<VendorSubmissions />} />
               <Route path="/screens" element={<ScreensPage />} />
               <Route path="/interviews" element={<Interviews />} />
               <Route path="/offers" element={<Offers />} />

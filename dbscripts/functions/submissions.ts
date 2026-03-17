@@ -235,7 +235,13 @@ export async function createSubmission(submission: {
   job_link?: string | null;
   job_portal?: string | null;
   status?: string;
-}) {
+  rate?: number | null;
+  rate_type?: string | null;
+  job_description?: string | null;
+  job_type?: string | null;
+  city?: string | null;
+  state?: string | null;
+}): Promise<{ id: string } | void> {
   const insertObj: Record<string, any> = {
     candidate_id: submission.candidate_id,
     recruiter_id: submission.recruiter_id,
@@ -245,14 +251,22 @@ export async function createSubmission(submission: {
   };
   if (submission.job_link !== undefined) insertObj.job_link = submission.job_link;
   if (submission.job_portal !== undefined) insertObj.job_portal = submission.job_portal;
+   // Optional Vendor Responded details when creating directly in that status
+  if (submission.rate !== undefined) insertObj.rate = submission.rate;
+  if (submission.rate_type !== undefined) insertObj.rate_type = submission.rate_type;
+  if (submission.job_description !== undefined) insertObj.job_description = submission.job_description;
+  if (submission.job_type !== undefined) insertObj.job_type = submission.job_type;
+  if (submission.city !== undefined) insertObj.city = submission.city;
+  if (submission.state !== undefined) insertObj.state = submission.state;
 
-  const { error } = await supabase.from("submissions").insert(insertObj as any);
+  const { data, error } = await supabase.from("submissions").insert(insertObj as any).select("id").single();
   if (error) throw error;
 
   const { count } = await supabase.from("submissions").select("id", { count: "exact", head: true }).eq("candidate_id", submission.candidate_id);
   if (count === 1) {
     await supabase.from("candidates").update({ status: "In Marketing" as any }).eq("id", submission.candidate_id);
   }
+  return data as { id: string };
 }
 
 export async function updateSubmissionStatus(id: string, status: string) {
