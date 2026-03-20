@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, Link, Navigate } from "react-router-dom";
+import { useParams, Link, Navigate, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -47,6 +47,7 @@ export default function SubmissionDetail() {
   const { id } = useParams<{ id: string }>();
   const { user, profile, isCandidate } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const [interviewDialogOpen, setInterviewDialogOpen] = useState(false);
   const [offerDialogOpen, setOfferDialogOpen] = useState(false);
   const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false);
@@ -216,8 +217,17 @@ export default function SubmissionDetail() {
 
   return (
     <div>
-      <Button variant="ghost" size="sm" asChild className="mb-4">
-        <Link to="/submissions"><ArrowLeft className="mr-2 h-4 w-4" />Back</Link>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="mb-4"
+        onClick={() => {
+          // Go back to the exact page the user came from (e.g., Submissions sheet, Screens).
+          navigate(-1);
+        }}
+      >
+        <ArrowLeft className="mr-2 h-4 w-4" />
+        Back
       </Button>
 
       <div className="grid gap-6 lg:grid-cols-3">

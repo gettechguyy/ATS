@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Link } from "react-router-dom";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchSubmissions,
@@ -29,17 +29,21 @@ import {
   fetchSubmissionsByTeamLead,
   fetchSubmissionsByAgency,
   createSubmission as createSubmissionFn,
+  updateSubmissionStatus,
 } from "../../dbscripts/functions/submissions";
-import { fetchCandidates, fetchCandidatesByRecruiter } from "../../dbscripts/functions/candidates";
+import { fetchCandidates, fetchCandidatesByRecruiter, fetchCandidatesBasic } from "../../dbscripts/functions/candidates";
 import { uploadVendorJobDescription } from "../../dbscripts/functions/storage";
 import { updateSubmission } from "../../dbscripts/functions/submissions";
 
 const PAGE_SIZE = 10;
+const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Screen Call", "Interview", "Rejected", "Offered"] as const;
 
 export default function VendorSubmissions() {
-  const { user, profile, isCandidate, isRecruiter, isAdmin, isTeamLead, isAgencyAdmin } = useAuth();
+  const { user, profile, isCandidate, isRecruiter, isAdmin, isManager, isTeamLead, isAgencyAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
+  const [candidateFilter, setCandidateFilter] = useState<string>("all");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newCandidateId, setNewCandidateId] = useState<string | null>(null);
   const [newClientName, setNewClientName] = useState("");
@@ -81,20 +85,37 @@ export default function VendorSubmissions() {
   });
 
   const vendorSubmissions = submissions.filter((s: any) => s && s.status === "Vendor Responded");
-  const totalPages = Math.max(1, Math.ceil(vendorSubmissions.length / PAGE_SIZE));
-  const paginated = vendorSubmissions.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const normalizedSearch = search.trim().toLowerCase();
+  const filteredVendorSubmissions = vendorSubmissions.filter((s: any) => {
+    const candidateIdMatch = candidateFilter === "all" ? true : String(s.candidate_id) === candidateFilter;
+    if (!candidateIdMatch) return false;
+
+    if (!normalizedSearch) return true;
+    const candidateName = `${s.candidates?.first_name ?? ""} ${s.candidates?.last_name ?? ""}`.trim().toLowerCase();
+    const clientName = (s.client_name ?? "").toLowerCase();
+    const position = (s.position ?? "").toLowerCase();
+    return (
+      clientName.includes(normalizedSearch)
+      || position.includes(normalizedSearch)
+      || candidateName.includes(normalizedSearch)
+    );
+  });
+
+  const totalPages = Math.max(1, Math.ceil(filteredVendorSubmissions.length / PAGE_SIZE));
+  const paginated = filteredVendorSubmissions.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Candidate dropdown for Add Vendor Submission (admin: all, recruiter: own)
   const candidatesQueryFn = async () => {
-    if (isAdmin) return fetchCandidates();
+    if (isAdmin || isManager) return fetchCandidates();
     if (isRecruiter && user?.id) return fetchCandidatesByRecruiter(user.id);
+    if (isAgencyAdmin && profile?.agency_id) return fetchCandidatesBasic(profile.agency_id);
     return [];
   };
 
   const { data: candidates = [], isLoading: candidatesLoading } = useQuery({
     queryKey: ["vendor-submissions-candidates", user?.id],
     queryFn: candidatesQueryFn,
-    enabled: isAdmin || (isRecruiter && !!user?.id),
+    enabled: isAdmin || isManager || (isRecruiter && !!user?.id) || (isAgencyAdmin && !!profile?.agency_id),
   });
 
   const createSubmission = useMutation({
@@ -148,31 +169,79 @@ export default function VendorSubmissions() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const updateStatus = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      await updateSubmissionStatus(id, status);
+    },
+    onSuccess: () => {
+      // If status changes away from Vendor Responded, the row will disappear after refetch.
+      queryClient.invalidateQueries({ queryKey: ["submissions-vendor-responded"] });
+      toast.success("Status updated");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, candidateFilter]);
+
   return (
     <div>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold">Submission</h1>
-          <p className="text-sm text-muted-foreground">All submissions where status is Vendor Responded</p>
+      <div className="mb-6 flex flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold">Submission</h1>
+            <p className="text-sm text-muted-foreground">All submissions where status is Vendor Responded</p>
+          </div>
+          {(isAdmin || isRecruiter) && (
+            <Button
+              size="sm"
+              onClick={() => {
+                if (candidatesLoading) {
+                  toast.error("Loading candidates, please wait");
+                  return;
+                }
+                if (!candidates || candidates.length === 0) {
+                  toast.error("No candidates available to create a submission.");
+                  return;
+                }
+                setAddDialogOpen(true);
+              }}
+              disabled={candidatesLoading || !candidates || candidates.length === 0}
+            >
+              Add
+            </Button>
+          )}
         </div>
-        {(isAdmin || isRecruiter) && (
-          <Button
-            size="sm"
-            onClick={() => {
-              if (candidatesLoading) {
-                toast.error("Loading candidates, please wait");
-                return;
-              }
-              if (!candidates || candidates.length === 0) {
-                toast.error("No candidates available to create a submission.");
-                return;
-              }
-              setAddDialogOpen(true);
-            }}
-            disabled={candidatesLoading || !candidates || candidates.length === 0}
-          >
-            Add
-          </Button>
+
+        {!isCandidate && (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative flex-1 min-w-[240px]">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search submissions..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+
+            <div className="min-w-[220px]">
+              <Select value={candidateFilter} onValueChange={setCandidateFilter}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="All candidates" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All candidates</SelectItem>
+                  {(candidates || []).filter((c: any) => c && c.id).map((c: any) => (
+                    <SelectItem key={c.id} value={String(c.id)}>
+                      {c.first_name} {c.last_name || ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         )}
       </div>
 
@@ -196,7 +265,7 @@ export default function VendorSubmissions() {
                 </TableRow>
               ) : paginated.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">No Vendor Responded submissions</TableCell>
+                  <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">No submissions match your filters</TableCell>
                 </TableRow>
               ) : (
                 paginated.map((s: any) => (
@@ -208,7 +277,23 @@ export default function VendorSubmissions() {
                     )}
                     <TableCell>{s.client_name}</TableCell>
                     <TableCell>{s.position}</TableCell>
-                    <TableCell>{s.status}</TableCell>
+                    <TableCell>
+                      <Select
+                        value={s.status}
+                        onValueChange={(v) => updateStatus.mutate({ id: s.id, status: v })}
+                      >
+                        <SelectTrigger className="h-8 w-[160px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {SUBMISSION_STATUSES.map((st) => (
+                            <SelectItem key={st} value={st}>
+                              {st}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       {s.created_at ? new Date(s.created_at).toLocaleDateString() : "—"}
                     </TableCell>
@@ -223,10 +308,10 @@ export default function VendorSubmissions() {
             </TableBody>
           </Table>
 
-          {!isLoading && vendorSubmissions.length > 0 && (
+          {!isLoading && filteredVendorSubmissions.length > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
               <p className="text-sm text-muted-foreground">
-                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, vendorSubmissions.length)} of {vendorSubmissions.length}
+                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredVendorSubmissions.length)} of {filteredVendorSubmissions.length}
               </p>
               <div className="flex items-center gap-2">
                 <Button

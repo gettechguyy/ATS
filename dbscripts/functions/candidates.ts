@@ -104,10 +104,16 @@ export async function fetchCandidatesBasic(agencyId?: string | null) {
   return data || [];
 }
 
-/** Distinct technology values for filter dropdown (optionally scoped by agency). */
-export async function fetchCandidateTechnologies(agencyId?: string | null): Promise<string[]> {
+/** Distinct technology values for filter dropdown.
+ * Optionally scoped by agency and/or recruiter.
+ */
+export async function fetchCandidateTechnologies(agencyId?: string | null, recruiterId?: string | null): Promise<string[]> {
   let q = supabase.from("candidates").select("technology");
   if (agencyId != null) q = q.eq("agency_id", agencyId);
+  if (recruiterId !== undefined) {
+    if (recruiterId === null) q = q.is("recruiter_id", null);
+    else q = q.eq("recruiter_id", recruiterId);
+  }
   const { data } = await q;
   const set = new Set<string>();
   (data || []).forEach((r: any) => {

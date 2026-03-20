@@ -78,9 +78,17 @@ export default function Candidates() {
 
   const activeAgencies = (agencies || []).filter((a: any) => a.is_active !== false);
   const effectiveAgencyForTech = agencyFilterKind === "agency" && agencyFilterId ? agencyFilterId : undefined;
+  const effectiveRecruiterForTech = isRecruiter ? user?.id ?? undefined : effectiveRecruiterId;
   const { data: technologyOptions } = useQuery({
-    queryKey: ["candidate-technologies", isAgencyAdmin ? profile?.agency_id : effectiveAgencyForTech ?? "all"],
-    queryFn: () => fetchCandidateTechnologies(isAgencyAdmin ? profile?.agency_id ?? undefined : effectiveAgencyForTech),
+    queryKey: [
+      "candidate-technologies",
+      isAgencyAdmin ? profile?.agency_id : effectiveAgencyForTech ?? "all",
+      effectiveRecruiterForTech ?? "all",
+    ],
+    queryFn: () => fetchCandidateTechnologies(
+      isAgencyAdmin ? profile?.agency_id ?? undefined : effectiveAgencyForTech,
+      effectiveRecruiterForTech,
+    ),
     enabled: !isCandidate,
   });
 
