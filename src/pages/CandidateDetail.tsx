@@ -15,7 +15,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { ArrowLeft, Plus, FileText, Calendar, Pencil, ChevronDown, Download, Eye, EyeOff, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowLeft, Plus, FileText, Calendar, ChevronDown, Download, Eye, EyeOff, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useState, useEffect, useRef } from "react";
@@ -44,7 +44,10 @@ export default function CandidateDetail() {
   const { user, profile, isAdmin, isRecruiter, isCandidate, isManager, isAgencyAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [subDialogOpen, setSubDialogOpen] = useState(false);
-  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [editFirstName, setEditFirstName] = useState("");
+  const [editLastName, setEditLastName] = useState("");
+  const [editEmail, setEditEmail] = useState("");
+  const [editPhone, setEditPhone] = useState("");
   const [editVisa, setEditVisa] = useState("Other");
   const [editVisaCopyUploaded, setEditVisaCopyUploaded] = useState(false);
   const [editCity, setEditCity] = useState("");
@@ -81,8 +84,7 @@ export default function CandidateDetail() {
   const [showGmailPass, setShowGmailPass] = useState(false);
   const [showLinkedInPass, setShowLinkedInPass] = useState(false);
   const [showGoVoicePass, setShowGoVoicePass] = useState(false);
-  // collapse states for sections — Professional Details starts expanded for recruiters so they can see assigned candidate details
-  const [profOpen, setProfOpen] = useState(isRecruiter);
+  const [appsOpen, setAppsOpen] = useState(true);
   const [eduOpen, setEduOpen] = useState(false);
   const [expOpen, setExpOpen] = useState(false);
   const [marketingOpen, setMarketingOpen] = useState(false);
@@ -105,6 +107,10 @@ export default function CandidateDetail() {
   useEffect(() => {
     if (candidate) setEditVisa(candidate.visa_status || "Other");
     if (candidate) {
+      setEditFirstName(candidate.first_name || "");
+      setEditLastName(candidate.last_name || "");
+      setEditEmail(candidate.email || "");
+      setEditPhone(candidate.phone || "");
       setEditCity((candidate as any).city || "");
       setEditState((candidate as any).state || "");
       setEditZip((candidate as any).zip || "");
@@ -138,7 +144,7 @@ export default function CandidateDetail() {
       setMarketingOther((candidate as any).marketing_other || "");
       setMarketingSubmittedLocal(Boolean((candidate as any).marketing_submitted));
     }
-  }, [candidate?.visa_status]);
+  }, [candidate?.id]);
 
   const { data: submissionsResult } = useQuery({
     queryKey: ["candidate-submissions", id, applicationsPage, APPLICATIONS_PAGE_SIZE],
@@ -340,6 +346,9 @@ export default function CandidateDetail() {
     return agency ? `${name} (${agency.name})` : name;
   };
 
+  const canEditBasicIdentity = isOwnProfile || (isAdmin && !isAgencyAdmin);
+  const canSaveProfile = isOwnProfile || isAdmin;
+
   try {
     return (
       <div>
@@ -347,109 +356,224 @@ export default function CandidateDetail() {
         <Link to={isCandidate ? "/" : "/candidates"}><ArrowLeft className="mr-2 h-4 w-4" />{isCandidate ? "Back to Dashboard" : "Back to Candidates"}</Link>
       </Button>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="lg:col-span-1">
-          <CardHeader className="flex flex-row items-start justify-between gap-2">
+      <div className="flex flex-col gap-6">
+        {/* Candidate profile: basic + professional (single static block, Excel-style) */}
+        <Card>
+          <CardHeader>
             <CardTitle className="text-lg">{displayCandidateTitle()}</CardTitle>
-            {(isAdmin && !isAgencyAdmin) && (
-              <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm"><Pencil className="h-3 w-3 mr-1" />Edit</Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader><DialogTitle>Edit candidate</DialogTitle></DialogHeader>
-                  <form
-                    className="space-y-4"
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      // if visa status requires copy, ensure we have one
-                      // For "Green Card" and "US Citizen" a visa copy is NOT required.
-                      if (editVisa !== "Green Card" && editVisa !== "US Citizen") {
-                        const hasExisting = Boolean((candidate as any).visa_copy_url);
-                        const uploaded = Boolean(editVisaCopyUploaded);
-                        if (!hasExisting && !uploaded) {
-                          toast.error("Visa copy is required for the selected visa status");
-                          return;
-                        }
-                      }
-                      const fd = new FormData(e.currentTarget);
-                      updateCandidate.mutate(
-                        {
-                          first_name: fd.get("first_name") as string,
-                          last_name: (fd.get("last_name") as string) || null,
-                          email: (fd.get("email") as string) || null,
-                          phone: (fd.get("phone") as string) || null,
-                          visa_status: editVisa,
-                          gender: editGender || null,
-                          city: editCity || null,
-                          state: editState || null,
-                          zip: editZip || null,
-                        },
-                        { onSuccess: () => { setEditDialogOpen(false); queryClient.invalidateQueries({ queryKey: ["candidate", id] }); } }
-                      );
-                    }}
-                  >
+            {canSaveProfile && (
+              <p className="text-sm text-muted-foreground mt-1">Edit fields below and use <strong>Save</strong> to update basic and professional details together.</p>
+            )}
+          </CardHeader>
+          <CardContent className="space-y-6 text-sm">
+            <div className="grid gap-8 lg:grid-cols-3">
+              {/* Column 1 — name + professional (Excel left) */}
+              <div className="space-y-4">
+                {canEditBasicIdentity ? (
+                  <>
                     <div className="space-y-2">
                       <Label>First name *</Label>
-                      <Input name="first_name" defaultValue={candidate.first_name} required />
+                      <Input value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} />
                     </div>
                     <div className="space-y-2">
                       <Label>Last name</Label>
-                      <Input name="last_name" defaultValue={candidate.last_name || ""} />
+                      <Input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} />
                     </div>
-                      <div className="space-y-2">
-                        <Label>Email</Label>
-                        <Input name="email" type="email" defaultValue={candidate.email || ""} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Phone</Label>
-                        <Input name="phone" defaultValue={candidate.phone || ""} />
-                      </div>
-                    <div className="space-y-2">
-                      <Label>Gender</Label>
-                      <Select value={editGender || "none"} onValueChange={(v) => setEditGender(v === "none" ? "" : v)}>
-                        <SelectTrigger><SelectValue placeholder="Select gender" /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">—</SelectItem>
-                          {GENDER_OPTIONS.map((g) => (
-                            <SelectItem key={g} value={g}>{g}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="space-y-2">
-                        <Label>City</Label>
-                        <Input name="city" value={editCity} onChange={(e) => setEditCity(e.target.value)} />
-                      </div>
-                      <div className="space-y-2">
-                        <Label>State</Label>
-                        <Select name="state" value={editState} onValueChange={(v) => setEditState(v)}>
-                          <SelectTrigger><SelectValue placeholder="Select state" /></SelectTrigger>
+                  </>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Name</p>
+                    <p className="font-medium">{`${candidate.first_name || ""} ${(candidate.last_name || "").trim()}`.trim() || "—"}</p>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Technology</Label>
+                  {(isOwnProfile || isAdmin) ? <Input value={technology} onChange={(e) => setTechnology(e.target.value)} /> : <div className="text-sm">{technology || "—"}</div>}
+                </div>
+                <div className="space-y-2">
+                  <Label>Experience (years)</Label>
+                  {(isOwnProfile || isAdmin) ? <Input type="number" value={experienceYears as any} onChange={(e) => setExperienceYears(e.target.value === "" ? "" : Number(e.target.value))} /> : <div className="text-sm">{experienceYears !== "" && experienceYears != null ? `${experienceYears} years` : "—"}</div>}
+                </div>
+                <div className="space-y-2">
+                  <Label>Primary Skills</Label>
+                  {(isOwnProfile || isAdmin) ? <Input value={primarySkills} onChange={(e) => setPrimarySkills(e.target.value)} /> : <div className="text-sm">{primarySkills || "—"}</div>}
+                </div>
+                <div className="space-y-2">
+                  <Label>Target Role</Label>
+                  {(isOwnProfile || isAdmin) ? <Input value={targetRole} onChange={(e) => setTargetRole(e.target.value)} /> : <div className="text-sm">{targetRole || "—"}</div>}
+                </div>
+                <div className="space-y-2">
+                  <Label>Expected Salary</Label>
+                  {(isOwnProfile || isAdmin) ? <Input type="number" value={expectedSalaryLocal} onChange={(e) => setExpectedSalaryLocal(e.target.value)} /> : <div className="text-sm">{expectedSalaryLocal ? `$${Number(expectedSalaryLocal).toLocaleString()}` : "—"}</div>}
+                </div>
+                <div className="space-y-2">
+                  <Label>Resume</Label>
+                  <div>
+                    {(isOwnProfile || isAdmin) ? (
+                      <ResumeUpload
+                        candidateId={candidate.id}
+                        currentUrl={candidate.resume_url}
+                        onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
+                      />
+                    ) : (isAdmin || isManager || isRecruiter || isAgencyAdmin || isOwnProfile) ? (
+                      candidate.resume_url ? (
+                        <span className="inline-flex items-center gap-2">
+                          <a href={candidate.resume_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View Resume</a>
+                          <a href={candidate.resume_url} target="_blank" rel="noopener noreferrer" download className="text-muted-foreground hover:text-foreground" title="Download resume" aria-label="Download resume"><Download className="h-4 w-4" /></a>
+                        </span>
+                      ) : <span className="text-xs text-muted-foreground">—</span>
+                    ) : <span className="text-xs text-muted-foreground">—</span>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Column 2 — contact, location, availability, cover letter */}
+              <div className="space-y-4">
+                {canSeePersonalDetails && (
+                  <>
+                    {canEditBasicIdentity ? (
+                      <>
+                        <div className="space-y-2">
+                          <Label>Email</Label>
+                          <Input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Phone</Label>
+                          <Input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {Boolean(candidate.email) && (
+                          <div className="space-y-1">
+                            <p className="text-xs font-medium text-muted-foreground">Email</p>
+                            <div>{displayEmail}</div>
+                          </div>
+                        )}
+                        {Boolean(candidate.phone) && (
+                          <div className="space-y-1">
+                            <p className="text-xs font-medium text-muted-foreground">Phone</p>
+                            <div>{displayPhone}</div>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+                {showVisaStatus && (
+                  <div className="space-y-2">
+                    <Label>Gender</Label>
+                    <div className="flex items-center gap-2">
+                      {canEditBasicIdentity ? (
+                        <Select value={editGender || "none"} onValueChange={(v) => setEditGender(v === "none" ? "" : v)}>
+                          <SelectTrigger className="h-9 w-full max-w-[220px]"><SelectValue placeholder="Select gender" /></SelectTrigger>
                           <SelectContent>
-                            {US_STATES.map((st) => <SelectItem key={st.code} value={st.code}>{st.name}</SelectItem>)}
+                            <SelectItem value="none">—</SelectItem>
+                            {GENDER_OPTIONS.map((g) => (
+                              <SelectItem key={g} value={g}>{g}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Zip</Label>
-                        <Input name="zip" value={editZip} onChange={(e) => setEditZip(e.target.value)} />
-                      </div>
+                      ) : (
+                        <span>{(candidate as any).gender || "—"}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {canEditBasicIdentity ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <div className="space-y-2">
+                      <Label>City</Label>
+                      <Input value={editCity} onChange={(e) => setEditCity(e.target.value)} />
                     </div>
                     <div className="space-y-2">
-                      <Label>Visa status</Label>
-                      <Select value={editVisa} onValueChange={setEditVisa}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
+                      <Label>State</Label>
+                      <Select value={editState} onValueChange={(v) => setEditState(v)}>
+                        <SelectTrigger><SelectValue placeholder="State" /></SelectTrigger>
                         <SelectContent>
-                          {VISA_STATUSES.map((v) => (
-                            <SelectItem key={v} value={v}>{v}</SelectItem>
-                          ))}
+                          {US_STATES.map((st) => <SelectItem key={st.code} value={st.code}>{st.name}</SelectItem>)}
                         </SelectContent>
                       </Select>
                     </div>
-                    {editVisa !== "US Citizen" && editVisa !== "Green Card" && (
-                      <div className="space-y-2">
-                        <Label>Visa Copy</Label>
+                    <div className="space-y-2">
+                      <Label>Zip</Label>
+                      <Input value={editZip} onChange={(e) => setEditZip(e.target.value)} />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Current Location</p>
+                    <p>{[editCity, editState, editZip].filter(Boolean).join(", ") || "—"}</p>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Open to Relocate</Label>
+                  {(isOwnProfile || isAdmin) ? (
+                    <Select value={openToRelocateLocal ? "yes" : "no"} onValueChange={(v) => setOpenToRelocateLocal(v === "yes")}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="yes">Yes</SelectItem><SelectItem value="no">No</SelectItem></SelectContent>
+                    </Select>
+                  ) : <div className="text-sm">{openToRelocateLocal ? "Yes" : "No"}</div>}
+                </div>
+                <div className="space-y-2">
+                  <Label>Interview Availability</Label>
+                  {(isOwnProfile || isAdmin) ? <Input value={interviewAvailability} onChange={(e) => setInterviewAvailability(e.target.value)} /> : <div className="text-sm">{interviewAvailability || "—"}</div>}
+                </div>
+                <div className="space-y-2">
+                  <Label>Cover Letter</Label>
+                  <div>
+                    {(isOwnProfile || isAdmin) ? (
+                      <CoverLetterUpload
+                        candidateId={candidate.id}
+                        currentUrl={(candidate as any).cover_letter_url || null}
+                        onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
+                      />
+                    ) : (isAdmin || isManager || isRecruiter || isAgencyAdmin || isOwnProfile) ? (
+                      (candidate as any).cover_letter_url ? (
+                        <span className="inline-flex items-center gap-2">
+                          <a href={(candidate as any).cover_letter_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View Cover Letter</a>
+                          <a href={(candidate as any).cover_letter_url} target="_blank" rel="noopener noreferrer" download className="text-muted-foreground hover:text-foreground" title="Download cover letter" aria-label="Download cover letter"><Download className="h-4 w-4" /></a>
+                        </span>
+                      ) : <span className="text-xs text-muted-foreground">—</span>
+                    ) : <span className="text-xs text-muted-foreground">—</span>}
+                  </div>
+                </div>
+              </div>
+
+              {/* Column 3 — education summary on candidate row, visa, recruiter, status, ID, clients, refs */}
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Education Level (Degree)</Label>
+                  {(isOwnProfile || isAdmin) ? <Input value={degree} onChange={(e) => setDegree(e.target.value)} placeholder="e.g. Bachelors" /> : <div className="text-sm">{degree || "—"}</div>}
+                </div>
+                <div className="space-y-2">
+                  <Label>Institution</Label>
+                  {(isOwnProfile || isAdmin) ? <Input value={institution} onChange={(e) => setInstitution(e.target.value)} /> : <div className="text-sm">{institution || "—"}</div>}
+                </div>
+                <div className="space-y-2">
+                  <Label>Passing / Graduation Year</Label>
+                  {(isOwnProfile || isAdmin) ? <Input value={graduationYear ?? ""} onChange={(e) => setGraduationYear(e.target.value || null)} placeholder="Year" /> : <div className="text-sm">{graduationYear || "—"}</div>}
+                </div>
+                {showVisaStatus && (
+                  <div className="space-y-2">
+                    <Label>Visa Status</Label>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {canEditBasicIdentity ? (
+                        <Select value={editVisa} onValueChange={(v) => setEditVisa(v)}>
+                          <SelectTrigger className="h-9 w-full max-w-[240px]"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {VISA_STATUSES.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span>{candidate.visa_status || "—"}</span>
+                      )}
+                      {((candidate as any).visa_copy_url && (candidate.visa_status !== "US Citizen" && candidate.visa_status !== "Green Card")) ? (
+                        <a href={(candidate as any).visa_copy_url} target="_blank" rel="noopener noreferrer" className="text-info" title="Download visa copy">
+                          <Download className="h-4 w-4" />
+                        </a>
+                      ) : null}
+                      {canEditBasicIdentity && editVisa !== "US Citizen" && editVisa !== "Green Card" && (
                         <DocumentUpload
                           candidateId={candidate.id}
                           currentUrl={(candidate as any).visa_copy_url || null}
@@ -459,157 +583,163 @@ export default function CandidateDetail() {
                             queryClient.invalidateQueries({ queryKey: ["candidate", id] });
                           }}
                         />
-                      </div>
-                    )}
-                    <Button type="submit" className="w-full" disabled={updateCandidate.isPending}>Save</Button>
-                  </form>
-                </DialogContent>
-              </Dialog>
-            )}
-          </CardHeader>
-            <CardContent className="space-y-3 text-sm">
-            {canSeePersonalDetails && (
-              <>
-                {Boolean(candidate.email) && <div><span className="text-muted-foreground">Email:</span> {displayEmail}</div>}
-                {Boolean(candidate.phone) && <div><span className="text-muted-foreground">Phone:</span> {displayPhone}</div>}
-              </>
-            )}
-            {showVisaStatus && (
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground">Gender:</span>
-                {(isOwnProfile || (isAdmin && !isAgencyAdmin)) ? (
-                  <Select
-                    value={editGender || "none"}
-                    onValueChange={async (v) => {
-                      const val = v === "none" ? "" : v;
-                      setEditGender(val);
-                      try {
-                        await updateCandidate.mutateAsync({ gender: val || null });
-                      } catch {
-                        /* handled by mutation */
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="h-7 w-[180px]"><SelectValue placeholder="Select gender" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">—</SelectItem>
-                      {GENDER_OPTIONS.map((g) => (
-                        <SelectItem key={g} value={g}>{g}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <span>{(candidate as any).gender || "—"}</span>
+                      )}
+                    </div>
+                  </div>
                 )}
-              </div>
-            )}
-            {canAssignRecruiter && recruiters && (
-              <div className="space-y-1">
-                <Label className="text-muted-foreground">Assign recruiter</Label>
-                <Select
-                  value={candidate.recruiter_id || "unassigned"}
-                  onValueChange={(v) => {
-                    const updates: Record<string, any> = { recruiter_id: v === "unassigned" ? null : v };
-                    if (v !== "unassigned") updates.status = "Ready For Marketing";
-                    updateCandidate.mutate(updates, { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["candidate", id] }) });
-                  }}
-                >
-                  <SelectTrigger className="h-9"><SelectValue placeholder="Select recruiter" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="unassigned">Unassigned</SelectItem>
-                    {recruiters.map((r: any) => (
-                      <SelectItem key={r.user_id} value={r.user_id}>{displayRecruiterName(r.user_id)}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            {!canAssignRecruiter && (
-              <div><span className="text-muted-foreground">Recruiter:</span> {displayRecruiterName(candidate.recruiter_id ?? null)}</div>
-            )}
-            {showVisaStatus && (
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground">Visa status:</span>
-                {isOwnProfile ? (
-                  <Select value={editVisa} onValueChange={async (v) => {
-                    setEditVisa(v);
-                    try {
-                      await updateCandidate.mutateAsync({ visa_status: v });
-                    } catch {
-                      /* handled by mutation */
-                    }
-                  }}>
-                    <SelectTrigger className="h-7"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {VISA_STATUSES.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <span>{candidate.visa_status || "—"}</span>
+                {canAssignRecruiter && recruiters && (
+                  <div className="space-y-1">
+                    <Label className="text-muted-foreground">Assign Recruiter</Label>
+                    <Select
+                      value={candidate.recruiter_id || "unassigned"}
+                      onValueChange={(v) => {
+                        const updates: Record<string, any> = { recruiter_id: v === "unassigned" ? null : v };
+                        if (v !== "unassigned") updates.status = "Ready For Marketing";
+                        updateCandidate.mutate(updates, { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["candidate", id] }) });
+                      }}
+                    >
+                      <SelectTrigger className="h-9"><SelectValue placeholder="Select recruiter" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="unassigned">Unassigned</SelectItem>
+                        {recruiters.map((r: any) => (
+                          <SelectItem key={r.user_id} value={r.user_id}>{displayRecruiterName(r.user_id)}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 )}
-
-                {((candidate as any).visa_copy_url && (candidate.visa_status !== "US Citizen" && candidate.visa_status !== "Green Card")) ? (
-                  <a href={(candidate as any).visa_copy_url} target="_blank" rel="noopener noreferrer" className="ml-1 text-info" title="Download visa copy">
-                    <Download className="h-4 w-4" />
-                  </a>
-                ) : null}
-                {/* Visa copy upload for own profile (only if not US Citizen and not already uploaded) */}
-                {isOwnProfile && editVisa !== "US Citizen" && editVisa !== "Green Card" && !(candidate as any).visa_copy_url && (
-                  <div className="ml-2">
+                {!canAssignRecruiter && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Recruiter Assigned</p>
+                    <div>{displayRecruiterName(candidate.recruiter_id ?? null)}</div>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>ID Proof</Label>
+                  {((candidate as any).id_copy_url) ? (
+                    <a href={(candidate as any).id_copy_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View</a>
+                  ) : ((isAdmin || isOwnProfile) ? (
                     <DocumentUpload
                       candidateId={candidate.id}
                       currentUrl={null}
-                      folder="visa"
+                      folder="id"
                       onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
                     />
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  ))}
+                </div>
+                {isAdmin && (
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">Status (Admin only)</Label>
+                    <Select value={safeStatus} onValueChange={(v) => updateStatus.mutate(v)}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {CANDIDATE_STATUSES.map((s) => (
+                          <SelectItem key={s} value={s}>{s}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                 )}
+                {!isAdmin && (
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium text-muted-foreground">Status</p>
+                    <Badge variant="outline">{safeStatus}</Badge>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label>Client 1 (Recent)</Label>
+                  {(isOwnProfile || isAdmin) ? <Input value={client1} onChange={(e) => setClient1(e.target.value)} /> : <div className="text-sm">{client1 || "—"}</div>}
+                </div>
+                <div className="space-y-2">
+                  <Label>Client 2 (Past)</Label>
+                  {(isOwnProfile || isAdmin) ? <Input value={client2} onChange={(e) => setClient2(e.target.value)} /> : <div className="text-sm">{client2 || "—"}</div>}
+                </div>
+                <div className="space-y-2">
+                  <Label>Reference 1</Label>
+                  {(isOwnProfile || isAdmin) ? <Input value={reference1} onChange={(e) => setReference1(e.target.value)} /> : <div className="text-sm">{reference1 || "—"}</div>}
+                </div>
+                <div className="space-y-2">
+                  <Label>Reference 2</Label>
+                  {(isOwnProfile || isAdmin) ? <Input value={reference2} onChange={(e) => setReference2(e.target.value)} /> : <div className="text-sm">{reference2 || "—"}</div>}
+                </div>
               </div>
-            )}
-            {/* Resume upload moved to Professional Details */}
-            <div className="pt-2">
-              <Label className="text-muted-foreground">ID Proof</Label>
-              {((candidate as any).id_copy_url) ? (
-                <a href={(candidate as any).id_copy_url} target="_blank" rel="noopener noreferrer" className="ml-2 text-xs text-info underline">View</a>
-              ) : ((isAdmin || isOwnProfile) ? (
-                <DocumentUpload
-                  candidateId={candidate.id}
-                  currentUrl={null}
-                  folder="id"
-                  onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
-                />
-              ) : (
-                <span className="ml-2 text-xs text-muted-foreground">—</span>
-              ))}
             </div>
-            
-            {isAdmin && (
-              <div className="pt-2">
-                <Label className="text-muted-foreground">Status (Admin only)</Label>
-                <Select value={safeStatus} onValueChange={(v) => updateStatus.mutate(v)}>
-                  <SelectTrigger className="mt-1"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {CANDIDATE_STATUSES.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-            {!isAdmin && (
-              <div className="pt-2">
-                <span className="text-muted-foreground">Status:</span>{" "}
-                <Badge variant="outline">{safeStatus}</Badge>
+
+            {canSaveProfile && (
+              <div className="flex flex-wrap gap-2 border-t pt-4">
+                <Button
+                  onClick={async () => {
+                    if (canEditBasicIdentity) {
+                      if (!editFirstName?.trim()) {
+                        toast.error("First name is required");
+                        return;
+                      }
+                      if (editVisa !== "Green Card" && editVisa !== "US Citizen") {
+                        const hasExisting = Boolean((candidate as any).visa_copy_url);
+                        if (!hasExisting && !editVisaCopyUploaded) {
+                          toast.error("Visa copy is required for the selected visa status");
+                          return;
+                        }
+                      }
+                    }
+                    if (!technology || technology.trim() === "") { toast.error("Technology is required"); return; }
+                    if (experienceYears === "" || experienceYears === null) { toast.error("Experience (years) is required"); return; }
+                    if (!primarySkills || primarySkills.trim() === "") { toast.error("Primary skills are required"); return; }
+                    if (!targetRole || targetRole.trim() === "") { toast.error("Target role is required"); return; }
+                    if (!expectedSalaryLocal || expectedSalaryLocal.trim() === "") { toast.error("Expected salary is required"); return; }
+                    if (!interviewAvailability || interviewAvailability.trim() === "") { toast.error("Interview availability is required"); return; }
+                    const payload: Record<string, any> = {
+                      degree,
+                      institution,
+                      graduation_year: graduationYear,
+                      technology,
+                      experience_years: typeof experienceYears === "string" ? null : experienceYears,
+                      primary_skills: primarySkills,
+                      target_role: targetRole,
+                      expected_salary: expectedSalaryLocal ? Number(expectedSalaryLocal) : null,
+                      interview_availability: interviewAvailability,
+                      open_to_relocate: openToRelocateLocal,
+                      client1,
+                      client2,
+                      reference1,
+                      reference2,
+                    };
+                    if (canEditBasicIdentity) {
+                      payload.first_name = editFirstName.trim();
+                      payload.last_name = editLastName.trim() || null;
+                      payload.email = editEmail.trim() || null;
+                      payload.phone = editPhone.trim() || null;
+                      payload.gender = editGender || null;
+                      payload.city = editCity || null;
+                      payload.state = editState || null;
+                      payload.zip = editZip || null;
+                      payload.visa_status = editVisa;
+                    }
+                    try {
+                      await updateCandidate.mutateAsync(payload);
+                      setEditVisaCopyUploaded(false);
+                    } catch {
+                      /* handled by mutation */
+                    }
+                  }}
+                  disabled={updateCandidate.isPending}
+                >
+                  {updateCandidate.isPending ? "Saving…" : "Save"}
+                </Button>
               </div>
             )}
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
+        {/* Applications — below profile, collapsible */}
+        <Card>
+          <CardHeader className="relative flex flex-row flex-wrap items-center justify-between gap-2 pr-10">
             <CardTitle className="flex items-center gap-2 text-base">
               <FileText className="h-4 w-4" /> Applications ({submissionsTotal})
             </CardTitle>
+            <div className="flex items-center gap-2">
             {(isAdmin || isRecruiter) && (
             <Dialog open={subDialogOpen} onOpenChange={setSubDialogOpen}>
               <DialogTrigger asChild>
@@ -674,30 +804,39 @@ export default function CandidateDetail() {
               </DialogContent>
             </Dialog>
             )}
+            </div>
+            <button type="button" className="absolute right-3 top-3 p-1 rounded-md hover:bg-muted" onClick={() => setAppsOpen((v) => !v)} aria-label="Toggle applications list">
+              <ChevronDown className={`h-4 w-4 transition-transform ${appsOpen ? "rotate-180" : ""}`} />
+            </button>
           </CardHeader>
-          <CardContent className="p-0">
+          <div style={{ maxHeight: appsOpen ? "4000px" : "0px", overflow: "hidden", transition: "max-height 360ms ease" }}>
+            <CardContent className="p-0">
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-12">Sr. No.</TableHead>
                   <TableHead>Client</TableHead>
                   <TableHead>Position</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Date</TableHead>
+                  <TableHead>Recruiter</TableHead>
                   <TableHead className="w-12"></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                   {submissions?.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-6 text-center text-muted-foreground">No applications yet</TableCell>
+                      <TableCell colSpan={7} className="py-6 text-center text-muted-foreground">No applications yet</TableCell>
                     </TableRow>
                   ) : (
-                  submissions?.map((s: any) => (
+                  submissions?.map((s: any, idx: number) => (
                     <TableRow key={s.id}>
+                      <TableCell className="text-muted-foreground">{(applicationsPage - 1) * APPLICATIONS_PAGE_SIZE + idx + 1}</TableCell>
                       <TableCell className="font-medium">{s.client_name}</TableCell>
                       <TableCell>{s.position}</TableCell>
                       <TableCell><Badge variant="outline">{s.status}</Badge></TableCell>
                       <TableCell className="text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</TableCell>
+                      <TableCell className="text-muted-foreground text-sm">{displayRecruiterName(s.recruiter_id ?? null)}</TableCell>
                       <TableCell>
                         <Button variant="ghost" size="icon" asChild>
                           <Link to={`/submissions/${s.id}`}><Calendar className="h-4 w-4" /></Link>
@@ -733,134 +872,11 @@ export default function CandidateDetail() {
                 </div>
               </div>
             )}
-          </CardContent>
+            </CardContent>
+          </div>
         </Card>
-        {/* Professional Details */}
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader className="relative">
-              <CardTitle className="text-base">Professional Details</CardTitle>
-              <button type="button" className="absolute right-3 top-3 p-1 rounded hover:bg-muted" onClick={() => setProfOpen(v => !v)} aria-label="Toggle professional details">
-                <ChevronDown className={`h-4 w-4 transition-transform ${profOpen ? 'rotate-180' : ''}`} />
-              </button>
-            </CardHeader>
-            <div style={{ maxHeight: (profOpen || isRecruiter) ? '2000px' : '0px', overflow: 'hidden', transition: 'max-height 320ms ease' }}>
-              <CardContent className="space-y-4">
-              {/* Resume & Cover Letter Upload — recruiters can always view (read-only) */}
-              <div className="flex gap-4 items-center flex-wrap">
-                <div><span className="text-muted-foreground">Resume:</span></div>
-                <div>
-                  {(isOwnProfile || isAdmin) ? (
-                    <ResumeUpload
-                      candidateId={candidate.id}
-                      currentUrl={candidate.resume_url}
-                      onUploaded={(url: string) => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
-                    />
-                  ) : (isAdmin || isManager || isRecruiter || isAgencyAdmin || isOwnProfile) ? (
-                    candidate.resume_url ? (
-                      <span className="ml-2 inline-flex items-center gap-2">
-                        <a href={candidate.resume_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View Resume</a>
-                        <a href={candidate.resume_url} target="_blank" rel="noopener noreferrer" download className="text-muted-foreground hover:text-foreground" title="Download resume" aria-label="Download resume"><Download className="h-4 w-4" /></a>
-                      </span>
-                    ) : <span className="ml-2 text-xs text-muted-foreground">—</span>
-                  ) : <span className="ml-2 text-xs text-muted-foreground">—</span>}
-                </div>
-                <div className="ml-6"><span className="text-muted-foreground">Cover Letter:</span></div>
-                <div>
-                  {(isOwnProfile || isAdmin) ? (
-                    <CoverLetterUpload
-                      candidateId={candidate.id}
-                      currentUrl={(candidate as any).cover_letter_url || null}
-                      onUploaded={(url: string) => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
-                    />
-                  ) : (isAdmin || isManager || isRecruiter || isAgencyAdmin || isOwnProfile) ? (
-                    (candidate as any).cover_letter_url ? (
-                      <span className="ml-2 inline-flex items-center gap-2">
-                        <a href={(candidate as any).cover_letter_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View Cover Letter</a>
-                        <a href={(candidate as any).cover_letter_url} target="_blank" rel="noopener noreferrer" download className="text-muted-foreground hover:text-foreground" title="Download cover letter" aria-label="Download cover letter"><Download className="h-4 w-4" /></a>
-                      </span>
-                    ) : <span className="ml-2 text-xs text-muted-foreground">—</span>
-                  ) : <span className="ml-2 text-xs text-muted-foreground">—</span>}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Technology</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={technology} onChange={(e) => setTechnology(e.target.value)} /> : <div className="text-sm">{technology || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Experience (years)</Label>
-                  {(isOwnProfile || isAdmin) ? <Input type="number" value={experienceYears as any} onChange={(e) => setExperienceYears(e.target.value === "" ? "" : Number(e.target.value))} /> : <div className="text-sm">{experienceYears || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Primary Skills</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={primarySkills} onChange={(e) => setPrimarySkills(e.target.value)} /> : <div className="text-sm">{primarySkills || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Target Role</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={targetRole} onChange={(e) => setTargetRole(e.target.value)} /> : <div className="text-sm">{targetRole || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Expected Salary</Label>
-                  {(isOwnProfile || isAdmin) ? <Input type="number" value={expectedSalaryLocal} onChange={(e) => setExpectedSalaryLocal(e.target.value)} /> : <div className="text-sm">{expectedSalaryLocal ? `$${Number(expectedSalaryLocal).toLocaleString()}` : "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Interview Availability</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={interviewAvailability} onChange={(e) => setInterviewAvailability(e.target.value)} /> : <div className="text-sm">{interviewAvailability || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Open to Relocate</Label>
-                  {(isOwnProfile || isAdmin) ? <Select value={openToRelocateLocal ? "yes" : "no"} onValueChange={(v) => setOpenToRelocateLocal(v === "yes")}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="yes">Yes</SelectItem><SelectItem value="no">No</SelectItem></SelectContent></Select> : <div className="text-sm">{openToRelocateLocal ? "Yes" : "No"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Client 1 (Recent)</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={client1} onChange={(e) => setClient1(e.target.value)} /> : <div className="text-sm">{client1 || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Client 2 (Past)</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={client2} onChange={(e) => setClient2(e.target.value)} /> : <div className="text-sm">{client2 || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Reference 1</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={reference1} onChange={(e) => setReference1(e.target.value)} /> : <div className="text-sm">{reference1 || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Reference 2</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={reference2} onChange={(e) => setReference2(e.target.value)} /> : <div className="text-sm">{reference2 || "—"}</div>}
-                </div>
-                {/* Cover Letter is handled above by the upload component */}
-              </div>
-              {(isOwnProfile || isAdmin) && (
-                <div className="flex gap-2">
-                  <Button onClick={async () => {
-                    // Validate mandatory professional fields (degree is optional; add via Education section if needed)
-                    if (!technology || technology.trim() === "") { toast.error("Technology is required"); return; }
-                    if (experienceYears === "" || experienceYears === null) { toast.error("Experience (years) is required"); return; }
-                    if (!primarySkills || primarySkills.trim() === "") { toast.error("Primary skills are required"); return; }
-                    if (!targetRole || targetRole.trim() === "") { toast.error("Target role is required"); return; }
-                    if (!expectedSalaryLocal || expectedSalaryLocal.trim() === "") { toast.error("Expected salary is required"); return; }
-                    if (!interviewAvailability || interviewAvailability.trim() === "") { toast.error("Interview availability is required"); return; }
-                    try {
-                      await updateCandidate.mutateAsync({
-                        degree, institution, graduation_year: graduationYear,
-                        technology, experience_years: typeof experienceYears === "string" ? null : experienceYears,
-                        primary_skills: primarySkills, target_role: targetRole,
-                        expected_salary: expectedSalaryLocal ? Number(expectedSalaryLocal) : null,
-                        interview_availability: interviewAvailability, open_to_relocate: openToRelocateLocal,
-                        client1, client2, reference1, reference2,
-                      });
-                    } catch {
-                      /* handled by mutation */
-                    }
-                  }}>Save Professional Details</Button>
-                </div>
-              )}
-              </CardContent>
-            </div>
-          </Card>
-        </div>
+
         {/* Education & Experience lists */}
-        <div className="lg:col-span-2">
           <Card>
             <CardHeader className="relative">
               <CardTitle className="text-base">Education</CardTitle>
@@ -966,10 +982,8 @@ export default function CandidateDetail() {
             </CardContent>
             </div>
           </Card>
-        </div>
         {/* Marketing Details — only available when Basic + Professional + at least 1 Education + 1 Experience */}
-        <div className="lg:col-span-2">
-          <Card>
+        <Card className="mt-4">
             <CardHeader className="relative">
               <CardTitle className="text-base">Marketing Details</CardTitle>
               <button type="button" className="absolute right-3 top-3 p-1 rounded hover:bg-muted" onClick={() => setMarketingOpen((v) => !v)} aria-label="Toggle marketing details">
@@ -1177,7 +1191,6 @@ export default function CandidateDetail() {
             </CardContent>
             </div>
           </Card>
-        </div>
       </div>
       </div>
     );
