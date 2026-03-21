@@ -2,6 +2,12 @@ import { useParams, Link, Navigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -357,315 +363,343 @@ export default function CandidateDetail() {
       </Button>
 
       <div className="flex flex-col gap-6">
-        {/* Candidate profile: basic + professional (single static block, Excel-style) */}
+        {/* Candidate profile: grouped into collapsible sections */}
         <Card>
           <CardHeader>
             <CardTitle className="text-lg">{displayCandidateTitle()}</CardTitle>
             {canSaveProfile && (
-              <p className="text-sm text-muted-foreground mt-1">Edit fields below and use <strong>Save</strong> to update basic and professional details together.</p>
+              <p className="text-sm text-muted-foreground mt-1">Open a section to edit. <strong>Save</strong> at the bottom updates everything together.</p>
             )}
           </CardHeader>
           <CardContent className="space-y-6 text-sm">
-            <div className="grid gap-8 lg:grid-cols-3">
-              {/* Column 1 — name + professional (Excel left) */}
-              <div className="space-y-4">
-                {canEditBasicIdentity ? (
-                  <>
-                    <div className="space-y-2">
-                      <Label>First name *</Label>
-                      <Input value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Last name</Label>
-                      <Input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} />
-                    </div>
-                  </>
-                ) : (
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">Name</p>
-                    <p className="font-medium">{`${candidate.first_name || ""} ${(candidate.last_name || "").trim()}`.trim() || "—"}</p>
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <Label>Technology</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={technology} onChange={(e) => setTechnology(e.target.value)} /> : <div className="text-sm">{technology || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Experience (years)</Label>
-                  {(isOwnProfile || isAdmin) ? <Input type="number" value={experienceYears as any} onChange={(e) => setExperienceYears(e.target.value === "" ? "" : Number(e.target.value))} /> : <div className="text-sm">{experienceYears !== "" && experienceYears != null ? `${experienceYears} years` : "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Primary Skills</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={primarySkills} onChange={(e) => setPrimarySkills(e.target.value)} /> : <div className="text-sm">{primarySkills || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Target Role</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={targetRole} onChange={(e) => setTargetRole(e.target.value)} /> : <div className="text-sm">{targetRole || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Expected Salary</Label>
-                  {(isOwnProfile || isAdmin) ? <Input type="number" value={expectedSalaryLocal} onChange={(e) => setExpectedSalaryLocal(e.target.value)} /> : <div className="text-sm">{expectedSalaryLocal ? `$${Number(expectedSalaryLocal).toLocaleString()}` : "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Resume</Label>
-                  <div>
-                    {(isOwnProfile || isAdmin) ? (
-                      <ResumeUpload
-                        candidateId={candidate.id}
-                        currentUrl={candidate.resume_url}
-                        onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
-                      />
-                    ) : (isAdmin || isManager || isRecruiter || isAgencyAdmin || isOwnProfile) ? (
-                      candidate.resume_url ? (
-                        <span className="inline-flex items-center gap-2">
-                          <a href={candidate.resume_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View Resume</a>
-                          <a href={candidate.resume_url} target="_blank" rel="noopener noreferrer" download className="text-muted-foreground hover:text-foreground" title="Download resume" aria-label="Download resume"><Download className="h-4 w-4" /></a>
-                        </span>
-                      ) : <span className="text-xs text-muted-foreground">—</span>
-                    ) : <span className="text-xs text-muted-foreground">—</span>}
-                  </div>
-                </div>
-              </div>
-
-              {/* Column 2 — contact, location, availability, cover letter */}
-              <div className="space-y-4">
-                {canSeePersonalDetails && (
-                  <>
+            <Accordion type="multiple" defaultValue={["personal"]} className="w-full space-y-2">
+              <AccordionItem value="personal" className="rounded-lg border border-border/70 bg-muted/20 px-4 border-b-0">
+                <AccordionTrigger className="py-3 text-sm font-semibold hover:no-underline [&[data-state=open]]:pb-2">
+                  Personal &amp; contact
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="grid gap-4 pb-2 md:grid-cols-2">
                     {canEditBasicIdentity ? (
                       <>
                         <div className="space-y-2">
-                          <Label>Email</Label>
-                          <Input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
+                          <Label>First name *</Label>
+                          <Input value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} />
                         </div>
                         <div className="space-y-2">
-                          <Label>Phone</Label>
-                          <Input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
+                          <Label>Last name</Label>
+                          <Input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} />
                         </div>
                       </>
                     ) : (
+                      <div className="space-y-1 md:col-span-2">
+                        <p className="text-xs font-medium text-muted-foreground">Name</p>
+                        <p className="font-medium">{`${candidate.first_name || ""} ${(candidate.last_name || "").trim()}`.trim() || "—"}</p>
+                      </div>
+                    )}
+                    {canSeePersonalDetails && (
                       <>
-                        {Boolean(candidate.email) && (
-                          <div className="space-y-1">
-                            <p className="text-xs font-medium text-muted-foreground">Email</p>
-                            <div>{displayEmail}</div>
-                          </div>
-                        )}
-                        {Boolean(candidate.phone) && (
-                          <div className="space-y-1">
-                            <p className="text-xs font-medium text-muted-foreground">Phone</p>
-                            <div>{displayPhone}</div>
-                          </div>
+                        {canEditBasicIdentity ? (
+                          <>
+                            <div className="space-y-2">
+                              <Label>Email</Label>
+                              <Input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Phone</Label>
+                              <Input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            {Boolean(candidate.email) && (
+                              <div className="space-y-1">
+                                <p className="text-xs font-medium text-muted-foreground">Email</p>
+                                <div>{displayEmail}</div>
+                              </div>
+                            )}
+                            {Boolean(candidate.phone) && (
+                              <div className="space-y-1">
+                                <p className="text-xs font-medium text-muted-foreground">Phone</p>
+                                <div>{displayPhone}</div>
+                              </div>
+                            )}
+                          </>
                         )}
                       </>
                     )}
-                  </>
-                )}
-                {showVisaStatus && (
-                  <div className="space-y-2">
-                    <Label>Gender</Label>
-                    <div className="flex items-center gap-2">
-                      {canEditBasicIdentity ? (
-                        <Select value={editGender || "none"} onValueChange={(v) => setEditGender(v === "none" ? "" : v)}>
-                          <SelectTrigger className="h-9 w-full max-w-[220px]"><SelectValue placeholder="Select gender" /></SelectTrigger>
+                    {showVisaStatus && (
+                      <div className="space-y-2">
+                        <Label>Gender</Label>
+                        <div className="flex items-center gap-2">
+                          {canEditBasicIdentity ? (
+                            <Select value={editGender || "none"} onValueChange={(v) => setEditGender(v === "none" ? "" : v)}>
+                              <SelectTrigger className="h-9 w-full max-w-[220px]"><SelectValue placeholder="Select gender" /></SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">—</SelectItem>
+                                {GENDER_OPTIONS.map((g) => (
+                                  <SelectItem key={g} value={g}>{g}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <span>{(candidate as any).gender || "—"}</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    {canEditBasicIdentity ? (
+                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 md:col-span-2">
+                        <div className="space-y-2">
+                          <Label>City</Label>
+                          <Input value={editCity} onChange={(e) => setEditCity(e.target.value)} />
+                        </div>
+                        <div className="space-y-2">
+                          <Label>State</Label>
+                          <Select value={editState} onValueChange={(v) => setEditState(v)}>
+                            <SelectTrigger><SelectValue placeholder="State" /></SelectTrigger>
+                            <SelectContent>
+                              {US_STATES.map((st) => <SelectItem key={st.code} value={st.code}>{st.name}</SelectItem>)}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <Label>Zip</Label>
+                          <Input value={editZip} onChange={(e) => setEditZip(e.target.value)} />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1 md:col-span-2">
+                        <p className="text-xs font-medium text-muted-foreground">Current Location</p>
+                        <p>{[editCity, editState, editZip].filter(Boolean).join(", ") || "—"}</p>
+                      </div>
+                    )}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="professional" className="rounded-lg border border-border/70 bg-muted/20 px-4 border-b-0">
+                <AccordionTrigger className="py-3 text-sm font-semibold hover:no-underline [&[data-state=open]]:pb-2">
+                  Professional profile &amp; documents
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="grid gap-4 pb-2 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Technology</Label>
+                      {(isOwnProfile || isAdmin) ? <Input value={technology} onChange={(e) => setTechnology(e.target.value)} /> : <div className="text-sm">{technology || "—"}</div>}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Experience (years)</Label>
+                      {(isOwnProfile || isAdmin) ? <Input type="number" value={experienceYears as any} onChange={(e) => setExperienceYears(e.target.value === "" ? "" : Number(e.target.value))} /> : <div className="text-sm">{experienceYears !== "" && experienceYears != null ? `${experienceYears} years` : "—"}</div>}
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Primary Skills</Label>
+                      {(isOwnProfile || isAdmin) ? <Input value={primarySkills} onChange={(e) => setPrimarySkills(e.target.value)} /> : <div className="text-sm">{primarySkills || "—"}</div>}
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Target Role</Label>
+                      {(isOwnProfile || isAdmin) ? <Input value={targetRole} onChange={(e) => setTargetRole(e.target.value)} /> : <div className="text-sm">{targetRole || "—"}</div>}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Expected Salary</Label>
+                      {(isOwnProfile || isAdmin) ? <Input type="number" value={expectedSalaryLocal} onChange={(e) => setExpectedSalaryLocal(e.target.value)} /> : <div className="text-sm">{expectedSalaryLocal ? `$${Number(expectedSalaryLocal).toLocaleString()}` : "—"}</div>}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Open to Relocate</Label>
+                      {(isOwnProfile || isAdmin) ? (
+                        <Select value={openToRelocateLocal ? "yes" : "no"} onValueChange={(v) => setOpenToRelocateLocal(v === "yes")}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent><SelectItem value="yes">Yes</SelectItem><SelectItem value="no">No</SelectItem></SelectContent>
+                        </Select>
+                      ) : <div className="text-sm">{openToRelocateLocal ? "Yes" : "No"}</div>}
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Interview Availability</Label>
+                      {(isOwnProfile || isAdmin) ? <Input value={interviewAvailability} onChange={(e) => setInterviewAvailability(e.target.value)} /> : <div className="text-sm">{interviewAvailability || "—"}</div>}
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Resume</Label>
+                      <div>
+                        {(isOwnProfile || isAdmin) ? (
+                          <ResumeUpload
+                            candidateId={candidate.id}
+                            currentUrl={candidate.resume_url}
+                            onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
+                          />
+                        ) : (isAdmin || isManager || isRecruiter || isAgencyAdmin || isOwnProfile) ? (
+                          candidate.resume_url ? (
+                            <span className="inline-flex items-center gap-2">
+                              <a href={candidate.resume_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View Resume</a>
+                              <a href={candidate.resume_url} target="_blank" rel="noopener noreferrer" download className="text-muted-foreground hover:text-foreground" title="Download resume" aria-label="Download resume"><Download className="h-4 w-4" /></a>
+                            </span>
+                          ) : <span className="text-xs text-muted-foreground">—</span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </div>
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Cover Letter</Label>
+                      <div>
+                        {(isOwnProfile || isAdmin) ? (
+                          <CoverLetterUpload
+                            candidateId={candidate.id}
+                            currentUrl={(candidate as any).cover_letter_url || null}
+                            onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
+                          />
+                        ) : (isAdmin || isManager || isRecruiter || isAgencyAdmin || isOwnProfile) ? (
+                          (candidate as any).cover_letter_url ? (
+                            <span className="inline-flex items-center gap-2">
+                              <a href={(candidate as any).cover_letter_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View Cover Letter</a>
+                              <a href={(candidate as any).cover_letter_url} target="_blank" rel="noopener noreferrer" download className="text-muted-foreground hover:text-foreground" title="Download cover letter" aria-label="Download cover letter"><Download className="h-4 w-4" /></a>
+                            </span>
+                          ) : <span className="text-xs text-muted-foreground">—</span>
+                        ) : <span className="text-xs text-muted-foreground">—</span>}
+                      </div>
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="education-visa" className="rounded-lg border border-border/70 bg-muted/20 px-4 border-b-0">
+                <AccordionTrigger className="py-3 text-sm font-semibold hover:no-underline [&[data-state=open]]:pb-2">
+                  Education summary, visa &amp; ID
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="grid gap-4 pb-2 md:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Education Level (Degree)</Label>
+                      {(isOwnProfile || isAdmin) ? <Input value={degree} onChange={(e) => setDegree(e.target.value)} placeholder="e.g. Bachelors" /> : <div className="text-sm">{degree || "—"}</div>}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Institution</Label>
+                      {(isOwnProfile || isAdmin) ? <Input value={institution} onChange={(e) => setInstitution(e.target.value)} /> : <div className="text-sm">{institution || "—"}</div>}
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Passing / Graduation Year</Label>
+                      {(isOwnProfile || isAdmin) ? <Input value={graduationYear ?? ""} onChange={(e) => setGraduationYear(e.target.value || null)} placeholder="Year" /> : <div className="text-sm">{graduationYear || "—"}</div>}
+                    </div>
+                    {showVisaStatus && (
+                      <div className="space-y-2 md:col-span-2">
+                        <Label>Visa Status</Label>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {canEditBasicIdentity ? (
+                            <Select value={editVisa} onValueChange={(v) => setEditVisa(v)}>
+                              <SelectTrigger className="h-9 w-full max-w-[240px]"><SelectValue /></SelectTrigger>
+                              <SelectContent>
+                                {VISA_STATUSES.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <span>{candidate.visa_status || "—"}</span>
+                          )}
+                          {((candidate as any).visa_copy_url && (candidate.visa_status !== "US Citizen" && candidate.visa_status !== "Green Card")) ? (
+                            <a href={(candidate as any).visa_copy_url} target="_blank" rel="noopener noreferrer" className="text-info" title="Download visa copy">
+                              <Download className="h-4 w-4" />
+                            </a>
+                          ) : null}
+                          {canEditBasicIdentity && editVisa !== "US Citizen" && editVisa !== "Green Card" && (
+                            <DocumentUpload
+                              candidateId={candidate.id}
+                              currentUrl={(candidate as any).visa_copy_url || null}
+                              folder="visa"
+                              onUploaded={() => {
+                                setEditVisaCopyUploaded(true);
+                                queryClient.invalidateQueries({ queryKey: ["candidate", id] });
+                              }}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>ID Proof</Label>
+                      {((candidate as any).id_copy_url) ? (
+                        <a href={(candidate as any).id_copy_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View</a>
+                      ) : ((isAdmin || isOwnProfile) ? (
+                        <DocumentUpload
+                          candidateId={candidate.id}
+                          currentUrl={null}
+                          folder="id"
+                          onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
+                        />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ))}
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="workflow" className="rounded-lg border border-border/70 bg-muted/20 px-4 border-b-0">
+                <AccordionTrigger className="py-3 text-sm font-semibold hover:no-underline [&[data-state=open]]:pb-2">
+                  Recruiter, status &amp; references
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="grid gap-4 pb-2 md:grid-cols-2">
+                    {canAssignRecruiter && recruiters && (
+                      <div className="space-y-1 md:col-span-2">
+                        <Label className="text-muted-foreground">Assign Recruiter</Label>
+                        <Select
+                          value={candidate.recruiter_id || "unassigned"}
+                          onValueChange={(v) => {
+                            const updates: Record<string, any> = { recruiter_id: v === "unassigned" ? null : v };
+                            if (v !== "unassigned") updates.status = "Ready For Marketing";
+                            updateCandidate.mutate(updates, { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["candidate", id] }) });
+                          }}
+                        >
+                          <SelectTrigger className="h-9"><SelectValue placeholder="Select recruiter" /></SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="none">—</SelectItem>
-                            {GENDER_OPTIONS.map((g) => (
-                              <SelectItem key={g} value={g}>{g}</SelectItem>
+                            <SelectItem value="unassigned">Unassigned</SelectItem>
+                            {recruiters.map((r: any) => (
+                              <SelectItem key={r.user_id} value={r.user_id}>{displayRecruiterName(r.user_id)}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
-                      ) : (
-                        <span>{(candidate as any).gender || "—"}</span>
-                      )}
-                    </div>
-                  </div>
-                )}
-                {canEditBasicIdentity ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    <div className="space-y-2">
-                      <Label>City</Label>
-                      <Input value={editCity} onChange={(e) => setEditCity(e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>State</Label>
-                      <Select value={editState} onValueChange={(v) => setEditState(v)}>
-                        <SelectTrigger><SelectValue placeholder="State" /></SelectTrigger>
-                        <SelectContent>
-                          {US_STATES.map((st) => <SelectItem key={st.code} value={st.code}>{st.name}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Zip</Label>
-                      <Input value={editZip} onChange={(e) => setEditZip(e.target.value)} />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">Current Location</p>
-                    <p>{[editCity, editState, editZip].filter(Boolean).join(", ") || "—"}</p>
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <Label>Open to Relocate</Label>
-                  {(isOwnProfile || isAdmin) ? (
-                    <Select value={openToRelocateLocal ? "yes" : "no"} onValueChange={(v) => setOpenToRelocateLocal(v === "yes")}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent><SelectItem value="yes">Yes</SelectItem><SelectItem value="no">No</SelectItem></SelectContent>
-                    </Select>
-                  ) : <div className="text-sm">{openToRelocateLocal ? "Yes" : "No"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Interview Availability</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={interviewAvailability} onChange={(e) => setInterviewAvailability(e.target.value)} /> : <div className="text-sm">{interviewAvailability || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Cover Letter</Label>
-                  <div>
-                    {(isOwnProfile || isAdmin) ? (
-                      <CoverLetterUpload
-                        candidateId={candidate.id}
-                        currentUrl={(candidate as any).cover_letter_url || null}
-                        onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
-                      />
-                    ) : (isAdmin || isManager || isRecruiter || isAgencyAdmin || isOwnProfile) ? (
-                      (candidate as any).cover_letter_url ? (
-                        <span className="inline-flex items-center gap-2">
-                          <a href={(candidate as any).cover_letter_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View Cover Letter</a>
-                          <a href={(candidate as any).cover_letter_url} target="_blank" rel="noopener noreferrer" download className="text-muted-foreground hover:text-foreground" title="Download cover letter" aria-label="Download cover letter"><Download className="h-4 w-4" /></a>
-                        </span>
-                      ) : <span className="text-xs text-muted-foreground">—</span>
-                    ) : <span className="text-xs text-muted-foreground">—</span>}
-                  </div>
-                </div>
-              </div>
-
-              {/* Column 3 — education summary on candidate row, visa, recruiter, status, ID, clients, refs */}
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Education Level (Degree)</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={degree} onChange={(e) => setDegree(e.target.value)} placeholder="e.g. Bachelors" /> : <div className="text-sm">{degree || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Institution</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={institution} onChange={(e) => setInstitution(e.target.value)} /> : <div className="text-sm">{institution || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Passing / Graduation Year</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={graduationYear ?? ""} onChange={(e) => setGraduationYear(e.target.value || null)} placeholder="Year" /> : <div className="text-sm">{graduationYear || "—"}</div>}
-                </div>
-                {showVisaStatus && (
-                  <div className="space-y-2">
-                    <Label>Visa Status</Label>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {canEditBasicIdentity ? (
-                        <Select value={editVisa} onValueChange={(v) => setEditVisa(v)}>
-                          <SelectTrigger className="h-9 w-full max-w-[240px]"><SelectValue /></SelectTrigger>
+                      </div>
+                    )}
+                    {!canAssignRecruiter && (
+                      <div className="space-y-1 md:col-span-2">
+                        <p className="text-xs font-medium text-muted-foreground">Recruiter Assigned</p>
+                        <div>{displayRecruiterName(candidate.recruiter_id ?? null)}</div>
+                      </div>
+                    )}
+                    {isAdmin && (
+                      <div className="space-y-2 md:col-span-2">
+                        <Label className="text-muted-foreground">Status (Admin only)</Label>
+                        <Select value={safeStatus} onValueChange={(v) => updateStatus.mutate(v)}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
-                            {VISA_STATUSES.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
+                            {CANDIDATE_STATUSES.map((s) => (
+                              <SelectItem key={s} value={s}>{s}</SelectItem>
+                            ))}
                           </SelectContent>
                         </Select>
-                      ) : (
-                        <span>{candidate.visa_status || "—"}</span>
-                      )}
-                      {((candidate as any).visa_copy_url && (candidate.visa_status !== "US Citizen" && candidate.visa_status !== "Green Card")) ? (
-                        <a href={(candidate as any).visa_copy_url} target="_blank" rel="noopener noreferrer" className="text-info" title="Download visa copy">
-                          <Download className="h-4 w-4" />
-                        </a>
-                      ) : null}
-                      {canEditBasicIdentity && editVisa !== "US Citizen" && editVisa !== "Green Card" && (
-                        <DocumentUpload
-                          candidateId={candidate.id}
-                          currentUrl={(candidate as any).visa_copy_url || null}
-                          folder="visa"
-                          onUploaded={() => {
-                            setEditVisaCopyUploaded(true);
-                            queryClient.invalidateQueries({ queryKey: ["candidate", id] });
-                          }}
-                        />
-                      )}
+                      </div>
+                    )}
+                    {!isAdmin && (
+                      <div className="space-y-1 md:col-span-2">
+                        <p className="text-xs font-medium text-muted-foreground">Status</p>
+                        <Badge variant="outline">{safeStatus}</Badge>
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <Label>Client 1 (Recent)</Label>
+                      {(isOwnProfile || isAdmin) ? <Input value={client1} onChange={(e) => setClient1(e.target.value)} /> : <div className="text-sm">{client1 || "—"}</div>}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Client 2 (Past)</Label>
+                      {(isOwnProfile || isAdmin) ? <Input value={client2} onChange={(e) => setClient2(e.target.value)} /> : <div className="text-sm">{client2 || "—"}</div>}
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Reference 1</Label>
+                      {(isOwnProfile || isAdmin) ? <Input value={reference1} onChange={(e) => setReference1(e.target.value)} /> : <div className="text-sm">{reference1 || "—"}</div>}
+                    </div>
+                    <div className="space-y-2 md:col-span-2">
+                      <Label>Reference 2</Label>
+                      {(isOwnProfile || isAdmin) ? <Input value={reference2} onChange={(e) => setReference2(e.target.value)} /> : <div className="text-sm">{reference2 || "—"}</div>}
                     </div>
                   </div>
-                )}
-                {canAssignRecruiter && recruiters && (
-                  <div className="space-y-1">
-                    <Label className="text-muted-foreground">Assign Recruiter</Label>
-                    <Select
-                      value={candidate.recruiter_id || "unassigned"}
-                      onValueChange={(v) => {
-                        const updates: Record<string, any> = { recruiter_id: v === "unassigned" ? null : v };
-                        if (v !== "unassigned") updates.status = "Ready For Marketing";
-                        updateCandidate.mutate(updates, { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["candidate", id] }) });
-                      }}
-                    >
-                      <SelectTrigger className="h-9"><SelectValue placeholder="Select recruiter" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="unassigned">Unassigned</SelectItem>
-                        {recruiters.map((r: any) => (
-                          <SelectItem key={r.user_id} value={r.user_id}>{displayRecruiterName(r.user_id)}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                {!canAssignRecruiter && (
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">Recruiter Assigned</p>
-                    <div>{displayRecruiterName(candidate.recruiter_id ?? null)}</div>
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <Label>ID Proof</Label>
-                  {((candidate as any).id_copy_url) ? (
-                    <a href={(candidate as any).id_copy_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View</a>
-                  ) : ((isAdmin || isOwnProfile) ? (
-                    <DocumentUpload
-                      candidateId={candidate.id}
-                      currentUrl={null}
-                      folder="id"
-                      onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
-                    />
-                  ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  ))}
-                </div>
-                {isAdmin && (
-                  <div className="space-y-2">
-                    <Label className="text-muted-foreground">Status (Admin only)</Label>
-                    <Select value={safeStatus} onValueChange={(v) => updateStatus.mutate(v)}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {CANDIDATE_STATUSES.map((s) => (
-                          <SelectItem key={s} value={s}>{s}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-                {!isAdmin && (
-                  <div className="space-y-1">
-                    <p className="text-xs font-medium text-muted-foreground">Status</p>
-                    <Badge variant="outline">{safeStatus}</Badge>
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <Label>Client 1 (Recent)</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={client1} onChange={(e) => setClient1(e.target.value)} /> : <div className="text-sm">{client1 || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Client 2 (Past)</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={client2} onChange={(e) => setClient2(e.target.value)} /> : <div className="text-sm">{client2 || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Reference 1</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={reference1} onChange={(e) => setReference1(e.target.value)} /> : <div className="text-sm">{reference1 || "—"}</div>}
-                </div>
-                <div className="space-y-2">
-                  <Label>Reference 2</Label>
-                  {(isOwnProfile || isAdmin) ? <Input value={reference2} onChange={(e) => setReference2(e.target.value)} /> : <div className="text-sm">{reference2 || "—"}</div>}
-                </div>
-              </div>
-            </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
 
             {canSaveProfile && (
               <div className="flex flex-wrap gap-2 border-t pt-4">
