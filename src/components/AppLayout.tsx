@@ -242,14 +242,14 @@ export default function AppLayout() {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-auto">
+      <main className="min-w-0 flex-1 overflow-auto">
         <div className="sticky top-0 z-30 flex h-14 items-center gap-3 border-b bg-card px-4 lg:hidden">
           <Button variant="ghost" size="icon" onClick={() => setMobileOpen(true)}>
             <Menu className="h-5 w-5" />
           </Button>
           <span className="text-sm font-semibold">HireTrack</span>
         </div>
-        <div className="p-4 md:p-6 lg:p-8">
+        <div className="min-w-0 p-4 md:p-6 lg:p-8">
           <Outlet />
         </div>
       </main>

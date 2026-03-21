@@ -45,6 +45,16 @@ const GENDER_OPTIONS = ["Male", "Female", "Non-binary", "Prefer not to say", "Ot
 
 const MASK = "*******";
 
+/** Compact profile grids: 1 → 2 → 3 → 4 columns by breakpoint */
+const pfGrid =
+  "grid max-w-full gap-3 pb-2 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 auto-rows-min";
+const pfField = "space-y-1.5 w-full min-w-0";
+/** Full row on sm and lg; half row on xl so pairs sit side by side in the 4-col layout */
+const pfPair = "space-y-1.5 w-full min-w-0 sm:col-span-2 lg:col-span-3 xl:col-span-2";
+/** Full row at each breakpoint */
+const pfFullRow = "space-y-1.5 w-full min-w-0 sm:col-span-2 lg:col-span-3 xl:col-span-4";
+const pfInput = "h-9 px-2.5 py-1.5 w-full min-w-0";
+
 export default function CandidateDetail() {
   const { id } = useParams<{ id: string }>();
   const { user, profile, isAdmin, isRecruiter, isCandidate, isManager, isAgencyAdmin } = useAuth();
@@ -357,14 +367,14 @@ export default function CandidateDetail() {
 
   try {
     return (
-      <div>
+      <div className="min-w-0 max-w-full">
       <Button variant="ghost" size="sm" asChild className="mb-4">
         <Link to={isCandidate ? "/" : "/candidates"}><ArrowLeft className="mr-2 h-4 w-4" />{isCandidate ? "Back to Dashboard" : "Back to Candidates"}</Link>
       </Button>
 
-      <div className="flex flex-col gap-6">
+      <div className="flex min-w-0 max-w-full flex-col gap-6">
         {/* Candidate profile: grouped into collapsible sections */}
-        <Card>
+        <Card className="min-w-0 overflow-visible">
           <CardHeader>
             <CardTitle className="text-lg">{displayCandidateTitle()}</CardTitle>
             {canSaveProfile && (
@@ -372,26 +382,26 @@ export default function CandidateDetail() {
             )}
           </CardHeader>
           <CardContent className="space-y-6 text-sm">
-            <Accordion type="multiple" defaultValue={["personal"]} className="w-full space-y-2">
+            <Accordion type="multiple" defaultValue={["personal"]} className="w-full space-y-2 [&_input]:h-9 [&_input]:px-2.5 [&_input]:py-1.5">
               <AccordionItem value="personal" className="rounded-lg border border-border/70 bg-muted/20 px-4 border-b-0">
                 <AccordionTrigger className="py-3 text-sm font-semibold hover:no-underline [&[data-state=open]]:pb-2">
                   Personal &amp; contact
                 </AccordionTrigger>
                 <AccordionContent>
-                  <div className="grid gap-4 pb-2 md:grid-cols-2">
+                  <div className={pfGrid}>
                     {canEditBasicIdentity ? (
                       <>
-                        <div className="space-y-2">
-                          <Label>First name *</Label>
-                          <Input value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} />
+                        <div className={pfField}>
+                          <Label className="text-xs font-medium text-muted-foreground">First name *</Label>
+                          <Input className={pfInput} value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} />
                         </div>
-                        <div className="space-y-2">
-                          <Label>Last name</Label>
-                          <Input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} />
+                        <div className={pfField}>
+                          <Label className="text-xs font-medium text-muted-foreground">Last name</Label>
+                          <Input className={pfInput} value={editLastName} onChange={(e) => setEditLastName(e.target.value)} />
                         </div>
                       </>
                     ) : (
-                      <div className="space-y-1 md:col-span-2">
+                      <div className={`space-y-1 ${pfFullRow}`}>
                         <p className="text-xs font-medium text-muted-foreground">Name</p>
                         <p className="font-medium">{`${candidate.first_name || ""} ${(candidate.last_name || "").trim()}`.trim() || "—"}</p>
                       </div>
@@ -400,25 +410,25 @@ export default function CandidateDetail() {
                       <>
                         {canEditBasicIdentity ? (
                           <>
-                            <div className="space-y-2">
-                              <Label>Email</Label>
-                              <Input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
+                            <div className={pfField}>
+                              <Label className="text-xs font-medium text-muted-foreground">Email</Label>
+                              <Input className={pfInput} type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} />
                             </div>
-                            <div className="space-y-2">
-                              <Label>Phone</Label>
-                              <Input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
+                            <div className={pfField}>
+                              <Label className="text-xs font-medium text-muted-foreground">Phone</Label>
+                              <Input className={pfInput} value={editPhone} onChange={(e) => setEditPhone(e.target.value)} />
                             </div>
                           </>
                         ) : (
                           <>
                             {Boolean(candidate.email) && (
-                              <div className="space-y-1">
+                              <div className={`space-y-1 ${pfField}`}>
                                 <p className="text-xs font-medium text-muted-foreground">Email</p>
                                 <div>{displayEmail}</div>
                               </div>
                             )}
                             {Boolean(candidate.phone) && (
-                              <div className="space-y-1">
+                              <div className={`space-y-1 ${pfField}`}>
                                 <p className="text-xs font-medium text-muted-foreground">Phone</p>
                                 <div>{displayPhone}</div>
                               </div>
@@ -428,12 +438,12 @@ export default function CandidateDetail() {
                       </>
                     )}
                     {showVisaStatus && (
-                      <div className="space-y-2">
-                        <Label>Gender</Label>
+                      <div className={pfField}>
+                        <Label className="text-xs font-medium text-muted-foreground">Gender</Label>
                         <div className="flex items-center gap-2">
                           {canEditBasicIdentity ? (
                             <Select value={editGender || "none"} onValueChange={(v) => setEditGender(v === "none" ? "" : v)}>
-                              <SelectTrigger className="h-9 w-full max-w-[220px]"><SelectValue placeholder="Select gender" /></SelectTrigger>
+                              <SelectTrigger className="h-9 w-full min-w-0 px-2.5"><SelectValue placeholder="Select gender" /></SelectTrigger>
                               <SelectContent>
                                 <SelectItem value="none">—</SelectItem>
                                 {GENDER_OPTIONS.map((g) => (
@@ -448,27 +458,27 @@ export default function CandidateDetail() {
                       </div>
                     )}
                     {canEditBasicIdentity ? (
-                      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3 md:col-span-2">
-                        <div className="space-y-2">
-                          <Label>City</Label>
-                          <Input value={editCity} onChange={(e) => setEditCity(e.target.value)} />
+                      <>
+                        <div className={pfField}>
+                          <Label className="text-xs font-medium text-muted-foreground">City</Label>
+                          <Input className={pfInput} value={editCity} onChange={(e) => setEditCity(e.target.value)} />
                         </div>
-                        <div className="space-y-2">
-                          <Label>State</Label>
+                        <div className={pfField}>
+                          <Label className="text-xs font-medium text-muted-foreground">State</Label>
                           <Select value={editState} onValueChange={(v) => setEditState(v)}>
-                            <SelectTrigger><SelectValue placeholder="State" /></SelectTrigger>
+                            <SelectTrigger className="h-9 w-full min-w-0 px-2.5"><SelectValue placeholder="State" /></SelectTrigger>
                             <SelectContent>
                               {US_STATES.map((st) => <SelectItem key={st.code} value={st.code}>{st.name}</SelectItem>)}
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className="space-y-2">
-                          <Label>Zip</Label>
-                          <Input value={editZip} onChange={(e) => setEditZip(e.target.value)} />
+                        <div className={pfField}>
+                          <Label className="text-xs font-medium text-muted-foreground">Zip</Label>
+                          <Input className={pfInput} value={editZip} onChange={(e) => setEditZip(e.target.value)} />
                         </div>
-                      </div>
+                      </>
                     ) : (
-                      <div className="space-y-1 md:col-span-2">
+                      <div className={`space-y-1 ${pfFullRow}`}>
                         <p className="text-xs font-medium text-muted-foreground">Current Location</p>
                         <p>{[editCity, editState, editZip].filter(Boolean).join(", ") || "—"}</p>
                       </div>
@@ -482,42 +492,42 @@ export default function CandidateDetail() {
                   Professional profile &amp; documents
                 </AccordionTrigger>
                 <AccordionContent>
-                  <div className="grid gap-4 pb-2 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Technology</Label>
-                      {(isOwnProfile || isAdmin) ? <Input value={technology} onChange={(e) => setTechnology(e.target.value)} /> : <div className="text-sm">{technology || "—"}</div>}
+                  <div className={pfGrid}>
+                    <div className={pfField}>
+                      <Label className="text-xs font-medium text-muted-foreground">Technology</Label>
+                      {(isOwnProfile || isAdmin) ? <Input className={pfInput} value={technology} onChange={(e) => setTechnology(e.target.value)} /> : <div className="text-sm">{technology || "—"}</div>}
                     </div>
-                    <div className="space-y-2">
-                      <Label>Experience (years)</Label>
-                      {(isOwnProfile || isAdmin) ? <Input type="number" value={experienceYears as any} onChange={(e) => setExperienceYears(e.target.value === "" ? "" : Number(e.target.value))} /> : <div className="text-sm">{experienceYears !== "" && experienceYears != null ? `${experienceYears} years` : "—"}</div>}
+                    <div className={pfField}>
+                      <Label className="text-xs font-medium text-muted-foreground">Experience (years)</Label>
+                      {(isOwnProfile || isAdmin) ? <Input className={pfInput} type="number" value={experienceYears as any} onChange={(e) => setExperienceYears(e.target.value === "" ? "" : Number(e.target.value))} /> : <div className="text-sm">{experienceYears !== "" && experienceYears != null ? `${experienceYears} years` : "—"}</div>}
                     </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Primary Skills</Label>
-                      {(isOwnProfile || isAdmin) ? <Input value={primarySkills} onChange={(e) => setPrimarySkills(e.target.value)} /> : <div className="text-sm">{primarySkills || "—"}</div>}
+                    <div className={pfField}>
+                      <Label className="text-xs font-medium text-muted-foreground">Expected Salary</Label>
+                      {(isOwnProfile || isAdmin) ? <Input className={pfInput} type="number" value={expectedSalaryLocal} onChange={(e) => setExpectedSalaryLocal(e.target.value)} /> : <div className="text-sm">{expectedSalaryLocal ? `$${Number(expectedSalaryLocal).toLocaleString()}` : "—"}</div>}
                     </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Target Role</Label>
-                      {(isOwnProfile || isAdmin) ? <Input value={targetRole} onChange={(e) => setTargetRole(e.target.value)} /> : <div className="text-sm">{targetRole || "—"}</div>}
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Expected Salary</Label>
-                      {(isOwnProfile || isAdmin) ? <Input type="number" value={expectedSalaryLocal} onChange={(e) => setExpectedSalaryLocal(e.target.value)} /> : <div className="text-sm">{expectedSalaryLocal ? `$${Number(expectedSalaryLocal).toLocaleString()}` : "—"}</div>}
-                    </div>
-                    <div className="space-y-2">
-                      <Label>Open to Relocate</Label>
+                    <div className={pfField}>
+                      <Label className="text-xs font-medium text-muted-foreground">Open to Relocate</Label>
                       {(isOwnProfile || isAdmin) ? (
                         <Select value={openToRelocateLocal ? "yes" : "no"} onValueChange={(v) => setOpenToRelocateLocal(v === "yes")}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="h-9 w-full min-w-0 px-2.5"><SelectValue /></SelectTrigger>
                           <SelectContent><SelectItem value="yes">Yes</SelectItem><SelectItem value="no">No</SelectItem></SelectContent>
                         </Select>
                       ) : <div className="text-sm">{openToRelocateLocal ? "Yes" : "No"}</div>}
                     </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Interview Availability</Label>
-                      {(isOwnProfile || isAdmin) ? <Input value={interviewAvailability} onChange={(e) => setInterviewAvailability(e.target.value)} /> : <div className="text-sm">{interviewAvailability || "—"}</div>}
+                    <div className={pfPair}>
+                      <Label className="text-xs font-medium text-muted-foreground">Primary Skills</Label>
+                      {(isOwnProfile || isAdmin) ? <Input className={pfInput} value={primarySkills} onChange={(e) => setPrimarySkills(e.target.value)} /> : <div className="text-sm">{primarySkills || "—"}</div>}
                     </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Resume</Label>
+                    <div className={pfPair}>
+                      <Label className="text-xs font-medium text-muted-foreground">Target Role</Label>
+                      {(isOwnProfile || isAdmin) ? <Input className={pfInput} value={targetRole} onChange={(e) => setTargetRole(e.target.value)} /> : <div className="text-sm">{targetRole || "—"}</div>}
+                    </div>
+                    <div className={pfFullRow}>
+                      <Label className="text-xs font-medium text-muted-foreground">Interview Availability</Label>
+                      {(isOwnProfile || isAdmin) ? <Input className={pfInput} value={interviewAvailability} onChange={(e) => setInterviewAvailability(e.target.value)} /> : <div className="text-sm">{interviewAvailability || "—"}</div>}
+                    </div>
+                    <div className={pfPair}>
+                      <Label className="text-xs font-medium text-muted-foreground">Resume</Label>
                       <div>
                         {(isOwnProfile || isAdmin) ? (
                           <ResumeUpload
@@ -535,8 +545,8 @@ export default function CandidateDetail() {
                         ) : <span className="text-xs text-muted-foreground">—</span>}
                       </div>
                     </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Cover Letter</Label>
+                    <div className={pfPair}>
+                      <Label className="text-xs font-medium text-muted-foreground">Cover Letter</Label>
                       <div>
                         {(isOwnProfile || isAdmin) ? (
                           <CoverLetterUpload
@@ -563,26 +573,26 @@ export default function CandidateDetail() {
                   Education summary, visa &amp; ID
                 </AccordionTrigger>
                 <AccordionContent>
-                  <div className="grid gap-4 pb-2 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <Label>Education Level (Degree)</Label>
-                      {(isOwnProfile || isAdmin) ? <Input value={degree} onChange={(e) => setDegree(e.target.value)} placeholder="e.g. Bachelors" /> : <div className="text-sm">{degree || "—"}</div>}
+                  <div className={pfGrid}>
+                    <div className={pfField}>
+                      <Label className="text-xs font-medium text-muted-foreground">Education Level (Degree)</Label>
+                      {(isOwnProfile || isAdmin) ? <Input className={pfInput} value={degree} onChange={(e) => setDegree(e.target.value)} placeholder="e.g. Bachelors" /> : <div className="text-sm">{degree || "—"}</div>}
                     </div>
-                    <div className="space-y-2">
-                      <Label>Institution</Label>
-                      {(isOwnProfile || isAdmin) ? <Input value={institution} onChange={(e) => setInstitution(e.target.value)} /> : <div className="text-sm">{institution || "—"}</div>}
+                    <div className={pfField}>
+                      <Label className="text-xs font-medium text-muted-foreground">Institution</Label>
+                      {(isOwnProfile || isAdmin) ? <Input className={pfInput} value={institution} onChange={(e) => setInstitution(e.target.value)} /> : <div className="text-sm">{institution || "—"}</div>}
                     </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Passing / Graduation Year</Label>
-                      {(isOwnProfile || isAdmin) ? <Input value={graduationYear ?? ""} onChange={(e) => setGraduationYear(e.target.value || null)} placeholder="Year" /> : <div className="text-sm">{graduationYear || "—"}</div>}
+                    <div className={pfField}>
+                      <Label className="text-xs font-medium text-muted-foreground">Passing / Graduation Year</Label>
+                      {(isOwnProfile || isAdmin) ? <Input className={pfInput} value={graduationYear ?? ""} onChange={(e) => setGraduationYear(e.target.value || null)} placeholder="Year" /> : <div className="text-sm">{graduationYear || "—"}</div>}
                     </div>
                     {showVisaStatus && (
-                      <div className="space-y-2 md:col-span-2">
-                        <Label>Visa Status</Label>
+                      <div className={`space-y-1.5 ${pfFullRow}`}>
+                        <Label className="text-xs font-medium text-muted-foreground">Visa Status</Label>
                         <div className="flex flex-wrap items-center gap-2">
                           {canEditBasicIdentity ? (
                             <Select value={editVisa} onValueChange={(v) => setEditVisa(v)}>
-                              <SelectTrigger className="h-9 w-full max-w-[240px]"><SelectValue /></SelectTrigger>
+                              <SelectTrigger className="h-9 w-full min-w-0 max-w-md px-2.5"><SelectValue /></SelectTrigger>
                               <SelectContent>
                                 {VISA_STATUSES.map((v) => <SelectItem key={v} value={v}>{v}</SelectItem>)}
                               </SelectContent>
@@ -609,8 +619,8 @@ export default function CandidateDetail() {
                         </div>
                       </div>
                     )}
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>ID Proof</Label>
+                    <div className={pfFullRow}>
+                      <Label className="text-xs font-medium text-muted-foreground">ID Proof</Label>
                       {((candidate as any).id_copy_url) ? (
                         <a href={(candidate as any).id_copy_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View</a>
                       ) : ((isAdmin || isOwnProfile) ? (
@@ -633,10 +643,10 @@ export default function CandidateDetail() {
                   Recruiter, status &amp; references
                 </AccordionTrigger>
                 <AccordionContent>
-                  <div className="grid gap-4 pb-2 md:grid-cols-2">
+                  <div className={pfGrid}>
                     {canAssignRecruiter && recruiters && (
-                      <div className="space-y-1 md:col-span-2">
-                        <Label className="text-muted-foreground">Assign Recruiter</Label>
+                      <div className={pfFullRow}>
+                        <Label className="text-xs font-medium text-muted-foreground">Assign Recruiter</Label>
                         <Select
                           value={candidate.recruiter_id || "unassigned"}
                           onValueChange={(v) => {
@@ -645,7 +655,7 @@ export default function CandidateDetail() {
                             updateCandidate.mutate(updates, { onSuccess: () => queryClient.invalidateQueries({ queryKey: ["candidate", id] }) });
                           }}
                         >
-                          <SelectTrigger className="h-9"><SelectValue placeholder="Select recruiter" /></SelectTrigger>
+                          <SelectTrigger className="h-9 w-full min-w-0 max-w-xl px-2.5"><SelectValue placeholder="Select recruiter" /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="unassigned">Unassigned</SelectItem>
                             {recruiters.map((r: any) => (
@@ -656,16 +666,16 @@ export default function CandidateDetail() {
                       </div>
                     )}
                     {!canAssignRecruiter && (
-                      <div className="space-y-1 md:col-span-2">
+                      <div className={`space-y-1 ${pfFullRow}`}>
                         <p className="text-xs font-medium text-muted-foreground">Recruiter Assigned</p>
                         <div>{displayRecruiterName(candidate.recruiter_id ?? null)}</div>
                       </div>
                     )}
                     {isAdmin && (
-                      <div className="space-y-2 md:col-span-2">
-                        <Label className="text-muted-foreground">Status (Admin only)</Label>
+                      <div className={pfField}>
+                        <Label className="text-xs font-medium text-muted-foreground">Status (Admin only)</Label>
                         <Select value={safeStatus} onValueChange={(v) => updateStatus.mutate(v)}>
-                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectTrigger className="h-9 w-full min-w-0 px-2.5"><SelectValue /></SelectTrigger>
                           <SelectContent>
                             {CANDIDATE_STATUSES.map((s) => (
                               <SelectItem key={s} value={s}>{s}</SelectItem>
@@ -675,26 +685,26 @@ export default function CandidateDetail() {
                       </div>
                     )}
                     {!isAdmin && (
-                      <div className="space-y-1 md:col-span-2">
+                      <div className={`space-y-1 ${pfField}`}>
                         <p className="text-xs font-medium text-muted-foreground">Status</p>
                         <Badge variant="outline">{safeStatus}</Badge>
                       </div>
                     )}
-                    <div className="space-y-2">
-                      <Label>Client 1 (Recent)</Label>
-                      {(isOwnProfile || isAdmin) ? <Input value={client1} onChange={(e) => setClient1(e.target.value)} /> : <div className="text-sm">{client1 || "—"}</div>}
+                    <div className={pfField}>
+                      <Label className="text-xs font-medium text-muted-foreground">Client 1 (Recent)</Label>
+                      {(isOwnProfile || isAdmin) ? <Input className={pfInput} value={client1} onChange={(e) => setClient1(e.target.value)} /> : <div className="text-sm">{client1 || "—"}</div>}
                     </div>
-                    <div className="space-y-2">
-                      <Label>Client 2 (Past)</Label>
-                      {(isOwnProfile || isAdmin) ? <Input value={client2} onChange={(e) => setClient2(e.target.value)} /> : <div className="text-sm">{client2 || "—"}</div>}
+                    <div className={pfField}>
+                      <Label className="text-xs font-medium text-muted-foreground">Client 2 (Past)</Label>
+                      {(isOwnProfile || isAdmin) ? <Input className={pfInput} value={client2} onChange={(e) => setClient2(e.target.value)} /> : <div className="text-sm">{client2 || "—"}</div>}
                     </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Reference 1</Label>
-                      {(isOwnProfile || isAdmin) ? <Input value={reference1} onChange={(e) => setReference1(e.target.value)} /> : <div className="text-sm">{reference1 || "—"}</div>}
+                    <div className={pfPair}>
+                      <Label className="text-xs font-medium text-muted-foreground">Reference 1</Label>
+                      {(isOwnProfile || isAdmin) ? <Input className={pfInput} value={reference1} onChange={(e) => setReference1(e.target.value)} /> : <div className="text-sm">{reference1 || "—"}</div>}
                     </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <Label>Reference 2</Label>
-                      {(isOwnProfile || isAdmin) ? <Input value={reference2} onChange={(e) => setReference2(e.target.value)} /> : <div className="text-sm">{reference2 || "—"}</div>}
+                    <div className={pfPair}>
+                      <Label className="text-xs font-medium text-muted-foreground">Reference 2</Label>
+                      {(isOwnProfile || isAdmin) ? <Input className={pfInput} value={reference2} onChange={(e) => setReference2(e.target.value)} /> : <div className="text-sm">{reference2 || "—"}</div>}
                     </div>
                   </div>
                 </AccordionContent>
