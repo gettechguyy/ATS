@@ -78,6 +78,12 @@ export default function Candidates() {
 
   const activeAgencies = (agencies || []).filter((a: any) => a.is_active !== false);
   const effectiveAgencyForTech = agencyFilterKind === "agency" && agencyFilterId ? agencyFilterId : undefined;
+
+  // All = no filter; None = only agency_id IS NULL; Agency = only that agency or (if none chosen) only agency_id IS NOT NULL
+  const effectiveAgencyId = !canSeeAllCandidates ? undefined : agencyFilterKind === "all" ? undefined : agencyFilterKind === "none" ? null : (agencyFilterId?.trim() || undefined);
+  const agencyNotNullOnly = canSeeAllCandidates && agencyFilterKind === "agency"; // when "Agency" filter is on, never show null-agency candidates
+  const effectiveRecruiterId = !canSeeAllCandidates ? undefined : recruiterFilterKind === "all" ? undefined : recruiterFilterKind === "unassigned" ? null : recruiterFilterId || undefined;
+
   const effectiveRecruiterForTech = isRecruiter ? user?.id ?? undefined : effectiveRecruiterId;
   const { data: technologyOptions } = useQuery({
     queryKey: [
@@ -91,11 +97,6 @@ export default function Candidates() {
     ),
     enabled: !isCandidate,
   });
-
-  // All = no filter; None = only agency_id IS NULL; Agency = only that agency or (if none chosen) only agency_id IS NOT NULL
-  const effectiveAgencyId = !canSeeAllCandidates ? undefined : agencyFilterKind === "all" ? undefined : agencyFilterKind === "none" ? null : (agencyFilterId?.trim() || undefined);
-  const agencyNotNullOnly = canSeeAllCandidates && agencyFilterKind === "agency"; // when "Agency" filter is on, never show null-agency candidates
-  const effectiveRecruiterId = !canSeeAllCandidates ? undefined : recruiterFilterKind === "all" ? undefined : recruiterFilterKind === "unassigned" ? null : recruiterFilterId || undefined;
 
   const { data: candidatesResult, isLoading } = useQuery({
     queryKey: ["candidates", canSeeAllCandidates ? "all" : isAgencyAdmin ? profile?.agency_id : user?.id, page, PAGE_SIZE, search, statusFilter, technologyFilter, agencyFilterKind, agencyFilterId, recruiterFilterKind, recruiterFilterId, sortBy, order],
