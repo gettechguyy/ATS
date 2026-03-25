@@ -14,6 +14,7 @@ import { Eye, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from "lucide-react
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchAllInterviewsPaginated, fetchInterviewsByCandidatePaginated, fetchInterviewsByRecruiterPaginated, fetchInterviewsByAgencyPaginated } from "../../dbscripts/functions/interviews";
+import { formatInAppDateTime } from "@/lib/appTimezone";
 
 const PAGE_SIZE = 10;
 
@@ -90,7 +91,7 @@ export default function Interviews() {
                         <TableCell>{sub?.client_name}</TableCell>
                         <TableCell>{sub?.position}</TableCell>
                         <TableCell><Badge variant="outline">Round {iv.round_number}</Badge></TableCell>
-                        <TableCell>{iv.scheduled_at ? new Date(iv.scheduled_at).toLocaleString() : "—"}</TableCell>
+                        <TableCell>{formatInAppDateTime(iv.scheduled_at)}</TableCell>
                         <TableCell><Badge variant="secondary">{iv.mode}</Badge></TableCell>
                         <TableCell><Badge variant="outline">{iv.status}</Badge></TableCell>
                         <TableCell>

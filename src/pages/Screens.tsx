@@ -13,6 +13,7 @@ import { fetchSubmissions, fetchSubmissionsByRecruiter, fetchSubmissionsByCandid
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { formatInAppDateTime } from "@/lib/appTimezone";
 
 const PAGE_SIZE = 10;
 
@@ -98,7 +99,7 @@ export default function ScreensPage() {
                   {!isCandidate && <TableCell className="font-medium">{s.candidates?.first_name} {s.candidates?.last_name || ""}</TableCell>}
                   <TableCell>{s.client_name}</TableCell>
                   <TableCell>{s.position}</TableCell>
-                  <TableCell className="text-muted-foreground">{s.screen_scheduled_at ? new Date(s.screen_scheduled_at).toLocaleString() : "—"}</TableCell>
+                  <TableCell className="text-muted-foreground">{formatInAppDateTime(s.screen_scheduled_at)}</TableCell>
                   <TableCell className="text-muted-foreground">{s.screen_mode || "—"}</TableCell>
                   <TableCell>
                     {s.screen_resume_url ? <a href={s.screen_resume_url} target="_blank" rel="noreferrer" className="text-xs text-info underline mr-2">Resume</a> : null}

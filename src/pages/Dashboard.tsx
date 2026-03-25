@@ -9,7 +9,14 @@ import { fetchDashboardStats } from "../../dbscripts/functions/dashboard";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, subDays } from "date-fns";
+import {
+  easternPresetLastWeek,
+  easternPresetThisWeek,
+  easternPresetToday,
+  easternPresetYesterday,
+  easternRangeForDashboardFilter,
+  formatInAppTimeZone,
+} from "@/lib/appTimezone";
 import {
   Select,
   SelectContent,
@@ -59,6 +66,11 @@ export default function Dashboard() {
     return Array.from(set).sort();
   }, [filterCandidates]);
 
+  const dashboardDateFilter = useMemo(
+    () => easternRangeForDashboardFilter(dateRange),
+    [dateRange]
+  );
+
   const { data: stats, isLoading } = useQuery({
     queryKey: [
       "dashboard-stats",
@@ -66,8 +78,8 @@ export default function Dashboard() {
       dashboardUserId,
       profile?.linked_candidate_id,
       profile?.agency_id,
-      dateRange?.from ? dateRange.from.toISOString() : null,
-      dateRange?.to ? dateRange.to.toISOString() : null,
+      dashboardDateFilter.start ? dashboardDateFilter.start.toISOString() : null,
+      dashboardDateFilter.end ? dashboardDateFilter.end.toISOString() : null,
       showFilterDropdowns ? filterCandidateId : null,
       showFilterDropdowns ? filterTechnology : null,
       showFilterDropdowns ? filterRecruiterId : null,
@@ -78,8 +90,8 @@ export default function Dashboard() {
         userId: dashboardUserId ?? undefined,
         linkedCandidateId: profile?.linked_candidate_id ?? null,
         agencyId: isAgencyAdmin ? profile?.agency_id ?? null : null,
-        startDate: dateRange?.from ?? null,
-        endDate: dateRange?.to ?? null,
+        startDate: dashboardDateFilter.start,
+        endDate: dashboardDateFilter.end,
         filterCandidateId: showFilterDropdowns && filterCandidateId ? filterCandidateId : null,
         filterTechnology: showFilterDropdowns && filterTechnology ? filterTechnology : null,
         filterRecruiterId: showFilterDropdowns && filterRecruiterId ? filterRecruiterId : null,
@@ -88,31 +100,16 @@ export default function Dashboard() {
   });
 
   const selectPreset = (preset: "today" | "yesterday" | "thisWeek" | "lastWeek") => {
-    const now = new Date();
-    let from: Date | undefined;
-    let to: Date | undefined;
-    if (preset === "today") {
-      from = startOfDay(now);
-      to = endOfDay(now);
-    } else if (preset === "yesterday") {
-      const yesterday = subDays(now, 1);
-      from = startOfDay(yesterday);
-      to = endOfDay(yesterday);
-    } else if (preset === "thisWeek") {
-      from = startOfWeek(now, { weekStartsOn: 1 });
-      to = endOfWeek(now, { weekStartsOn: 1 });
-    } else if (preset === "lastWeek") {
-      const lastWeekStart = subDays(startOfWeek(now, { weekStartsOn: 1 }), 7);
-      from = startOfWeek(lastWeekStart, { weekStartsOn: 1 });
-      to = endOfWeek(lastWeekStart, { weekStartsOn: 1 });
-    }
-    setDateRange({ from, to });
+    if (preset === "today") setDateRange(easternPresetToday());
+    else if (preset === "yesterday") setDateRange(easternPresetYesterday());
+    else if (preset === "thisWeek") setDateRange(easternPresetThisWeek());
+    else setDateRange(easternPresetLastWeek());
   };
 
   const rangeLabel = useMemo(() => {
     if (!dateRange?.from || !dateRange?.to) return "All time";
-    const f = format(dateRange.from, "MMM d, yyyy");
-    const t = format(dateRange.to, "MMM d, yyyy");
+    const f = formatInAppTimeZone(dateRange.from, "MMM d, yyyy");
+    const t = formatInAppTimeZone(dateRange.to, "MMM d, yyyy");
     return f === t ? f : `${f} — ${t}`;
   }, [dateRange]);
 

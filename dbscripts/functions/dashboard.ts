@@ -5,7 +5,7 @@ export type DashboardStatsOptions = {
   userId?: string;
   linkedCandidateId?: string | null;
   agencyId?: string | null;
-  // Optional date range (inclusive). Can be Date or ISO string.
+  // Optional inclusive range as UTC instants. Client should send boundaries for US Eastern calendar days.
   startDate?: string | Date | null;
   endDate?: string | Date | null;
   // Optional filters for admin / agency_admin dashboard.

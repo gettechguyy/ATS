@@ -38,6 +38,7 @@ import {
   updateOfferStatus as updateOfferStatusFn,
 } from "../../dbscripts/functions/offers";
 import { updateCandidateStatus } from "../../dbscripts/functions/candidates";
+import { formatInAppDateTime } from "@/lib/appTimezone";
 
 const INTERVIEW_STATUSES = ["Scheduled", "Passed", "Rejected", "Rescheduled"] as const;
 const INTERVIEW_MODES = ["Virtual", "Onsite", "Phone"] as const;
@@ -259,7 +260,7 @@ export default function SubmissionDetail() {
             )}
             {submission.status === "Screen Call" && (
               <>
-                <div><span className="text-muted-foreground">Scheduled:</span> {submission.screen_scheduled_at ? new Date(submission.screen_scheduled_at).toLocaleString() : "—"}</div>
+                <div><span className="text-muted-foreground">Scheduled:</span> {formatInAppDateTime(submission.screen_scheduled_at)}</div>
                 <div><span className="text-muted-foreground">Mode:</span> {submission.screen_mode || "—"}</div>
                 {submission.screen_link_or_phone && (
                   <div>
@@ -418,7 +419,7 @@ export default function SubmissionDetail() {
                     interviews?.map((iv: any) => (
                       <TableRow key={iv.id}>
                         <TableCell className="font-medium">Round {iv.round_number}</TableCell>
-                        <TableCell>{iv.scheduled_at ? new Date(iv.scheduled_at).toLocaleString() : "—"}</TableCell>
+                        <TableCell>{formatInAppDateTime(iv.scheduled_at)}</TableCell>
                         <TableCell>
                           <Badge variant="outline">{iv.mode}</Badge>
                           {iv.mode === "Virtual" && iv.virtual_link && (
@@ -522,9 +523,9 @@ export default function SubmissionDetail() {
                   <TableBody>
                     {rescheduleLogs.map((log: any) => (
                       <TableRow key={log.id}>
-                        <TableCell className="text-muted-foreground">{log.old_date ? new Date(log.old_date).toLocaleString() : "—"}</TableCell>
-                        <TableCell>{log.new_date ? new Date(log.new_date).toLocaleString() : "—"}</TableCell>
-                        <TableCell className="text-muted-foreground">{new Date(log.changed_at).toLocaleString()}</TableCell>
+                        <TableCell className="text-muted-foreground">{formatInAppDateTime(log.old_date)}</TableCell>
+                        <TableCell>{formatInAppDateTime(log.new_date)}</TableCell>
+                        <TableCell className="text-muted-foreground">{formatInAppDateTime(log.changed_at)}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
