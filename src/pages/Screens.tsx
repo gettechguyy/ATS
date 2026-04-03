@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -9,16 +9,17 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { fetchSubmissions, fetchSubmissionsByRecruiter, fetchSubmissionsByCandidate, fetchSubmissionsByTeamLead, fetchSubmissionsByAgency, updateSubmission } from "../../dbscripts/functions/submissions";
+import { fetchSpecialSubmissionsPage, updateSubmission, type SpecialSubmissionsRoleContext } from "../../dbscripts/functions/submissions";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { formatInAppDateTime } from "@/lib/appTimezone";
 
 const PAGE_SIZE = 10;
 
 export default function ScreensPage() {
-  const { user, profile, isCandidate, isRecruiter, isAdmin, isTeamLead, isAgencyAdmin } = useAuth();
+  const { user, profile, isCandidate, isRecruiter, isAdmin, isManager, isTeamLead, isAgencyAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [outcomeDialogOpen, setOutcomeDialogOpen] = useState(false);
   const [outcomeSubmission, setOutcomeSubmission] = useState<any | null>(null);
@@ -26,37 +27,56 @@ export default function ScreensPage() {
   const [outcomeNote, setOutcomeNote] = useState("");
   const [outcomeBy, setOutcomeBy] = useState<"candidate" | "recruiter">("recruiter");
   const [page, setPage] = useState(1);
+  const [search, setSearch] = useState("");
 
-  const submissionsQueryFn = async () => {
-    if (isCandidate) {
-      if (!profile?.linked_candidate_id) return [];
-      return fetchSubmissionsByCandidate(profile.linked_candidate_id);
+  const screensPageContext = useMemo((): SpecialSubmissionsRoleContext | null => {
+    if (isCandidate && profile?.linked_candidate_id) {
+      return { role: "candidate", linkedCandidateId: profile.linked_candidate_id };
     }
-    if (isAgencyAdmin && profile?.agency_id) return fetchSubmissionsByAgency(profile.agency_id);
-    if (isRecruiter) {
-      if (!user?.id) return [];
-      return fetchSubmissionsByRecruiter(user.id);
-    }
-    if (isTeamLead && profile?.id) return fetchSubmissionsByTeamLead(profile.id);
-    return fetchSubmissions();
-  };
+    if (isAgencyAdmin && profile?.agency_id) return { role: "agency", agencyId: profile.agency_id };
+    if (isRecruiter && user?.id) return { role: "recruiter", recruiterId: user.id };
+    if (isTeamLead && profile?.id) return { role: "team_lead", teamLeadProfileId: profile.id };
+    if (isAdmin || isManager) return { role: "admin" };
+    return null;
+  }, [
+    isCandidate,
+    profile?.linked_candidate_id,
+    profile?.agency_id,
+    profile?.id,
+    isAgencyAdmin,
+    isRecruiter,
+    user?.id,
+    isTeamLead,
+    isAdmin,
+    isManager,
+  ]);
 
   const screensEnabled =
-    isCandidate ? !!profile?.linked_candidate_id
+    screensPageContext != null &&
+    (isCandidate ? !!profile?.linked_candidate_id
     : isRecruiter ? !!user?.id
     : isAgencyAdmin ? !!profile?.agency_id
     : isTeamLead ? !!profile?.id
-    : true;
+    : true);
 
-  const { data: submissions = [], isLoading } = useQuery({
-    queryKey: ["submissions-screens", user?.id, profile?.linked_candidate_id, profile?.agency_id, profile?.id],
-    queryFn: submissionsQueryFn,
+  const { data: screensPage, isLoading } = useQuery({
+    queryKey: ["submissions-screens", screensPageContext, page, search],
+    queryFn: () =>
+      fetchSpecialSubmissionsPage("screen_call", screensPageContext!, {
+        page,
+        pageSize: PAGE_SIZE,
+        search,
+        sortBy: "created_at",
+        order: "desc",
+      }),
     enabled: screensEnabled,
   });
 
-  const screens = submissions.filter((s: any) => s && (s.status === "Screen Call" || s.screen_scheduled_at));
-  const totalPages = Math.max(1, Math.ceil(screens.length / PAGE_SIZE));
-  const paginatedScreens = screens.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const paginatedScreens = screensPage?.data ?? [];
+  const totalCount = screensPage?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  useEffect(() => setPage(1), [search]);
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
@@ -71,9 +91,20 @@ export default function ScreensPage() {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold">Screen Calls</h1>
-        <p className="text-sm text-muted-foreground">Manage scheduled screen calls and outcomes</p>
+      <div className="mb-6 space-y-3">
+        <div>
+          <h1 className="text-2xl font-bold">Screen Calls</h1>
+          <p className="text-sm text-muted-foreground">Manage scheduled screen calls and outcomes</p>
+        </div>
+        <div className="relative max-w-md">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search by client, position, or candidate name..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
       </div>
 
       <Card>
@@ -92,7 +123,9 @@ export default function ScreensPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginatedScreens.length === 0 ? (
+              {isLoading ? (
+                <TableRow><TableCell colSpan={8} className="py-6 text-center text-muted-foreground">Loading…</TableCell></TableRow>
+              ) : paginatedScreens.length === 0 ? (
                 <TableRow><TableCell colSpan={8} className="py-6 text-center text-muted-foreground">No screen calls</TableCell></TableRow>
               ) : paginatedScreens.map((s: any) => (
                 <TableRow key={s.id}>
@@ -154,10 +187,10 @@ export default function ScreensPage() {
             </TableBody>
           </Table>
         </CardContent>
-        {screens.length > 0 && (
+        {totalCount > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
             <p className="text-sm text-muted-foreground">
-              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, screens.length)} of {screens.length}
+              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCount)} of {totalCount}
             </p>
             <div className="flex items-center gap-2">
               <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>

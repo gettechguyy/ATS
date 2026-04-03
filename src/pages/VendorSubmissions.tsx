@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,13 +23,10 @@ import { Link } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { toast } from "sonner";
 import {
-  fetchSubmissions,
-  fetchSubmissionsByRecruiter,
-  fetchSubmissionsByCandidate,
-  fetchSubmissionsByTeamLead,
-  fetchSubmissionsByAgency,
   createSubmission as createSubmissionFn,
   updateSubmissionStatus,
+  fetchSpecialSubmissionsPage,
+  type SpecialSubmissionsRoleContext,
 } from "../../dbscripts/functions/submissions";
 import { fetchCandidates, fetchCandidatesByRecruiter, fetchCandidatesBasic } from "../../dbscripts/functions/candidates";
 import { uploadVendorJobDescription } from "../../dbscripts/functions/storage";
@@ -57,52 +54,60 @@ export default function VendorSubmissions() {
   const [jobDescFile, setJobDescFile] = useState<File | null>(null);
   const [jobDescUploading, setJobDescUploading] = useState(false);
 
-  const submissionsQueryFn = async () => {
-    if (isCandidate) {
-      if (!profile?.linked_candidate_id) return [];
-      return fetchSubmissionsByCandidate(profile.linked_candidate_id);
+  const vendorPageContext = useMemo((): SpecialSubmissionsRoleContext | null => {
+    if (isCandidate && profile?.linked_candidate_id) {
+      return { role: "candidate", linkedCandidateId: profile.linked_candidate_id };
     }
-    if (isAgencyAdmin && profile?.agency_id) return fetchSubmissionsByAgency(profile.agency_id);
-    if (isRecruiter) {
-      if (!user?.id) return [];
-      return fetchSubmissionsByRecruiter(user.id);
-    }
-    if (isTeamLead && profile?.id) return fetchSubmissionsByTeamLead(profile.id);
-    return fetchSubmissions();
-  };
+    if (isAgencyAdmin && profile?.agency_id) return { role: "agency", agencyId: profile.agency_id };
+    if (isRecruiter && user?.id) return { role: "recruiter", recruiterId: user.id };
+    if (isTeamLead && profile?.id) return { role: "team_lead", teamLeadProfileId: profile.id };
+    if (isAdmin || isManager) return { role: "admin" };
+    return null;
+  }, [
+    isCandidate,
+    profile?.linked_candidate_id,
+    profile?.agency_id,
+    profile?.id,
+    isAgencyAdmin,
+    isRecruiter,
+    user?.id,
+    isTeamLead,
+    isAdmin,
+    isManager,
+  ]);
 
-  const enabled =
-    isCandidate ? !!profile?.linked_candidate_id
+  const vendorPageEnabled =
+    vendorPageContext != null &&
+    (isCandidate ? !!profile?.linked_candidate_id
     : isRecruiter ? !!user?.id
     : isAgencyAdmin ? !!profile?.agency_id
     : isTeamLead ? !!profile?.id
-    : true;
+    : true);
 
-  const { data: submissions = [], isLoading } = useQuery({
-    queryKey: ["submissions-vendor-responded", user?.id, profile?.linked_candidate_id, profile?.agency_id, profile?.id],
-    queryFn: submissionsQueryFn,
-    enabled,
+  const { data: vendorPage, isLoading } = useQuery({
+    queryKey: [
+      "submissions-vendor-responded",
+      vendorPageContext,
+      page,
+      search,
+      candidateFilter,
+    ],
+    queryFn: () =>
+      fetchSpecialSubmissionsPage("vendor_responded", vendorPageContext!, {
+        page,
+        pageSize: PAGE_SIZE,
+        search,
+        sortBy: "created_at",
+        order: "desc",
+        candidateId:
+          !isCandidate && candidateFilter !== "all" ? candidateFilter : null,
+      }),
+    enabled: vendorPageEnabled,
   });
 
-  const vendorSubmissions = submissions.filter((s: any) => s && s.status === "Vendor Responded");
-  const normalizedSearch = search.trim().toLowerCase();
-  const filteredVendorSubmissions = vendorSubmissions.filter((s: any) => {
-    const candidateIdMatch = candidateFilter === "all" ? true : String(s.candidate_id) === candidateFilter;
-    if (!candidateIdMatch) return false;
-
-    if (!normalizedSearch) return true;
-    const candidateName = `${s.candidates?.first_name ?? ""} ${s.candidates?.last_name ?? ""}`.trim().toLowerCase();
-    const clientName = (s.client_name ?? "").toLowerCase();
-    const position = (s.position ?? "").toLowerCase();
-    return (
-      clientName.includes(normalizedSearch)
-      || position.includes(normalizedSearch)
-      || candidateName.includes(normalizedSearch)
-    );
-  });
-
-  const totalPages = Math.max(1, Math.ceil(filteredVendorSubmissions.length / PAGE_SIZE));
-  const paginated = filteredVendorSubmissions.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const paginated = vendorPage?.data ?? [];
+  const totalCount = vendorPage?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   // Candidate dropdown for Add Vendor Submission (admin: all, recruiter: own)
   const candidatesQueryFn = async () => {
@@ -308,10 +313,10 @@ export default function VendorSubmissions() {
             </TableBody>
           </Table>
 
-          {!isLoading && filteredVendorSubmissions.length > 0 && (
+          {!isLoading && totalCount > 0 && (
             <div className="flex flex-wrap items-center justify-between gap-3 border-t px-4 py-3">
               <p className="text-sm text-muted-foreground">
-                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filteredVendorSubmissions.length)} of {filteredVendorSubmissions.length}
+                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, totalCount)} of {totalCount}
               </p>
               <div className="flex items-center gap-2">
                 <Button

@@ -1,5 +1,271 @@
 import { supabase } from "../../src/integrations/supabase/client";
 
+/** Matches DB enum submission_status for type-safe .eq("status", ...) */
+type SubmissionStatusFilter =
+  | "Applied"
+  | "Vendor Responded"
+  | "Screen Call"
+  | "Interview"
+  | "Rejected"
+  | "Offered";
+
+const SUBMISSIONS_SORT_COLUMNS = ["created_at", "client_name", "position", "status"] as const;
+
+/** PostgREST typically caps each response at ~1000 rows; batch `.range()` calls to load larger windows. */
+const POSTGREST_MAX_ROWS = 1000;
+
+async function fetchWithRangeBatched<T>(
+  createQuery: () => any,
+  from: number,
+  to: number
+): Promise<{ data: T[]; count: number | null }> {
+  if (to < from) return { data: [], count: 0 };
+  const span = to - from + 1;
+  if (span <= POSTGREST_MAX_ROWS) {
+    const { data, error, count } = await createQuery().range(from, to);
+    if (error) throw error;
+    return { data: (data as T[]) ?? [], count: count ?? null };
+  }
+  const all: T[] = [];
+  let totalCount: number | null = null;
+  for (let start = from; start <= to; start += POSTGREST_MAX_ROWS) {
+    const end = Math.min(start + POSTGREST_MAX_ROWS - 1, to);
+    const { data, error, count } = await createQuery().range(start, end);
+    if (error) throw error;
+    if (totalCount === null) totalCount = count ?? null;
+    const chunk = (data as T[]) ?? [];
+    all.push(...chunk);
+    if (chunk.length === 0) break;
+    if (chunk.length < end - start + 1) break;
+  }
+  return { data: all, count: totalCount };
+}
+
+/** Load every row for a query factory (no practical upper bound except DB size). */
+async function fetchAllRowsForQuery(createQuery: () => any): Promise<any[]> {
+  const rows: any[] = [];
+  for (let from = 0; ; from += POSTGREST_MAX_ROWS) {
+    const { data, error } = await createQuery().range(from, from + POSTGREST_MAX_ROWS - 1);
+    if (error) throw error;
+    const chunk = data ?? [];
+    rows.push(...chunk);
+    if (chunk.length < POSTGREST_MAX_ROWS) break;
+  }
+  return rows;
+}
+
+function aggregateCountsByCandidate(rows: { candidate_id: string }[]): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const r of rows) {
+    const id = r.candidate_id;
+    if (!id) continue;
+    m.set(id, (m.get(id) ?? 0) + 1);
+  }
+  return m;
+}
+
+async function candidateIdsMatchingNameSearch(term: string): Promise<string[]> {
+  const safe = term.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+  if (!safe) return [];
+  const t = `%${safe}%`;
+  const rows = await fetchAllRowsForQuery(() =>
+    supabase.from("candidates").select("id").or(`first_name.ilike.${t},last_name.ilike.${t}`)
+  );
+  return rows.map((r: any) => r.id).filter(Boolean);
+}
+
+function applySubmissionFiltersMinimal(
+  q: any,
+  opts: { status?: string; candidateId?: string | null; search?: string; nameCandidateIds?: string[] }
+) {
+  let x = q;
+  if (opts.candidateId) x = x.eq("candidate_id", opts.candidateId);
+  if (opts.status && opts.status !== "all") x = x.eq("status", opts.status as SubmissionStatusFilter);
+  if (opts.search && opts.search.trim()) {
+    const safe = opts.search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+    const term = `%${safe}%`;
+    const parts = [`client_name.ilike.${term}`, `position.ilike.${term}`];
+    const ids = opts.nameCandidateIds ?? [];
+    if (ids.length) {
+      const chunkSize = 150;
+      for (let i = 0; i < ids.length; i += chunkSize) {
+        const slice = ids.slice(i, i + chunkSize);
+        parts.push(`candidate_id.in.(${slice.join(",")})`);
+      }
+    }
+    x = x.or(parts.join(","));
+  }
+  return x;
+}
+
+export type CandidateApplicationSummaryRow = {
+  candidateId: string;
+  candidateName: string;
+  recruiterId: string | null;
+  agencyId: string | null;
+  applicationCount: number;
+};
+
+export type ApplicationSummariesContext =
+  | { mode: "admin" }
+  | { mode: "recruiter"; recruiterId: string }
+  | { mode: "agency"; agencyId: string }
+  | { mode: "team_lead"; teamLeadProfileId: string };
+
+export type ApplicationSummariesOpts = {
+  search?: string;
+  status?: string;
+  sortBy?: string;
+  order?: "asc" | "desc";
+  candidateId?: string | null;
+};
+
+/**
+ * Count-only path for the Applications list: loads lightweight `candidate_id` rows (batched),
+ * aggregates per candidate, then loads candidate display fields. Does not load full submission rows.
+ */
+export async function fetchCandidateApplicationSummaries(
+  ctx: ApplicationSummariesContext,
+  opts: ApplicationSummariesOpts = {}
+): Promise<CandidateApplicationSummaryRow[]> {
+  const { search, status, sortBy, order, candidateId } = opts;
+  const col = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const asc = order === "asc";
+
+  let nameIds: string[] = [];
+  if (search && search.trim()) {
+    nameIds = await candidateIdsMatchingNameSearch(search);
+  }
+
+  const filterOpts = { status, candidateId: candidateId ?? undefined, search, nameCandidateIds: nameIds };
+
+  let minimalRows: { candidate_id: string }[] = [];
+
+  if (ctx.mode === "admin") {
+    const createQuery = () => {
+      let q = supabase.from("submissions").select("candidate_id").order(col, { ascending: asc });
+      return applySubmissionFiltersMinimal(q, filterOpts);
+    };
+    minimalRows = await fetchAllRowsForQuery(createQuery);
+  } else if (ctx.mode === "recruiter") {
+    minimalRows = await fetchAllRowsForQuery(() => {
+      const inner = supabase
+        .from("submissions")
+        .select("candidate_id, candidates!inner(recruiter_id)")
+        .eq("candidates.recruiter_id", ctx.recruiterId)
+        .order(col, { ascending: asc });
+      return applySubmissionFiltersMinimal(inner, filterOpts);
+    });
+  } else if (ctx.mode === "agency") {
+    const { data: candidateRows } = await supabase.from("candidates").select("id").eq("agency_id", ctx.agencyId);
+    const allIds = (candidateRows || []).map((c: any) => c.id);
+    if (allIds.length === 0) return [];
+    const filterId =
+      candidateId && allIds.includes(candidateId) ? candidateId : null;
+    const idsToUse = filterId ? [filterId] : allIds;
+    const createQuery = () => {
+      let q = supabase.from("submissions").select("candidate_id").in("candidate_id", idsToUse).order(col, { ascending: asc });
+      return applySubmissionFiltersMinimal(q, { ...filterOpts, candidateId: filterId ?? undefined });
+    };
+    minimalRows = await fetchAllRowsForQuery(createQuery);
+  } else {
+    const tl = ctx.teamLeadProfileId;
+    const candRes: any = await (supabase as any).from("candidates").select("id").eq("team_lead_id", tl);
+    const tlCandidateIds = (candRes.data || []).map((r: any) => r.id);
+    const recruiterRes: any = await (supabase as any).from("candidates").select("recruiter_id").eq("team_lead_id", tl);
+    const recruiterIds = (recruiterRes.data || []).map((r: any) => r.recruiter_id).filter(Boolean);
+
+    const run = async (builder: () => any) => fetchAllRowsForQuery(builder);
+    let a: { id?: string; candidate_id: string }[] = [];
+    let b: { id?: string; candidate_id: string }[] = [];
+    if (tlCandidateIds.length) {
+      a = await run(() => {
+        let q = (supabase as any)
+          .from("submissions")
+          .select("id, candidate_id")
+          .in("candidate_id", tlCandidateIds)
+          .order(col, { ascending: asc });
+        return applySubmissionFiltersMinimal(q, filterOpts);
+      });
+    }
+    if (recruiterIds.length) {
+      b = await run(() => {
+        let q = (supabase as any)
+          .from("submissions")
+          .select("id, candidate_id")
+          .in("recruiter_id", recruiterIds)
+          .order(col, { ascending: asc });
+        return applySubmissionFiltersMinimal(q, filterOpts);
+      });
+    }
+    const seen = new Set<string>();
+    const merged: { candidate_id: string }[] = [];
+    for (const row of [...a, ...b]) {
+      const sid = row.id;
+      if (sid && seen.has(sid)) continue;
+      if (sid) seen.add(sid);
+      merged.push({ candidate_id: row.candidate_id });
+    }
+    minimalRows = merged;
+  }
+
+  const counts = aggregateCountsByCandidate(minimalRows);
+  let candidateKeys = [...counts.keys()].filter((id) => (counts.get(id) ?? 0) > 0);
+  if (candidateKeys.length === 0) return [];
+
+  const metaRows: any[] = [];
+  const chunkSize = 500;
+  for (let i = 0; i < candidateKeys.length; i += chunkSize) {
+    const slice = candidateKeys.slice(i, i + chunkSize);
+    const { data, error } = await supabase
+      .from("candidates")
+      .select("id, first_name, last_name, recruiter_id, agency_id")
+      .in("id", slice);
+    if (error) throw error;
+    metaRows.push(...(data ?? []));
+  }
+
+  const rows: CandidateApplicationSummaryRow[] = metaRows.map((c: any) => ({
+    candidateId: c.id,
+    candidateName: `${c.first_name ?? ""} ${c.last_name ?? ""}`.trim() || "—",
+    recruiterId: c.recruiter_id ?? null,
+    agencyId: c.agency_id ?? null,
+    applicationCount: counts.get(c.id) ?? 0,
+  }));
+
+  rows.sort((a, b) => {
+    if (sortBy === "client_name" || sortBy === "position" || sortBy === "status") {
+      return (a.candidateName || "").localeCompare(b.candidateName || "");
+    }
+    if (order === "asc") return a.applicationCount - b.applicationCount;
+    return b.applicationCount - a.applicationCount;
+  });
+
+  return rows;
+}
+
+/** Full submission rows for one candidate (sheet / detail); batched to avoid row caps. */
+export async function fetchSubmissionsByCandidateWithDetails(
+  candidateId: string,
+  opts?: { status?: string; search?: string }
+) {
+  const status = opts?.status;
+  const search = opts?.search;
+  let nameIds: string[] = [];
+  if (search && search.trim()) {
+    nameIds = await candidateIdsMatchingNameSearch(search);
+  }
+  const createQuery = () => {
+    let q = supabase
+      .from("submissions")
+      .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)")
+      .eq("candidate_id", candidateId)
+      .order("created_at", { ascending: false });
+    return applySubmissionFiltersMinimal(q, { status, search, nameCandidateIds: nameIds });
+  };
+  return fetchAllRowsForQuery(createQuery);
+}
+
 export async function fetchSubmissions() {
   const { data, error } = await supabase
     .from("submissions")
@@ -39,16 +305,6 @@ export async function fetchSubmissionsByCandidate(candidateId: string) {
   return data || [];
 }
 
-/** Matches DB enum submission_status for type-safe .eq("status", ...) */
-type SubmissionStatusFilter =
-  | "Applied"
-  | "Vendor Responded"
-  | "Screen Call"
-  | "Interview"
-  | "Rejected"
-  | "Offered";
-
-const SUBMISSIONS_SORT_COLUMNS = ["created_at", "client_name", "position", "status"] as const;
 export type SubmissionsPageOpts = {
   page: number;
   pageSize: number;
@@ -74,33 +330,37 @@ function buildSubmissionsQuery(recruiterId?: string, candidateId?: string, sortB
 /** Server-side paginated submissions. Optional search, status, sort, candidateId. */
 export async function fetchSubmissionsPaginated(opts: SubmissionsPageOpts) {
   const { page, pageSize, search, status, sortBy, order, candidateId } = opts;
-  let q = buildSubmissionsQuery(undefined, candidateId ?? undefined, sortBy, order);
-  if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
-  if (search && search.trim()) {
-    const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
-    const term = `%${safe}%`;
-    q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
-  }
+  const createQuery = () => {
+    let q = buildSubmissionsQuery(undefined, candidateId ?? undefined, sortBy, order);
+    if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
+    if (search && search.trim()) {
+      const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+      const term = `%${safe}%`;
+      q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
+    }
+    return q;
+  };
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  const { data, error, count } = await q.range(from, to);
-  if (error) throw error;
+  const { data, count } = await fetchWithRangeBatched(createQuery, from, to);
   return { data: data ?? [], total: count ?? 0 };
 }
 
 export async function fetchSubmissionsByRecruiterPaginated(recruiterId: string, opts: SubmissionsPageOpts) {
   const { page, pageSize, search, status, sortBy, order, candidateId } = opts;
-  let q = buildSubmissionsQuery(recruiterId, candidateId ?? undefined, sortBy, order);
-  if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
-  if (search && search.trim()) {
-    const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
-    const term = `%${safe}%`;
-    q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
-  }
+  const createQuery = () => {
+    let q = buildSubmissionsQuery(recruiterId, candidateId ?? undefined, sortBy, order);
+    if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
+    if (search && search.trim()) {
+      const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+      const term = `%${safe}%`;
+      q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
+    }
+    return q;
+  };
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  const { data, error, count } = await q.range(from, to);
-  if (error) throw error;
+  const { data, count } = await fetchWithRangeBatched(createQuery, from, to);
   return { data: data ?? [], total: count ?? 0 };
 }
 
@@ -109,40 +369,211 @@ export async function fetchSubmissionsForRecruiterCandidatesPaginated(recruiterI
   const { page, pageSize, search, status, sortBy, order, candidateId } = opts;
   const col = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
   const asc = order === "asc";
-  let q = supabase
-    .from("submissions")
-    .select("*, candidates!inner(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
-    .eq("candidates.recruiter_id", recruiterId)
-    .order(col, { ascending: asc });
+  const createQuery = () => {
+    let q = supabase
+      .from("submissions")
+      .select("*, candidates!inner(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
+      .eq("candidates.recruiter_id", recruiterId)
+      .order(col, { ascending: asc });
 
-  if (candidateId) q = q.eq("candidate_id", candidateId);
-  if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
-  if (search && search.trim()) {
-    const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
-    const term = `%${safe}%`;
-    q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
-  }
+    if (candidateId) q = q.eq("candidate_id", candidateId);
+    if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
+    if (search && search.trim()) {
+      const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+      const term = `%${safe}%`;
+      q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
+    }
+    return q;
+  };
 
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  const { data, error, count } = await q.range(from, to);
-  if (error) throw error;
+  const { data, count } = await fetchWithRangeBatched(createQuery, from, to);
   return { data: data ?? [], total: count ?? 0 };
 }
 
 export async function fetchSubmissionsByCandidatePaginated(candidateId: string, opts: SubmissionsPageOpts) {
   const { page, pageSize, search, status, sortBy, order } = opts;
-  let q = buildSubmissionsQuery(undefined, candidateId, sortBy, order);
-  if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
-  if (search && search.trim()) {
-    const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
-    const term = `%${safe}%`;
-    q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
-  }
+  const createQuery = () => {
+    let q = buildSubmissionsQuery(undefined, candidateId, sortBy, order);
+    if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
+    if (search && search.trim()) {
+      const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+      const term = `%${safe}%`;
+      q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
+    }
+    return q;
+  };
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  const { data, error, count } = await q.range(from, to);
-  if (error) throw error;
+  const { data, count } = await fetchWithRangeBatched(createQuery, from, to);
+  return { data: data ?? [], total: count ?? 0 };
+}
+
+/** Client/position ILIKE plus candidate name matches (batched ID lookup). */
+async function buildSearchOrClause(search?: string): Promise<string | null> {
+  if (!search?.trim()) return null;
+  const nameIds = await candidateIdsMatchingNameSearch(search);
+  const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+  const term = `%${safe}%`;
+  const parts = [`client_name.ilike.${term}`, `position.ilike.${term}`];
+  for (let i = 0; i < nameIds.length; i += 150) {
+    parts.push(`candidate_id.in.(${nameIds.slice(i, i + 150).join(",")})`);
+  }
+  return parts.join(",");
+}
+
+export type SpecialSubmissionsKind = "vendor_responded" | "screen_call";
+
+export type SpecialSubmissionsRoleContext =
+  | { role: "admin" }
+  | { role: "recruiter"; recruiterId: string }
+  | { role: "agency"; agencyId: string }
+  | { role: "team_lead"; teamLeadProfileId: string }
+  | { role: "candidate"; linkedCandidateId: string };
+
+/**
+ * Server-paginated Vendor Responded or Screen Call lists (no full-table fetch).
+ * Screen Call = status is Screen Call OR screen_scheduled_at is set.
+ */
+export async function fetchSpecialSubmissionsPage(
+  kind: SpecialSubmissionsKind,
+  ctx: SpecialSubmissionsRoleContext,
+  opts: SubmissionsPageOpts
+): Promise<{ data: any[]; total: number }> {
+  const { page, pageSize, search, sortBy, order, candidateId } = opts;
+  const col = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const asc = order === "asc";
+  const searchOr = await buildSearchOrClause(search);
+
+  const applyKindFilter = (q: any) => {
+    if (kind === "vendor_responded") {
+      return q.eq("status", "Vendor Responded" as SubmissionStatusFilter);
+    }
+    return q.or("status.eq.Screen Call,screen_scheduled_at.not.is.null");
+  };
+
+  const mergeTeamLeadRows = async (buildFiltered: (q: any) => any) => {
+    const tl = (ctx as { role: "team_lead"; teamLeadProfileId: string }).teamLeadProfileId;
+    const candRes: any = await (supabase as any).from("candidates").select("id").eq("team_lead_id", tl);
+    const tlCandidateIds = (candRes.data || []).map((r: any) => r.id);
+    const recruiterRes: any = await (supabase as any).from("candidates").select("recruiter_id").eq("team_lead_id", tl);
+    const recruiterIds = (recruiterRes.data || []).map((r: any) => r.recruiter_id).filter(Boolean);
+
+    const run = (inCol: "candidate_id" | "recruiter_id", ids: string[]) => {
+      if (!ids.length) return Promise.resolve([] as any[]);
+      return fetchAllRowsForQuery(() => {
+        let q = supabase
+          .from("submissions")
+          .select("*, candidates(first_name, last_name, email, team_lead_id, recruiter_id, agency_id)")
+          .in(inCol, ids)
+          .order(col, { ascending: asc });
+        q = buildFiltered(q);
+        return q;
+      });
+    };
+
+    const [a, b] = await Promise.all([run("candidate_id", tlCandidateIds), run("recruiter_id", recruiterIds)]);
+    const seen = new Set<string>();
+    const merged: any[] = [];
+    for (const s of [...a, ...b]) {
+      if (seen.has(s.id)) continue;
+      seen.add(s.id);
+      merged.push(s);
+    }
+    merged.sort((x, y) => {
+      const ta = new Date(x.created_at).getTime();
+      const tb = new Date(y.created_at).getTime();
+      return asc ? ta - tb : tb - ta;
+    });
+    if (candidateId) {
+      const f = merged.filter((s) => s.candidate_id === candidateId);
+      const total = f.length;
+      const from = (page - 1) * pageSize;
+      return { data: f.slice(from, from + pageSize), total };
+    }
+    const total = merged.length;
+    const from = (page - 1) * pageSize;
+    return { data: merged.slice(from, from + pageSize), total };
+  };
+
+  if (ctx.role === "team_lead") {
+    return mergeTeamLeadRows((q) => {
+      let x = applyKindFilter(q);
+      if (searchOr) x = x.or(searchOr);
+      return x;
+    });
+  }
+
+  if (ctx.role === "admin") {
+    const createQuery = () => {
+      let q = supabase
+        .from("submissions")
+        .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
+        .order(col, { ascending: asc });
+      q = applyKindFilter(q);
+      if (candidateId) q = q.eq("candidate_id", candidateId);
+      if (searchOr) q = q.or(searchOr);
+      return q;
+    };
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    const { data, count } = await fetchWithRangeBatched(createQuery, from, to);
+    return { data: data ?? [], total: count ?? 0 };
+  }
+
+  if (ctx.role === "recruiter") {
+    const createQuery = () => {
+      let q = supabase
+        .from("submissions")
+        .select("*, candidates!inner(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
+        .eq("candidates.recruiter_id", ctx.recruiterId)
+        .order(col, { ascending: asc });
+      q = applyKindFilter(q);
+      if (candidateId) q = q.eq("candidate_id", candidateId);
+      if (searchOr) q = q.or(searchOr);
+      return q;
+    };
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    const { data, count } = await fetchWithRangeBatched(createQuery, from, to);
+    return { data: data ?? [], total: count ?? 0 };
+  }
+
+  if (ctx.role === "agency") {
+    const { data: candidateRows } = await supabase.from("candidates").select("id").eq("agency_id", ctx.agencyId);
+    const allIds = (candidateRows || []).map((c: any) => c.id);
+    if (allIds.length === 0) return { data: [], total: 0 };
+    const idsToUse = candidateId && allIds.includes(candidateId) ? [candidateId] : allIds;
+    const createQuery = () => {
+      let q = supabase
+        .from("submissions")
+        .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
+        .in("candidate_id", idsToUse)
+        .order(col, { ascending: asc });
+      q = applyKindFilter(q);
+      if (searchOr) q = q.or(searchOr);
+      return q;
+    };
+    const from = (page - 1) * pageSize;
+    const to = from + pageSize - 1;
+    const { data, count } = await fetchWithRangeBatched(createQuery, from, to);
+    return { data: data ?? [], total: count ?? 0 };
+  }
+
+  const createQuery = () => {
+    let q = supabase
+      .from("submissions")
+      .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
+      .eq("candidate_id", ctx.linkedCandidateId)
+      .order(col, { ascending: asc });
+    q = applyKindFilter(q);
+    if (searchOr) q = q.or(searchOr);
+    return q;
+  };
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, count } = await fetchWithRangeBatched(createQuery, from, to);
   return { data: data ?? [], total: count ?? 0 };
 }
 
@@ -169,21 +600,23 @@ export async function fetchSubmissionsByAgencyPaginated(agencyId: string, opts: 
   const col = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
   const asc = order === "asc";
   const idsToUse = filterCandidateId && candidateIds.includes(filterCandidateId) ? [filterCandidateId] : candidateIds;
-  let q = supabase
-    .from("submissions")
-    .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
-    .in("candidate_id", idsToUse)
-    .order(col, { ascending: asc });
-  if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
-  if (search && search.trim()) {
-    const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
-    const term = `%${safe}%`;
-    q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
-  }
+  const createQuery = () => {
+    let q = supabase
+      .from("submissions")
+      .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
+      .in("candidate_id", idsToUse)
+      .order(col, { ascending: asc });
+    if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
+    if (search && search.trim()) {
+      const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+      const term = `%${safe}%`;
+      q = q.or(`client_name.ilike.${term},position.ilike.${term}`);
+    }
+    return q;
+  };
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  const { data, error, count } = await q.range(from, to);
-  if (error) throw error;
+  const { data, count } = await fetchWithRangeBatched(createQuery, from, to);
   return { data: data ?? [], total: count ?? 0 };
 }
 

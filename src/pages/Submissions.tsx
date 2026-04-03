@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,7 +24,15 @@ import { Search, Eye, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from "luci
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { fetchSubmissionsPaginated, fetchSubmissionsByRecruiterPaginated, fetchSubmissionsForRecruiterCandidatesPaginated, fetchSubmissionsByCandidatePaginated, fetchSubmissionsByAgencyPaginated, fetchSubmissionsByTeamLead, updateSubmissionStatus, updateSubmission, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
+import {
+  fetchSubmissionsByCandidatePaginated,
+  updateSubmissionStatus,
+  updateSubmission,
+  createSubmission as createSubmissionFn,
+  fetchCandidateApplicationSummaries,
+  fetchSubmissionsByCandidateWithDetails,
+  type ApplicationSummariesContext,
+} from "../../dbscripts/functions/submissions";
 import { fetchCandidates, fetchCandidatesByRecruiter, fetchCandidatesBasic, fetchCandidatesByTeamLead } from "../../dbscripts/functions/candidates";
 import { fetchAgencies } from "../../dbscripts/functions/agencies";
 import { fetchProfilesByRole } from "../../dbscripts/functions/profiles";
@@ -33,7 +41,6 @@ import { US_STATES } from "@/lib/usStates";
 
 const PAGE_SIZE = 10;
 const CANDIDATES_PAGE_SIZE = 10; // candidates per page in main table (non-candidate view)
-const SUBMISSIONS_FETCH_SIZE = 5000; // fetch this many submissions to group by candidate
 const APPLICATIONS_SHEET_PAGE_SIZE = 10;
 const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Screen Call", "Interview", "Rejected", "Offered"] as const;
 
@@ -83,67 +90,78 @@ export default function Submissions() {
   const [newJobLink, setNewJobLink] = useState("");
   const [page, setPage] = useState(1);
   const [candidateFilter, setCandidateFilter] = useState<string>("all");
-  const [applicationsSheet, setApplicationsSheet] = useState<{ candidateName: string; submissions: any[] } | null>(null);
+  const [applicationsSheet, setApplicationsSheet] = useState<{ candidateId: string; candidateName: string } | null>(null);
   const [applicationsSheetPage, setApplicationsSheetPage] = useState(1);
 
-  const isPaginatedRole = !isTeamLead; // team lead uses fetchSubmissionsByTeamLead + client filter; others use paginated API
-  const submissionsQueryFn = async () => {
-    if (isTeamLead && profile?.id) return fetchSubmissionsByTeamLead(profile.id);
-    return [];
-  };
-  const { data: submissionsTeamLead, isLoading: loadingTL } = useQuery({
-    queryKey: ["submissions-tl", profile?.id],
-    queryFn: submissionsQueryFn,
-    enabled: isTeamLead && !!profile?.id,
-  });
-  const { data: submissionsResult, isLoading: loadingPaginated } = useQuery({
-    queryKey: ["submissions", role, user?.id, profile?.linked_candidate_id, profile?.agency_id, isCandidate ? page : 1, isCandidate ? PAGE_SIZE : SUBMISSIONS_FETCH_SIZE, search, statusFilter, sortBy, order, candidateFilter],
+  const isPaginatedRole = !isTeamLead;
+
+  const summariesContext = useMemo((): ApplicationSummariesContext | null => {
+    if (isCandidate) return null;
+    if (isAgencyAdmin && profile?.agency_id) return { mode: "agency", agencyId: profile.agency_id };
+    if (isRecruiter && user?.id) return { mode: "recruiter", recruiterId: user.id };
+    if (isTeamLead && profile?.id) return { mode: "team_lead", teamLeadProfileId: profile.id };
+    if (isAdmin || isManager) return { mode: "admin" };
+    return null;
+  }, [isCandidate, isAgencyAdmin, profile?.agency_id, profile?.id, isRecruiter, user?.id, isTeamLead, isAdmin, isManager]);
+
+  const { data: applicationSummaries = [], isLoading: loadingSummaries } = useQuery({
+    queryKey: ["application-summaries", summariesContext, search, statusFilter, sortBy, order, candidateFilter],
     queryFn: async () => {
-      if (isCandidate) {
-        if (!profile?.linked_candidate_id) return { data: [], total: 0 };
-        return fetchSubmissionsByCandidatePaginated(profile.linked_candidate_id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order });
-      }
+      if (!summariesContext) return [];
       const candidateIdOpt = candidateFilter && candidateFilter !== "all" ? candidateFilter : undefined;
-      if (isAgencyAdmin && profile?.agency_id) return fetchSubmissionsByAgencyPaginated(profile.agency_id, { page: 1, pageSize: SUBMISSIONS_FETCH_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
-      if (isRecruiter && user?.id) return fetchSubmissionsForRecruiterCandidatesPaginated(user.id, { page: 1, pageSize: SUBMISSIONS_FETCH_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
-      return fetchSubmissionsPaginated({ page: 1, pageSize: SUBMISSIONS_FETCH_SIZE, search, status: statusFilter, sortBy, order, candidateId: candidateIdOpt });
+      return fetchCandidateApplicationSummaries(summariesContext, {
+        search,
+        status: statusFilter,
+        sortBy,
+        order,
+        candidateId: candidateIdOpt,
+      });
     },
-    enabled: isPaginatedRole && !!user,
+    enabled: !!summariesContext && !!user,
   });
-  const filteredTL = (submissionsTeamLead ?? []).filter((s: any) => {
-    const candidateName = `${s.candidates?.first_name || ""} ${s.candidates?.last_name || ""}`.toLowerCase();
-    const matchSearch = !search.trim() || s.client_name?.toLowerCase().includes(search.toLowerCase()) || s.position?.toLowerCase().includes(search.toLowerCase()) || candidateName.includes(search.toLowerCase());
-    const matchStatus = statusFilter === "all" || s.status === statusFilter;
-    const matchCandidate = candidateFilter === "all" || !candidateFilter || s.candidate_id === candidateFilter;
-    return matchSearch && matchStatus && matchCandidate;
+
+  const { data: submissionsResult, isLoading: loadingPaginated } = useQuery({
+    queryKey: ["submissions", role, user?.id, profile?.linked_candidate_id, page, PAGE_SIZE, search, statusFilter, sortBy, order],
+    queryFn: async () => {
+      if (!profile?.linked_candidate_id) return { data: [], total: 0 };
+      return fetchSubmissionsByCandidatePaginated(profile.linked_candidate_id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order });
+    },
+    enabled: isPaginatedRole && !!user && isCandidate,
   });
-  const allSubmissionsForGrouping = isTeamLead ? filteredTL : (submissionsResult?.data ?? []);
-  const groupedByCandidateFull = !isCandidate && allSubmissionsForGrouping.length > 0
-    ? (() => {
-        const map = new Map<string, { candidateId: string; candidateName: string; recruiterId: string | null; agencyId: string | null; submissions: any[] }>();
-        for (const s of allSubmissionsForGrouping as any[]) {
-          const cid = s.candidate_id;
-          const name = `${s.candidates?.first_name ?? ""} ${s.candidates?.last_name ?? ""}`.trim() || "—";
-        const recId = s.candidates?.recruiter_id ?? null;
-        const agId = s.candidates?.agency_id ?? null;
 
-        // Hard guard: for recruiters, only show candidates where candidate.recruiter_id = current user.
-        if (isRecruiter && user?.id && recId && recId !== user.id) continue;
-        // Hard guard: for agency admins, only show candidates belonging to their agency.
-        if (isAgencyAdmin && profile?.agency_id && agId && agId !== profile.agency_id) continue;
+  const { data: sheetSubmissions = [], isLoading: loadingSheetSubmissions } = useQuery({
+    queryKey: ["candidate-submissions-sheet", applicationsSheet?.candidateId, statusFilter, search],
+    queryFn: () =>
+      fetchSubmissionsByCandidateWithDetails(applicationsSheet!.candidateId, {
+        status: statusFilter,
+        search,
+      }),
+    enabled: !!applicationsSheet?.candidateId,
+  });
 
-          if (!map.has(cid)) map.set(cid, { candidateId: cid, candidateName: name, recruiterId: recId, agencyId: agId, submissions: [] });
-          map.get(cid)!.submissions.push(s);
-        }
-        return Array.from(map.values());
-      })()
-    : [];
+  const filteredSummaries = useMemo(() => {
+    if (isCandidate) return [];
+    let rows = applicationSummaries;
+    if (isRecruiter && user?.id) {
+      rows = rows.filter((r) => !r.recruiterId || r.recruiterId === user.id);
+    }
+    if (isAgencyAdmin && profile?.agency_id) {
+      rows = rows.filter((r) => !r.agencyId || r.agencyId === profile.agency_id);
+    }
+    return rows;
+  }, [applicationSummaries, isCandidate, isRecruiter, user?.id, isAgencyAdmin, profile?.agency_id]);
+
   const displaySubmissions = isCandidate ? (submissionsResult?.data ?? []) : [];
-  const displayCandidates = !isCandidate ? groupedByCandidateFull.slice((page - 1) * CANDIDATES_PAGE_SIZE, page * CANDIDATES_PAGE_SIZE) : [];
-  const totalCount = isCandidate ? (submissionsResult?.total ?? 0) : groupedByCandidateFull.length;
+  const displayCandidates = !isCandidate
+    ? filteredSummaries.slice((page - 1) * CANDIDATES_PAGE_SIZE, page * CANDIDATES_PAGE_SIZE)
+    : [];
+  const totalCount = isCandidate ? (submissionsResult?.total ?? 0) : filteredSummaries.length;
   const totalPages = isCandidate ? Math.max(1, Math.ceil(totalCount / PAGE_SIZE)) : Math.max(1, Math.ceil(totalCount / CANDIDATES_PAGE_SIZE));
-  const isLoading = isTeamLead ? loadingTL : loadingPaginated;
+  const isLoading = isCandidate ? loadingPaginated : loadingSummaries;
   useEffect(() => setPage(1), [search, statusFilter, sortBy, order, candidateFilter]);
+  useEffect(() => {
+    if (applicationsSheet?.candidateId) setApplicationsSheetPage(1);
+  }, [applicationsSheet?.candidateId]);
 
   // fetch candidates for Add Application dropdown and for filter dropdown (admin: all, agency: agency, recruiter: assigned, team lead: under TL)
   const candidatesQueryFn = async () => {
@@ -182,6 +200,8 @@ export default function Submissions() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["submissions"] });
+      queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
       toast.success("Status updated");
     },
   });
@@ -192,6 +212,8 @@ export default function Submissions() {
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["submissions"] });
+      queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
       toast.success("Submission updated");
       setVendorDialogOpen(false);
       setVendorSubmission(null);
@@ -202,9 +224,7 @@ export default function Submissions() {
       setStateValue("");
       const newStatus = variables.payload?.status;
       if (newStatus) {
-        setApplicationsSheet((prev) =>
-          prev ? { ...prev, submissions: prev.submissions.map((sub) => (sub.id === variables.id ? { ...sub, status: newStatus } : sub)) } : null
-        );
+        queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
       }
     },
     onError: (err: Error) => toast.error(err.message),
@@ -400,15 +420,18 @@ export default function Submissions() {
                     <TableRow key={row.candidateId}>
                       <TableCell className="font-medium">{row.candidateName}</TableCell>
                       <TableCell className="text-muted-foreground">{getRecruiterName(row.recruiterId)}</TableCell>
-                      <TableCell>{row.submissions.length}</TableCell>
+                      <TableCell>{row.applicationCount}</TableCell>
                       <TableCell className="text-muted-foreground">{getAgencyName(row.agencyId)}</TableCell>
                       <TableCell className="w-10 p-1">
-                        {row.submissions.length >= 1 ? (
+                        {row.applicationCount >= 1 ? (
                           <Button
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
-                            onClick={() => { setApplicationsSheet({ candidateName: row.candidateName, submissions: row.submissions }); setApplicationsSheetPage(1); }}
+                            onClick={() => {
+                              setApplicationsSheet({ candidateId: row.candidateId, candidateName: row.candidateName });
+                              setApplicationsSheetPage(1);
+                            }}
                             aria-label="View applications"
                           >
                             <ChevronRight className="h-4 w-4" />
@@ -458,7 +481,13 @@ export default function Submissions() {
             <SheetTitle>Applications — {applicationsSheet?.candidateName ?? ""}</SheetTitle>
           </SheetHeader>
           <div className="mt-4 flex-1 flex flex-col min-h-0">
-            {applicationsSheet?.submissions && applicationsSheet.submissions.length > 0 ? (
+            {loadingSheetSubmissions && sheetSubmissions.length === 0 ? (
+              <div className="space-y-3 py-4">
+                {[...Array(5)].map((_, i) => (
+                  <Skeleton key={i} className="h-10 w-full" />
+                ))}
+              </div>
+            ) : sheetSubmissions.length > 0 ? (
               <>
                 <div className="flex-1 overflow-auto">
                   <Table>
@@ -473,11 +502,11 @@ export default function Submissions() {
                     </TableHeader>
                     <TableBody>
                       {(() => {
-                        const total = applicationsSheet.submissions.length;
+                        const total = sheetSubmissions.length;
                         const sheetTotalPages = Math.max(1, Math.ceil(total / APPLICATIONS_SHEET_PAGE_SIZE));
                         const from = (applicationsSheetPage - 1) * APPLICATIONS_SHEET_PAGE_SIZE;
                         const to = Math.min(from + APPLICATIONS_SHEET_PAGE_SIZE, total);
-                        const pageSubmissions = applicationsSheet.submissions.slice(from, to);
+                        const pageSubmissions = sheetSubmissions.slice(from, to);
                         return pageSubmissions.map((s: any) => (
                           <TableRow key={s.id}>
                             <TableCell className="font-medium">{s.client_name}</TableCell>
@@ -493,16 +522,7 @@ export default function Submissions() {
                                     setScreenSubmission(s);
                                     setScreenDialogOpen(true);
                                   } else {
-                                    updateStatus.mutate(
-                                      { id: s.id, status: v },
-                                      {
-                                        onSuccess: () => {
-                                          setApplicationsSheet((prev) =>
-                                            prev ? { ...prev, submissions: prev.submissions.map((sub) => (sub.id === s.id ? { ...sub, status: v } : sub)) } : null
-                                          );
-                                        },
-                                      }
-                                    );
+                                    updateStatus.mutate({ id: s.id, status: v });
                                   }
                                 }}
                               >
@@ -529,7 +549,7 @@ export default function Submissions() {
                   </Table>
                 </div>
                 {(() => {
-                  const total = applicationsSheet.submissions.length;
+                  const total = sheetSubmissions.length;
                   const sheetTotalPages = Math.max(1, Math.ceil(total / APPLICATIONS_SHEET_PAGE_SIZE));
                   const from = (applicationsSheetPage - 1) * APPLICATIONS_SHEET_PAGE_SIZE;
                   const to = Math.min(from + APPLICATIONS_SHEET_PAGE_SIZE, total);
@@ -560,6 +580,8 @@ export default function Submissions() {
                   );
                 })()}
               </>
+            ) : applicationsSheet ? (
+              <p className="text-sm text-muted-foreground py-6">No applications match the current filters.</p>
             ) : null}
           </div>
         </SheetContent>
@@ -596,6 +618,7 @@ export default function Submissions() {
               });
               toast.success("Application added");
               queryClient.invalidateQueries({ queryKey: ["submissions"] });
+              queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
               setAddDialogOpen(false);
               // reset form
               setNewCandidateId(null);
