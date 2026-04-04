@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
@@ -76,8 +76,8 @@ export default function Submissions() {
   const [screenRejectionNote, setScreenRejectionNote] = useState<string>("");
   const [vendorJobDescUrl, setVendorJobDescUrl] = useState<string | null>(null);
   const [vendorUploading, setVendorUploading] = useState(false);
+  const pendingScreenAfterVendorRef = useRef<any | null>(null);
 
- 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState("created_at");
@@ -206,12 +206,57 @@ export default function Submissions() {
     },
   });
 
+  const resetScreenDialogFields = () => {
+    setScreenDate("");
+    setScreenTime("");
+    setScreenLinkOrPhone("");
+    setScreenResumeUrl(null);
+    setScreenQuestionsUrl(null);
+    setScreenResponse("None");
+    setScreenRejectionNote("");
+  };
+
+  const handleApplicationStatusChange = (s: any, v: string) => {
+    if (v === "Vendor Responded") {
+      setVendorSubmission(s);
+      pendingScreenAfterVendorRef.current = null;
+      setVendorDialogOpen(true);
+      return;
+    }
+    if (v === "Screen Call") {
+      if (s.status === "Applied") {
+        pendingScreenAfterVendorRef.current = s;
+        setVendorSubmission(s);
+        setVendorDialogOpen(true);
+        return;
+      }
+      setScreenSubmission(s);
+      resetScreenDialogFields();
+      setScreenDialogOpen(true);
+      return;
+    }
+    if (v === "Interview") {
+      if (!s.screen_scheduled_at) {
+        toast.info("Schedule a screen call (date, time, and required uploads) before moving to Interview.");
+        setScreenSubmission(s);
+        resetScreenDialogFields();
+        setScreenDialogOpen(true);
+        return;
+      }
+      updateStatus.mutate({ id: s.id, status: v });
+      return;
+    }
+    updateStatus.mutate({ id: s.id, status: v });
+  };
+
   const updateSubmissionMutation = useMutation({
     mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
       await updateSubmission(id, payload);
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ["submissions"] });
+      queryClient.invalidateQueries({ queryKey: ["submissions-vendor-responded"] });
+      queryClient.invalidateQueries({ queryKey: ["submissions-screens"] });
       queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
       queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
       toast.success("Submission updated");
@@ -225,6 +270,17 @@ export default function Submissions() {
       const newStatus = variables.payload?.status;
       if (newStatus) {
         queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
+      }
+      const pending = pendingScreenAfterVendorRef.current;
+      if (
+        pending &&
+        pending.id === variables.id &&
+        variables.payload?.status === "Vendor Responded"
+      ) {
+        pendingScreenAfterVendorRef.current = null;
+        setScreenSubmission(pending);
+        resetScreenDialogFields();
+        setScreenDialogOpen(true);
       }
     },
     onError: (err: Error) => toast.error(err.message),
@@ -405,7 +461,19 @@ export default function Submissions() {
                         <TableCell className="text-muted-foreground">{s.job_type || "—"}</TableCell>
                         <TableCell className="text-muted-foreground">{s.city ? `${s.city}${s.state ? `, ${s.state}` : ""}` : "—"}</TableCell>
                         <TableCell>
-                          <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
+                          <Select
+                            value={s.status}
+                            onValueChange={(v) => handleApplicationStatusChange(s, v)}
+                          >
+                            <SelectTrigger className="h-8 w-[150px]">
+                              <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {SUBMISSION_STATUSES.map((st) => (
+                                <SelectItem key={st} value={st}>{st}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
                         </TableCell>
                         <TableCell className="text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</TableCell>
                       </TableRow>
@@ -514,17 +582,7 @@ export default function Submissions() {
                             <TableCell>
                               <Select
                                 value={s.status}
-                                onValueChange={(v) => {
-                                  if (v === "Vendor Responded") {
-                                    setVendorSubmission(s);
-                                    setVendorDialogOpen(true);
-                                  } else if (v === "Screen Call") {
-                                    setScreenSubmission(s);
-                                    setScreenDialogOpen(true);
-                                  } else {
-                                    updateStatus.mutate({ id: s.id, status: v });
-                                  }
-                                }}
+                                onValueChange={(v) => handleApplicationStatusChange(s, v)}
                               >
                                 <SelectTrigger className="h-8 w-[140px]">
                                   <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
@@ -677,7 +735,13 @@ export default function Submissions() {
       </Dialog>
  
       {/* Vendor Responded Dialog */}
-      <Dialog open={vendorDialogOpen} onOpenChange={setVendorDialogOpen}>
+      <Dialog
+        open={vendorDialogOpen}
+        onOpenChange={(open) => {
+          setVendorDialogOpen(open);
+          if (!open) pendingScreenAfterVendorRef.current = null;
+        }}
+      >
         <DialogContent>
           <DialogHeader><DialogTitle>Vendor Responded Details</DialogTitle></DialogHeader>
           <form onSubmit={(e) => {

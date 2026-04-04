@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useParams, Link, Navigate, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
@@ -21,7 +21,7 @@ import { ArrowLeft, Plus, Calendar, Gift, Clock } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchSubmissionById, updateSubmission } from "../../dbscripts/functions/submissions";
-import { getStateName } from "@/lib/usStates";
+import { getStateName, US_STATES } from "@/lib/usStates";
 import {
   fetchInterviewsBySubmission,
   createInterview as createInterviewFn,
@@ -29,7 +29,7 @@ import {
   updateInterviewFeedback as updateInterviewFeedbackFn,
   rescheduleInterview as rescheduleInterviewFn,
 } from "../../dbscripts/functions/interviews";
-import { uploadInterviewQuestions } from "../../dbscripts/functions/storage";
+import { uploadInterviewQuestions, uploadVendorJobDescription, uploadScreenCallFile } from "../../dbscripts/functions/storage";
 import { updateSubmissionStatus } from "../../dbscripts/functions/submissions";
 import { fetchRescheduleLogsByInterviewIds } from "../../dbscripts/functions/rescheduleLogs";
 import {
@@ -44,6 +44,17 @@ const INTERVIEW_STATUSES = ["Scheduled", "Passed", "Rejected", "Rescheduled"] as
 const INTERVIEW_MODES = ["Virtual", "Onsite", "Phone"] as const;
 const OFFER_STATUSES = ["Pending", "Accepted", "Declined"] as const;
 
+const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Screen Call", "Interview", "Rejected", "Offered"] as const;
+
+const statusColors: Record<string, string> = {
+  Applied: "bg-secondary text-secondary-foreground",
+  "Screen Call": "bg-info/10 text-info",
+  Interview: "bg-warning/10 text-warning",
+  Rejected: "bg-destructive/10 text-destructive",
+  Offered: "bg-success/10 text-success",
+  "Vendor Responded": "bg-info/10 text-info",
+};
+
 export default function SubmissionDetail() {
   const { id } = useParams<{ id: string }>();
   const { user, profile, isCandidate } = useAuth();
@@ -55,6 +66,28 @@ export default function SubmissionDetail() {
   const [rescheduleInterviewId, setRescheduleInterviewId] = useState<string | null>(null);
   const [screenResponseLocal, setScreenResponseLocal] = useState<"None" | "Yes" | "No" | null>(null);
   const [screenRejectionLocal, setScreenRejectionLocal] = useState<string | null>(null);
+
+  const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
+  const [vendorSubmission, setVendorSubmission] = useState<any | null>(null);
+  const [wfRate, setWfRate] = useState<number | "">("");
+  const [wfRateType, setWfRateType] = useState<"W2" | "C2C" | "1099">("W2");
+  const [wfJobDescription, setWfJobDescription] = useState("");
+  const [wfJobType, setWfJobType] = useState<"Remote" | "Hybrid" | "On-site">("Remote");
+  const [wfCity, setWfCity] = useState("");
+  const [wfState, setWfState] = useState("");
+  const [wfVendorJobDescUrl, setWfVendorJobDescUrl] = useState<string | null>(null);
+  const [wfVendorUploading, setWfVendorUploading] = useState(false);
+  const [screenDialogOpen, setScreenDialogOpen] = useState(false);
+  const [screenSubmission, setScreenSubmission] = useState<any | null>(null);
+  const [screenDate, setScreenDate] = useState("");
+  const [screenTime, setScreenTime] = useState("");
+  const [screenMode, setScreenMode] = useState<"Virtual" | "Phone">("Virtual");
+  const [screenLinkOrPhone, setScreenLinkOrPhone] = useState("");
+  const [screenResumeUrl, setScreenResumeUrl] = useState<string | null>(null);
+  const [screenQuestionsUrl, setScreenQuestionsUrl] = useState<string | null>(null);
+  const [screenResponse, setScreenResponse] = useState<"None" | "Yes" | "No">("None");
+  const [screenRejectionNote, setScreenRejectionNote] = useState("");
+  const pendingScreenAfterVendorRef = useRef<any | null>(null);
 
   const { data: submission, isLoading } = useQuery({
     queryKey: ["submission", id],
@@ -123,18 +156,6 @@ export default function SubmissionDetail() {
     },
   });
 
-  const updateSubmissionMutation = useMutation({
-    mutationFn: async ({ id: sid, payload }: { id: string; payload: any }) => {
-      await updateSubmission(sid, payload);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["submission", id] });
-      queryClient.invalidateQueries({ queryKey: ["submissions"] });
-      toast.success("Saved");
-    },
-    onError: (err: Error) => toast.error(err.message),
-  });
-
   const updateInterviewFeedback = useMutation({
     mutationFn: async ({ interviewId, feedback }: { interviewId: string; feedback: string }) => {
       await updateInterviewFeedbackFn(interviewId, feedback);
@@ -184,6 +205,10 @@ export default function SubmissionDetail() {
       try {
         await updateSubmissionStatus(id!, "Offered");
         queryClient.invalidateQueries({ queryKey: ["submission", id] });
+        queryClient.invalidateQueries({ queryKey: ["submissions-vendor-responded"] });
+        queryClient.invalidateQueries({ queryKey: ["submissions-screens"] });
+        queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
+        queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
       } catch (err) {
         // ignore but notify
         toast.error("Offer saved but couldn't update submission status");
@@ -204,6 +229,149 @@ export default function SubmissionDetail() {
       toast.success("Offer status updated");
     },
   });
+
+  const updateStatus = useMutation({
+    mutationFn: async ({ sid, status }: { sid: string; status: string }) => {
+      await updateSubmissionStatus(sid, status);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["submission", id] });
+      queryClient.invalidateQueries({ queryKey: ["submissions"] });
+      queryClient.invalidateQueries({ queryKey: ["submissions-vendor-responded"] });
+      queryClient.invalidateQueries({ queryKey: ["submissions-screens"] });
+      queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
+      toast.success("Status updated");
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const resetScreenDialogFields = () => {
+    setScreenDate("");
+    setScreenTime("");
+    setScreenLinkOrPhone("");
+    setScreenResumeUrl(null);
+    setScreenQuestionsUrl(null);
+    setScreenResponse("None");
+    setScreenRejectionNote("");
+  };
+
+  const handleSubmissionStatusChange = (v: string) => {
+    if (!submission) return;
+    const s = submission;
+    if (v === "Vendor Responded") {
+      pendingScreenAfterVendorRef.current = null;
+      setVendorSubmission(s);
+      setWfRate(s.rate != null ? Number(s.rate) : "");
+      setWfRateType((s.rate_type as any) || "W2");
+      setWfJobDescription(s.job_description || "");
+      setWfJobType((s.job_type as "Remote" | "Hybrid" | "On-site") || "Remote");
+      setWfCity(s.city || "");
+      setWfState(s.state || "");
+      setWfVendorJobDescUrl(s.job_description_url || null);
+      setVendorDialogOpen(true);
+      return;
+    }
+    if (v === "Screen Call") {
+      if (s.status === "Applied") {
+        pendingScreenAfterVendorRef.current = s;
+        setVendorSubmission(s);
+        setWfRate(s.rate != null ? Number(s.rate) : "");
+        setWfRateType((s.rate_type as any) || "W2");
+        setWfJobDescription(s.job_description || "");
+        setWfJobType((s.job_type as "Remote" | "Hybrid" | "On-site") || "Remote");
+        setWfCity(s.city || "");
+        setWfState(s.state || "");
+        setWfVendorJobDescUrl(s.job_description_url || null);
+        setVendorDialogOpen(true);
+        return;
+      }
+      setScreenSubmission(s);
+      resetScreenDialogFields();
+      setScreenDialogOpen(true);
+      return;
+    }
+    if (v === "Interview") {
+      if (!s.screen_scheduled_at) {
+        toast.info("Schedule a screen call (date, time, and required uploads) before moving to Interview.");
+        setScreenSubmission(s);
+        resetScreenDialogFields();
+        setScreenDialogOpen(true);
+        return;
+      }
+      updateStatus.mutate({ sid: s.id, status: v });
+      return;
+    }
+    updateStatus.mutate({ sid: s.id, status: v });
+  };
+
+  const updateSubmissionMutation = useMutation({
+    mutationFn: async ({ id: sid, payload }: { id: string; payload: any }) => {
+      await updateSubmission(sid, payload);
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["submission", id] });
+      queryClient.invalidateQueries({ queryKey: ["submissions"] });
+      queryClient.invalidateQueries({ queryKey: ["submissions-vendor-responded"] });
+      queryClient.invalidateQueries({ queryKey: ["submissions-screens"] });
+      queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
+      toast.success("Saved");
+      setVendorDialogOpen(false);
+      setVendorSubmission(null);
+      setWfRate("");
+      setWfJobDescription("");
+      setWfJobType("Remote");
+      setWfCity("");
+      setWfState("");
+      setWfVendorJobDescUrl(null);
+      const pending = pendingScreenAfterVendorRef.current;
+      if (
+        pending &&
+        pending.id === variables.id &&
+        variables.payload?.status === "Vendor Responded"
+      ) {
+        pendingScreenAfterVendorRef.current = null;
+        setScreenSubmission(pending);
+        resetScreenDialogFields();
+        setScreenDialogOpen(true);
+      }
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const handleWfVendorJobUpload = async (submissionId: string, file: File) => {
+    setWfVendorUploading(true);
+    try {
+      const publicUrl = await uploadVendorJobDescription(submissionId, file);
+      setWfVendorJobDescUrl(publicUrl);
+      await updateSubmission(submissionId, { job_description_url: publicUrl });
+      queryClient.invalidateQueries({ queryKey: ["submission", id] });
+      toast.success("Job description uploaded");
+    } catch (e: any) {
+      toast.error(e?.message || "Upload failed");
+    } finally {
+      setWfVendorUploading(false);
+    }
+  };
+
+  const handleScreenFileUpload = async (submissionId: string, file: File, folder?: "resume" | "questions") => {
+    try {
+      const publicUrl = await uploadScreenCallFile(submissionId, file, folder);
+      if (folder === "questions") setScreenQuestionsUrl(publicUrl);
+      else setScreenResumeUrl(publicUrl);
+      toast.success("Uploaded");
+      const payload: any = {};
+      if (folder === "questions") payload.screen_questions_url = publicUrl;
+      else payload.screen_resume_url = publicUrl;
+      await updateSubmission(submissionId, payload);
+      queryClient.invalidateQueries({ queryKey: ["submission", id] });
+      queryClient.invalidateQueries({ queryKey: ["submissions-vendor-responded"] });
+      queryClient.invalidateQueries({ queryKey: ["submissions-screens"] });
+    } catch (err: any) {
+      toast.error(err?.message || "Upload failed");
+    }
+  };
 
   if (isLoading) {
     return <div className="space-y-4"><Skeleton className="h-8 w-64" /><Skeleton className="h-48 w-full" /></div>;
@@ -246,7 +414,23 @@ export default function SubmissionDetail() {
               </div>
             )}
             <div><span className="text-muted-foreground">Candidate:</span> {(submission as any).candidates?.first_name} {(submission as any).candidates?.last_name || ""}</div>
-            <div><span className="text-muted-foreground">Status:</span> <Badge variant="outline">{submission.status}</Badge></div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-muted-foreground">Status:</span>
+              {!isCandidate ? (
+                <Select value={submission.status} onValueChange={handleSubmissionStatusChange}>
+                  <SelectTrigger className="h-auto min-h-0 w-auto max-w-full border-0 p-0">
+                    <Badge className={statusColors[submission.status] ?? ""} variant="outline">{submission.status}</Badge>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SUBMISSION_STATUSES.map((st) => (
+                      <SelectItem key={st} value={st}>{st}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Badge className={statusColors[submission.status] ?? ""} variant="outline">{submission.status}</Badge>
+              )}
+            </div>
             <div><span className="text-muted-foreground">Created:</span> {new Date(submission.created_at!).toLocaleDateString()}</div>
             {submission.status === "Vendor Responded" && (
               <>
@@ -636,6 +820,297 @@ export default function SubmissionDetail() {
           )}
         </div>
       </div>
+
+      <Dialog
+        open={vendorDialogOpen}
+        onOpenChange={(open) => {
+          setVendorDialogOpen(open);
+          if (!open) pendingScreenAfterVendorRef.current = null;
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Vendor Responded Details</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!vendorSubmission) return;
+              if (wfRate === "" || isNaN(Number(wfRate))) {
+                toast.error("Please enter a valid Rate");
+                return;
+              }
+              if ((!wfJobDescription || wfJobDescription.trim() === "") && !wfVendorJobDescUrl) {
+                toast.error("Please enter the Job Description or upload a document");
+                return;
+              }
+              if (!wfJobType) {
+                toast.error("Please select the Job Type");
+                return;
+              }
+              if (wfJobType !== "Remote" && (!wfCity.trim() || !wfState)) {
+                toast.error("Please provide City and State for non-Remote jobs");
+                return;
+              }
+              const payload: any = {
+                status: "Vendor Responded",
+                rate: Number(wfRate),
+                rate_type: wfRateType,
+                job_description: wfJobDescription || null,
+                job_description_url: wfVendorJobDescUrl ?? null,
+                job_type: wfJobType,
+                city: wfJobType !== "Remote" ? wfCity : null,
+                state: wfJobType !== "Remote" ? wfState : null,
+              };
+              updateSubmissionMutation.mutate({ id: vendorSubmission.id, payload });
+            }}
+            className="space-y-4"
+          >
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Rate (USD)</Label>
+                <Input
+                  required
+                  type="number"
+                  value={wfRate === "" ? "" : wfRate}
+                  onChange={(e) => setWfRate(e.target.value === "" ? "" : Number(e.target.value))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Rate Type</Label>
+                <Select value={wfRateType} onValueChange={(v) => setWfRateType(v as any)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="W2">W2</SelectItem>
+                    <SelectItem value="C2C">C2C</SelectItem>
+                    <SelectItem value="1099">1099</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Job Description</Label>
+              <Textarea value={wfJobDescription} onChange={(e) => setWfJobDescription(e.target.value)} />
+              <div className="mt-2">
+                <Label>Or upload Job Description document</Label>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  onChange={(ev) => {
+                    const f = ev.target.files?.[0];
+                    if (!f || !vendorSubmission) return;
+                    handleWfVendorJobUpload(vendorSubmission.id, f);
+                  }}
+                />
+                {wfVendorUploading && <div className="text-xs">Uploading...</div>}
+                {wfVendorJobDescUrl && (
+                  <a href={wfVendorJobDescUrl} target="_blank" rel="noreferrer" className="text-xs text-info underline">
+                    View uploaded doc
+                  </a>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Job Type</Label>
+                <Select value={wfJobType} onValueChange={(v) => setWfJobType(v as any)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Remote">Remote</SelectItem>
+                    <SelectItem value="Hybrid">Hybrid</SelectItem>
+                    <SelectItem value="On-site">On-site</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {wfJobType !== "Remote" && (
+                <>
+                  <div className="space-y-2">
+                    <Label>City</Label>
+                    <Input required value={wfCity} onChange={(e) => setWfCity(e.target.value)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>State</Label>
+                    <Select value={wfState} onValueChange={(v) => setWfState(v)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {US_STATES.map((st) => (
+                          <SelectItem key={st.code} value={st.code}>
+                            {st.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+            </div>
+            <Button type="submit" className="w-full" disabled={updateSubmissionMutation.isPending}>
+              Save
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={screenDialogOpen} onOpenChange={setScreenDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Schedule Screen Call</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!screenSubmission) return;
+              if (!screenDate || !screenTime) {
+                toast.error("Please select date and time");
+                return;
+              }
+              if (screenMode === "Virtual") {
+                if (!screenLinkOrPhone?.trim()) {
+                  toast.error("Please provide meeting link for Virtual mode");
+                  return;
+                }
+                try {
+                  new URL(screenLinkOrPhone);
+                } catch {
+                  toast.error("Please enter a valid meeting link (include https://)");
+                  return;
+                }
+              }
+              if (screenMode === "Phone") {
+                if (!screenLinkOrPhone?.trim()) {
+                  toast.error("Please provide phone number for Phone mode");
+                  return;
+                }
+                if (!/^\+?[0-9\-\s()]{7,}$/.test(screenLinkOrPhone.trim())) {
+                  toast.error("Please enter a valid phone number");
+                  return;
+                }
+              }
+              if (!screenResumeUrl) {
+                toast.error("Please upload the resume for the screen call");
+                return;
+              }
+              if (!screenQuestionsUrl) {
+                toast.error("Please upload the interview questions document");
+                return;
+              }
+              const scheduled_at = `${screenDate}T${screenTime}:00`;
+              const payload: any = {
+                status: "Screen Call",
+                screen_scheduled_at: scheduled_at,
+                screen_mode: screenMode,
+                screen_link_or_phone: screenLinkOrPhone,
+                screen_resume_url: screenResumeUrl,
+                screen_questions_url: screenQuestionsUrl,
+                screen_response_status: screenResponse === "None" ? null : screenResponse,
+                screen_rejection_note: screenResponse === "No" ? screenRejectionNote || null : null,
+                screen_next_step: screenResponse === "Yes" ? "Interview" : null,
+              };
+              await updateSubmissionMutation.mutateAsync({ id: screenSubmission.id, payload });
+              setScreenDialogOpen(false);
+              setScreenSubmission(null);
+              resetScreenDialogFields();
+            }}
+            className="space-y-4"
+          >
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Date *</Label>
+                <Input type="date" value={screenDate} onChange={(e) => setScreenDate(e.target.value)} required />
+              </div>
+              <div className="space-y-2">
+                <Label>Time *</Label>
+                <Input type="time" value={screenTime} onChange={(e) => setScreenTime(e.target.value)} required />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label>Mode *</Label>
+              <Select value={screenMode} onValueChange={(v) => setScreenMode(v as any)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Virtual">Virtual</SelectItem>
+                  <SelectItem value="Phone">Phone</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>{screenMode === "Virtual" ? "Meeting Link *" : "Phone Number *"}</Label>
+              <Input value={screenLinkOrPhone} onChange={(e) => setScreenLinkOrPhone(e.target.value)} required />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Upload Resume (Screen Call)</Label>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  onChange={(ev) => {
+                    const f = ev.target.files?.[0];
+                    if (!f || !screenSubmission) return;
+                    handleScreenFileUpload(screenSubmission.id, f, "resume");
+                  }}
+                />
+                {screenResumeUrl && (
+                  <a href={screenResumeUrl} target="_blank" rel="noreferrer" className="text-xs text-info underline">
+                    View
+                  </a>
+                )}
+              </div>
+              <div className="space-y-2">
+                <Label>Upload Interview Questions Doc</Label>
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx"
+                  onChange={(ev) => {
+                    const f = ev.target.files?.[0];
+                    if (!f || !screenSubmission) return;
+                    handleScreenFileUpload(screenSubmission.id, f, "questions");
+                  }}
+                />
+                {screenQuestionsUrl && (
+                  <a href={screenQuestionsUrl} target="_blank" rel="noreferrer" className="text-xs text-info underline">
+                    View
+                  </a>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Screen Response</Label>
+                <Select value={screenResponse} onValueChange={(v) => setScreenResponse(v as any)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="None">None</SelectItem>
+                    <SelectItem value="Yes">Yes</SelectItem>
+                    <SelectItem value="No">No</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Rejection Note (if Rejected)</Label>
+                <Input
+                  value={screenRejectionNote}
+                  onChange={(e) => setScreenRejectionNote(e.target.value)}
+                  placeholder="Rejection note"
+                  disabled={screenResponse !== "No"}
+                />
+              </div>
+            </div>
+            <Button type="submit" className="w-full" disabled={updateSubmissionMutation.isPending}>
+              Save Screen Call
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

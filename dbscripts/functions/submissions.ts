@@ -433,8 +433,9 @@ export type SpecialSubmissionsRoleContext =
   | { role: "candidate"; linkedCandidateId: string };
 
 /**
- * Server-paginated Vendor Responded or Screen Call lists (no full-table fetch).
- * Screen Call = status is Screen Call OR screen_scheduled_at is set.
+ * Server-paginated special lists (no full-table fetch).
+ * - vendor_responded: Vendor Responded OR Screen Call OR scheduled screen (screen_scheduled_at set).
+ * - screen_call: Screen Call OR scheduled screen (same rows as the Screens page).
  */
 export async function fetchSpecialSubmissionsPage(
   kind: SpecialSubmissionsKind,
@@ -446,11 +447,15 @@ export async function fetchSpecialSubmissionsPage(
   const asc = order === "asc";
   const searchOr = await buildSearchOrClause(search);
 
+  /** Submissions page: vendor work + anything that counts as a screen call. */
+  const vendorPlusScreenOr =
+    'status.eq."Vendor Responded",status.eq."Screen Call",screen_scheduled_at.not.is.null';
+
   const applyKindFilter = (q: any) => {
     if (kind === "vendor_responded") {
-      return q.eq("status", "Vendor Responded" as SubmissionStatusFilter);
+      return q.or(vendorPlusScreenOr);
     }
-    return q.or("status.eq.Screen Call,screen_scheduled_at.not.is.null");
+    return q.or('status.eq."Screen Call",screen_scheduled_at.not.is.null');
   };
 
   const mergeTeamLeadRows = async (buildFiltered: (q: any) => any) => {
