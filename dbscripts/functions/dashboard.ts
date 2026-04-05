@@ -45,6 +45,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
     totalSubmissions: 0,
     totalInterviews: 0,
     scheduledInterviews: 0,
+    totalAssessments: 0,
     totalScreenCalls: 0,
     scheduledScreens: 0,
     passedInterviews: 0,
@@ -335,6 +336,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
       "In Training": c.filter((x: any) => x.status === "In Training").length,
     },
     totalSubmissions: aggregatedSubmissionsTotal ?? s.length,
+    totalAssessments: s.filter((x: any) => x.status === "Assessment").length,
     // screen calls are tracked on the submissions row (status === 'Screen Call' or screen_scheduled_at set)
     totalScreenCalls: s.filter((x: any) => x.status === "Screen Call" || x.screen_scheduled_at).length,
     totalInterviews: i.length,

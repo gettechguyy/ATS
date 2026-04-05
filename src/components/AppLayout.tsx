@@ -16,6 +16,7 @@ import {
   Briefcase,
   Shield,
   Building2,
+  ClipboardList,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +44,7 @@ const allNavItems = [
   { to: "/my-profile", icon: User, label: "My Profile", roles: ["candidate"] },
   { to: "/submissions", icon: FileText, label: "Applications", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },
   { to: "/submissions-vendor", icon: FileText, label: "Submission", roles: ["admin", "recruiter", "manager", "team_lead", "agency_admin"] },
+  { to: "/assessments", icon: ClipboardList, label: "Assessments", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },
   { to: "/screens", icon: Calendar, label: "Screens", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },
   { to: "/interviews", icon: Calendar, label: "Interviews", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },
   { to: "/offers", icon: Gift, label: "Offers", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },

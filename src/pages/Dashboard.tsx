@@ -2,7 +2,7 @@ import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, FileText, Calendar as CalendarIcon, Gift, TrendingUp, Briefcase } from "lucide-react";
+import { Users, FileText, Calendar as CalendarIcon, Gift, TrendingUp, Briefcase, ClipboardList } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { fetchDashboardStats } from "../../dbscripts/functions/dashboard";
@@ -148,6 +148,7 @@ export default function Dashboard() {
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard title="My Applications" value={stats?.totalSubmissions} icon={FileText} color="text-info" />
+            <StatCard title="Assessments" value={stats?.totalAssessments} icon={ClipboardList} color="text-primary" />
             <StatCard title="Screen Calls" value={stats?.totalScreenCalls} icon={CalendarIcon} color="text-info" />
             <StatCard title="Interviews" value={stats?.totalInterviews} icon={CalendarIcon} color="text-warning" />
             <StatCard title="Offers" value={stats?.totalOffers} icon={Gift} color="text-success" />
@@ -161,6 +162,7 @@ export default function Dashboard() {
     { title: "Total Candidates", value: stats?.totalCandidates, icon: Users, color: "text-info" },
     { title: "In Marketing", value: stats?.candidatesByStatus?.["In Marketing"], icon: TrendingUp, color: "text-success" },
     { title: "Total Applications", value: stats?.totalSubmissions, icon: FileText, color: "text-info" },
+    { title: "Assessments", value: stats?.totalAssessments, icon: ClipboardList, color: "text-primary" },
     { title: "Screen Calls", value: stats?.totalScreenCalls, icon: CalendarIcon, color: "text-info" },
     { title: "Interviews Scheduled", value: stats?.scheduledInterviews, icon: CalendarIcon, color: "text-warning" },
     { title: "Interviews Passed", value: stats?.passedInterviews, icon: CalendarIcon, color: "text-success" },
@@ -285,6 +287,7 @@ export default function Dashboard() {
           {(() => {
             const steps = [
               { label: "Applications", count: stats.totalSubmissions },
+              { label: "Assessments", count: stats.totalAssessments },
               { label: "Screen Calls", count: stats.totalScreenCalls },
               { label: "Interviews", count: stats.totalInterviews },
               { label: "Offers", count: stats.totalOffers },

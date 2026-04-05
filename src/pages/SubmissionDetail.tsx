@@ -29,7 +29,7 @@ import {
   updateInterviewFeedback as updateInterviewFeedbackFn,
   rescheduleInterview as rescheduleInterviewFn,
 } from "../../dbscripts/functions/interviews";
-import { uploadInterviewQuestions, uploadVendorJobDescription, uploadScreenCallFile } from "../../dbscripts/functions/storage";
+import { uploadAssessmentAttachment, uploadInterviewQuestions, uploadVendorJobDescription, uploadScreenCallFile } from "../../dbscripts/functions/storage";
 import { updateSubmissionStatus } from "../../dbscripts/functions/submissions";
 import { fetchRescheduleLogsByInterviewIds } from "../../dbscripts/functions/rescheduleLogs";
 import {
@@ -44,10 +44,11 @@ const INTERVIEW_STATUSES = ["Scheduled", "Passed", "Rejected", "Rescheduled"] as
 const INTERVIEW_MODES = ["Virtual", "Onsite", "Phone"] as const;
 const OFFER_STATUSES = ["Pending", "Accepted", "Declined"] as const;
 
-const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Screen Call", "Interview", "Rejected", "Offered"] as const;
+const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Assessment", "Screen Call", "Interview", "Rejected", "Offered"] as const;
 
 const statusColors: Record<string, string> = {
   Applied: "bg-secondary text-secondary-foreground",
+  Assessment: "bg-primary/10 text-primary",
   "Screen Call": "bg-info/10 text-info",
   Interview: "bg-warning/10 text-warning",
   Rejected: "bg-destructive/10 text-destructive",
@@ -88,6 +89,15 @@ export default function SubmissionDetail() {
   const [screenResponse, setScreenResponse] = useState<"None" | "Yes" | "No">("None");
   const [screenRejectionNote, setScreenRejectionNote] = useState("");
   const pendingScreenAfterVendorRef = useRef<any | null>(null);
+  const pendingAssessmentAfterVendorRef = useRef<any | null>(null);
+
+  const [assessmentDialogOpen, setAssessmentDialogOpen] = useState(false);
+  const [assessmentSubmission, setAssessmentSubmission] = useState<any | null>(null);
+  const [assessmentEndDate, setAssessmentEndDate] = useState("");
+  const [assessmentLink, setAssessmentLink] = useState("");
+  const [assessmentAttachmentUrl, setAssessmentAttachmentUrl] = useState<string | null>(null);
+  const [assessmentFile, setAssessmentFile] = useState<File | null>(null);
+  const [assessmentUploading, setAssessmentUploading] = useState(false);
 
   const { data: submission, isLoading } = useQuery({
     queryKey: ["submission", id],
@@ -207,6 +217,7 @@ export default function SubmissionDetail() {
         queryClient.invalidateQueries({ queryKey: ["submission", id] });
         queryClient.invalidateQueries({ queryKey: ["submissions-vendor-responded"] });
         queryClient.invalidateQueries({ queryKey: ["submissions-screens"] });
+        queryClient.invalidateQueries({ queryKey: ["submissions-assessments"] });
         queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
         queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
       } catch (err) {
@@ -239,6 +250,7 @@ export default function SubmissionDetail() {
       queryClient.invalidateQueries({ queryKey: ["submissions"] });
       queryClient.invalidateQueries({ queryKey: ["submissions-vendor-responded"] });
       queryClient.invalidateQueries({ queryKey: ["submissions-screens"] });
+      queryClient.invalidateQueries({ queryKey: ["submissions-assessments"] });
       queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
       queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
       toast.success("Status updated");
@@ -261,6 +273,7 @@ export default function SubmissionDetail() {
     const s = submission;
     if (v === "Vendor Responded") {
       pendingScreenAfterVendorRef.current = null;
+      pendingAssessmentAfterVendorRef.current = null;
       setVendorSubmission(s);
       setWfRate(s.rate != null ? Number(s.rate) : "");
       setWfRateType((s.rate_type as any) || "W2");
@@ -272,9 +285,33 @@ export default function SubmissionDetail() {
       setVendorDialogOpen(true);
       return;
     }
+    if (v === "Assessment") {
+      if (s.status === "Applied") {
+        pendingAssessmentAfterVendorRef.current = s;
+        pendingScreenAfterVendorRef.current = null;
+        setVendorSubmission(s);
+        setWfRate(s.rate != null ? Number(s.rate) : "");
+        setWfRateType((s.rate_type as any) || "W2");
+        setWfJobDescription(s.job_description || "");
+        setWfJobType((s.job_type as "Remote" | "Hybrid" | "On-site") || "Remote");
+        setWfCity(s.city || "");
+        setWfState(s.state || "");
+        setWfVendorJobDescUrl(s.job_description_url || null);
+        setVendorDialogOpen(true);
+        return;
+      }
+      setAssessmentSubmission(s);
+      setAssessmentEndDate(s.assessment_end_date ? String(s.assessment_end_date).slice(0, 10) : "");
+      setAssessmentLink(s.assessment_link || "");
+      setAssessmentAttachmentUrl(s.assessment_attachment_url || null);
+      setAssessmentFile(null);
+      setAssessmentDialogOpen(true);
+      return;
+    }
     if (v === "Screen Call") {
       if (s.status === "Applied") {
         pendingScreenAfterVendorRef.current = s;
+        pendingAssessmentAfterVendorRef.current = null;
         setVendorSubmission(s);
         setWfRate(s.rate != null ? Number(s.rate) : "");
         setWfRateType((s.rate_type as any) || "W2");
@@ -314,6 +351,7 @@ export default function SubmissionDetail() {
       queryClient.invalidateQueries({ queryKey: ["submissions"] });
       queryClient.invalidateQueries({ queryKey: ["submissions-vendor-responded"] });
       queryClient.invalidateQueries({ queryKey: ["submissions-screens"] });
+      queryClient.invalidateQueries({ queryKey: ["submissions-assessments"] });
       queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
       queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
       toast.success("Saved");
@@ -325,16 +363,30 @@ export default function SubmissionDetail() {
       setWfCity("");
       setWfState("");
       setWfVendorJobDescUrl(null);
-      const pending = pendingScreenAfterVendorRef.current;
+      const pendingScreen = pendingScreenAfterVendorRef.current;
       if (
-        pending &&
-        pending.id === variables.id &&
+        pendingScreen &&
+        pendingScreen.id === variables.id &&
         variables.payload?.status === "Vendor Responded"
       ) {
         pendingScreenAfterVendorRef.current = null;
-        setScreenSubmission(pending);
+        setScreenSubmission(pendingScreen);
         resetScreenDialogFields();
         setScreenDialogOpen(true);
+      }
+      const pendingAssessment = pendingAssessmentAfterVendorRef.current;
+      if (
+        pendingAssessment &&
+        pendingAssessment.id === variables.id &&
+        variables.payload?.status === "Vendor Responded"
+      ) {
+        pendingAssessmentAfterVendorRef.current = null;
+        setAssessmentSubmission(pendingAssessment);
+        setAssessmentEndDate(pendingAssessment.assessment_end_date ? String(pendingAssessment.assessment_end_date).slice(0, 10) : "");
+        setAssessmentLink(pendingAssessment.assessment_link || "");
+        setAssessmentAttachmentUrl(pendingAssessment.assessment_attachment_url || null);
+        setAssessmentFile(null);
+        setAssessmentDialogOpen(true);
       }
     },
     onError: (err: Error) => toast.error(err.message),
@@ -440,6 +492,21 @@ export default function SubmissionDetail() {
                   <div><span className="text-muted-foreground">Location:</span> {submission.city || "—"}, {submission.state ? getStateName(submission.state) : "—"}</div>
                 )}
                 <div><span className="text-muted-foreground">Job Description:</span> <div className="mt-1 whitespace-pre-wrap">{submission.job_description || "—"}</div></div>
+              </>
+            )}
+            {(submission as any).status === "Assessment" && (
+              <>
+                <div><span className="text-muted-foreground">Assessment ends:</span> {(submission as any).assessment_end_date ? new Date(`${(submission as any).assessment_end_date}T12:00:00`).toLocaleDateString() : "—"}</div>
+                <div><span className="text-muted-foreground">Assessment link:</span>{" "}
+                  {(submission as any).assessment_link ? (
+                    <a href={(submission as any).assessment_link} target="_blank" rel="noreferrer" className="ml-2 text-xs text-info underline">Open</a>
+                  ) : "—"}
+                </div>
+                <div><span className="text-muted-foreground">Assessment file:</span>{" "}
+                  {(submission as any).assessment_attachment_url ? (
+                    <a href={(submission as any).assessment_attachment_url} target="_blank" rel="noreferrer" className="ml-2 text-xs text-info underline">View</a>
+                  ) : "—"}
+                </div>
               </>
             )}
             {submission.status === "Screen Call" && (
@@ -825,7 +892,10 @@ export default function SubmissionDetail() {
         open={vendorDialogOpen}
         onOpenChange={(open) => {
           setVendorDialogOpen(open);
-          if (!open) pendingScreenAfterVendorRef.current = null;
+          if (!open) {
+            pendingScreenAfterVendorRef.current = null;
+            pendingAssessmentAfterVendorRef.current = null;
+          }
         }}
       >
         <DialogContent>
@@ -952,6 +1022,92 @@ export default function SubmissionDetail() {
             </div>
             <Button type="submit" className="w-full" disabled={updateSubmissionMutation.isPending}>
               Save
+            </Button>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={assessmentDialogOpen} onOpenChange={setAssessmentDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Assessment</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              if (!assessmentSubmission) return;
+              if (!assessmentEndDate) {
+                toast.error("Assessment end date is required");
+                return;
+              }
+              const linkTrim = assessmentLink.trim();
+              if (!linkTrim && !assessmentFile && !assessmentAttachmentUrl) {
+                toast.error("Provide an assessment link or upload a file");
+                return;
+              }
+              setAssessmentUploading(true);
+              try {
+                let attachmentUrl = assessmentAttachmentUrl;
+                if (assessmentFile) {
+                  attachmentUrl = await uploadAssessmentAttachment(assessmentSubmission.id, assessmentFile);
+                }
+                await updateSubmissionMutation.mutateAsync({
+                  id: assessmentSubmission.id,
+                  payload: {
+                    status: "Assessment",
+                    assessment_end_date: assessmentEndDate,
+                    assessment_link: linkTrim || null,
+                    assessment_attachment_url: attachmentUrl || null,
+                  },
+                });
+                setAssessmentDialogOpen(false);
+                setAssessmentSubmission(null);
+                setAssessmentEndDate("");
+                setAssessmentLink("");
+                setAssessmentAttachmentUrl(null);
+                setAssessmentFile(null);
+              } catch (err: any) {
+                toast.error(err?.message || "Failed to save assessment");
+              } finally {
+                setAssessmentUploading(false);
+              }
+            }}
+            className="space-y-4"
+          >
+            <div className="space-y-2">
+              <Label>Assessment end date *</Label>
+              <Input type="date" value={assessmentEndDate} onChange={(e) => setAssessmentEndDate(e.target.value)} required />
+            </div>
+            <div className="space-y-2">
+              <Label>Assessment link (optional if you upload a file)</Label>
+              <Input
+                type="url"
+                value={assessmentLink}
+                onChange={(e) => setAssessmentLink(e.target.value)}
+                placeholder="https://..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Upload assessment file (optional if you provide a link)</Label>
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
+                onChange={(ev) => setAssessmentFile(ev.target.files?.[0] ?? null)}
+              />
+              {assessmentFile && <p className="text-xs text-muted-foreground">Selected: {assessmentFile.name}</p>}
+              {assessmentAttachmentUrl && !assessmentFile && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <a href={assessmentAttachmentUrl} target="_blank" rel="noreferrer" className="text-xs text-info underline">
+                    Current file
+                  </a>
+                  <Button type="button" variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setAssessmentAttachmentUrl(null)}>
+                    Remove attachment
+                  </Button>
+                </div>
+              )}
+            </div>
+            <Button type="submit" className="w-full" disabled={updateSubmissionMutation.isPending || assessmentUploading}>
+              {assessmentUploading ? "Saving…" : "Save Assessment"}
             </Button>
           </form>
         </DialogContent>

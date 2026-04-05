@@ -4,6 +4,7 @@ import { supabase } from "../../src/integrations/supabase/client";
 type SubmissionStatusFilter =
   | "Applied"
   | "Vendor Responded"
+  | "Assessment"
   | "Screen Call"
   | "Interview"
   | "Rejected"
@@ -423,7 +424,7 @@ async function buildSearchOrClause(search?: string): Promise<string | null> {
   return parts.join(",");
 }
 
-export type SpecialSubmissionsKind = "vendor_responded" | "screen_call";
+export type SpecialSubmissionsKind = "vendor_responded" | "screen_call" | "assessment";
 
 export type SpecialSubmissionsRoleContext =
   | { role: "admin" }
@@ -434,8 +435,9 @@ export type SpecialSubmissionsRoleContext =
 
 /**
  * Server-paginated special lists (no full-table fetch).
- * - vendor_responded: Vendor Responded OR Screen Call OR scheduled screen (screen_scheduled_at set).
+ * - vendor_responded: Vendor Responded OR Assessment OR Screen Call OR scheduled screen (screen_scheduled_at set).
  * - screen_call: Screen Call OR scheduled screen (same rows as the Screens page).
+ * - assessment: status Assessment only (Assessments page).
  */
 export async function fetchSpecialSubmissionsPage(
   kind: SpecialSubmissionsKind,
@@ -447,13 +449,16 @@ export async function fetchSpecialSubmissionsPage(
   const asc = order === "asc";
   const searchOr = await buildSearchOrClause(search);
 
-  /** Submissions page: vendor work + anything that counts as a screen call. */
+  /** Submissions page: vendor work + assessment + anything that counts as a screen call. */
   const vendorPlusScreenOr =
-    'status.eq."Vendor Responded",status.eq."Screen Call",screen_scheduled_at.not.is.null';
+    'status.eq."Vendor Responded",status.eq."Assessment",status.eq."Screen Call",screen_scheduled_at.not.is.null';
 
   const applyKindFilter = (q: any) => {
     if (kind === "vendor_responded") {
       return q.or(vendorPlusScreenOr);
+    }
+    if (kind === "assessment") {
+      return q.eq("status", "Assessment");
     }
     return q.or('status.eq."Screen Call",screen_scheduled_at.not.is.null');
   };

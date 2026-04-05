@@ -315,6 +315,9 @@ export type Database = {
           screen_response_status: string | null
           screen_rejection_note: string | null
           screen_next_step: string | null
+          assessment_end_date: string | null
+          assessment_link: string | null
+          assessment_attachment_url: string | null
         }
         Insert: {
           candidate_id: string
@@ -339,6 +342,9 @@ export type Database = {
           screen_response_status?: string | null
           screen_rejection_note?: string | null
           screen_next_step?: string | null
+          assessment_end_date?: string | null
+          assessment_link?: string | null
+          assessment_attachment_url?: string | null
         }
         Update: {
           candidate_id?: string
@@ -363,6 +369,9 @@ export type Database = {
           screen_response_status?: string | null
           screen_rejection_note?: string | null
           screen_next_step?: string | null
+          assessment_end_date?: string | null
+          assessment_link?: string | null
+          assessment_attachment_url?: string | null
         }
         Relationships: [
           {
@@ -504,6 +513,7 @@ export type Database = {
       submission_status:
         | "Applied"
         | "Vendor Responded"
+        | "Assessment"
         | "Screen Call"
         | "Interview"
         | "Rejected"
@@ -650,6 +660,7 @@ export const Constants = {
       submission_status: [
         "Applied",
         "Vendor Responded",
+        "Assessment",
         "Screen Call",
         "Interview",
         "Rejected",
