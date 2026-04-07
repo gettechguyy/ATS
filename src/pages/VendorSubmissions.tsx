@@ -34,6 +34,12 @@ import { fetchCandidates, fetchCandidatesByRecruiter, fetchCandidatesBasic } fro
 import { uploadAssessmentAttachment, uploadVendorJobDescription, uploadScreenCallFile } from "../../dbscripts/functions/storage";
 import { updateSubmission } from "../../dbscripts/functions/submissions";
 import { US_STATES } from "@/lib/usStates";
+import {
+  submissionHasAssessmentDetails,
+  submissionHasScheduledScreen,
+  submissionHasVendorDetails,
+  submissionShouldPromptAssessmentBeforeScreen,
+} from "@/lib/submissionStatusWorkflow";
 
 const PAGE_SIZE = 10;
 const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Assessment", "Screen Call", "Interview", "Rejected", "Offered"] as const;
@@ -243,6 +249,10 @@ export default function VendorSubmissions() {
 
   const handleSubmissionStatusChange = (s: any, v: string) => {
     if (v === "Vendor Responded") {
+      if (submissionHasVendorDetails(s)) {
+        updateStatus.mutate({ id: s.id, status: v });
+        return;
+      }
       pendingScreenAfterVendorRef.current = null;
       pendingAssessmentAfterVendorRef.current = null;
       setVendorSubmission(s);
@@ -257,7 +267,20 @@ export default function VendorSubmissions() {
       return;
     }
     if (v === "Assessment") {
+      if (submissionHasAssessmentDetails(s)) {
+        updateStatus.mutate({ id: s.id, status: v });
+        return;
+      }
       if (s.status === "Applied") {
+        if (submissionHasVendorDetails(s)) {
+          setAssessmentSubmission(s);
+          setAssessmentEndDate(s.assessment_end_date ? String(s.assessment_end_date).slice(0, 10) : "");
+          setAssessmentLink(s.assessment_link || "");
+          setAssessmentAttachmentUrl(s.assessment_attachment_url || null);
+          setAssessmentFile(null);
+          setAssessmentDialogOpen(true);
+          return;
+        }
         pendingAssessmentAfterVendorRef.current = s;
         pendingScreenAfterVendorRef.current = null;
         setVendorSubmission(s);
@@ -280,7 +303,26 @@ export default function VendorSubmissions() {
       return;
     }
     if (v === "Screen Call") {
+      if (submissionHasScheduledScreen(s)) {
+        updateStatus.mutate({ id: s.id, status: v });
+        return;
+      }
+      if (submissionShouldPromptAssessmentBeforeScreen(s)) {
+        setAssessmentSubmission(s);
+        setAssessmentEndDate(s.assessment_end_date ? String(s.assessment_end_date).slice(0, 10) : "");
+        setAssessmentLink(s.assessment_link || "");
+        setAssessmentAttachmentUrl(s.assessment_attachment_url || null);
+        setAssessmentFile(null);
+        setAssessmentDialogOpen(true);
+        return;
+      }
       if (s.status === "Applied") {
+        if (submissionHasVendorDetails(s)) {
+          setScreenSubmission(s);
+          resetScreenDialogFields();
+          setScreenDialogOpen(true);
+          return;
+        }
         pendingScreenAfterVendorRef.current = s;
         pendingAssessmentAfterVendorRef.current = null;
         setVendorSubmission(s);
@@ -301,6 +343,16 @@ export default function VendorSubmissions() {
     }
     if (v === "Interview") {
       if (!s.screen_scheduled_at) {
+        if (submissionShouldPromptAssessmentBeforeScreen(s)) {
+          toast.info("Complete the assessment (end date and link or file) before scheduling a screen call.");
+          setAssessmentSubmission(s);
+          setAssessmentEndDate(s.assessment_end_date ? String(s.assessment_end_date).slice(0, 10) : "");
+          setAssessmentLink(s.assessment_link || "");
+          setAssessmentAttachmentUrl(s.assessment_attachment_url || null);
+          setAssessmentFile(null);
+          setAssessmentDialogOpen(true);
+          return;
+        }
         toast.info("Schedule a screen call (date, time, and required uploads) before moving to Interview.");
         setScreenSubmission(s);
         resetScreenDialogFields();
@@ -339,9 +391,23 @@ export default function VendorSubmissions() {
         variables.payload?.status === "Vendor Responded"
       ) {
         pendingScreenAfterVendorRef.current = null;
-        setScreenSubmission(pendingScreen);
-        resetScreenDialogFields();
-        setScreenDialogOpen(true);
+        const mergedScreen = { ...pendingScreen, ...variables.payload };
+        if (submissionHasScheduledScreen(mergedScreen)) {
+          updateStatus.mutate({ id: pendingScreen.id, status: "Screen Call" });
+        } else if (submissionShouldPromptAssessmentBeforeScreen(mergedScreen)) {
+          setAssessmentSubmission(pendingScreen);
+          setAssessmentEndDate(
+            pendingScreen.assessment_end_date ? String(pendingScreen.assessment_end_date).slice(0, 10) : ""
+          );
+          setAssessmentLink(pendingScreen.assessment_link || "");
+          setAssessmentAttachmentUrl(pendingScreen.assessment_attachment_url || null);
+          setAssessmentFile(null);
+          setAssessmentDialogOpen(true);
+        } else {
+          setScreenSubmission(pendingScreen);
+          resetScreenDialogFields();
+          setScreenDialogOpen(true);
+        }
       }
       const pendingAssessment = pendingAssessmentAfterVendorRef.current;
       if (
@@ -350,12 +416,19 @@ export default function VendorSubmissions() {
         variables.payload?.status === "Vendor Responded"
       ) {
         pendingAssessmentAfterVendorRef.current = null;
-        setAssessmentSubmission(pendingAssessment);
-        setAssessmentEndDate(pendingAssessment.assessment_end_date ? String(pendingAssessment.assessment_end_date).slice(0, 10) : "");
-        setAssessmentLink(pendingAssessment.assessment_link || "");
-        setAssessmentAttachmentUrl(pendingAssessment.assessment_attachment_url || null);
-        setAssessmentFile(null);
-        setAssessmentDialogOpen(true);
+        const mergedAssessment = { ...pendingAssessment, ...variables.payload };
+        if (submissionHasAssessmentDetails(mergedAssessment)) {
+          updateStatus.mutate({ id: pendingAssessment.id, status: "Assessment" });
+        } else {
+          setAssessmentSubmission(pendingAssessment);
+          setAssessmentEndDate(
+            pendingAssessment.assessment_end_date ? String(pendingAssessment.assessment_end_date).slice(0, 10) : ""
+          );
+          setAssessmentLink(pendingAssessment.assessment_link || "");
+          setAssessmentAttachmentUrl(pendingAssessment.assessment_attachment_url || null);
+          setAssessmentFile(null);
+          setAssessmentDialogOpen(true);
+        }
       }
     },
     onError: (err: Error) => toast.error(err.message),

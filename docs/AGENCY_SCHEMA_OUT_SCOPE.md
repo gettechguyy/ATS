@@ -1,4 +1,4 @@
-# Out Marketing Agency – Required Tables and Columns
+w# Out Marketing Agency – Required Tables and Columns
 
 This document lists **all tables and columns** required for the **out marketing agency** scope. Use it to create or verify the schema (e.g. if the `agencies` table or related columns do not exist).
 
