@@ -33,18 +33,15 @@ export function submissionHasAssessmentDetails(s: any): boolean {
 }
 
 /**
- * Vendor is done and assessment is not, and no screen is scheduled yet — need assessment before opening the screen scheduler.
- * When `screen_scheduled_at` is already set (e.g. reverting status while row still has screen data), returns false so we skip the assessment step.
+ * After vendor response, recruiters may send a candidate to **Assessment** or **Screen Call** directly (two routes).
+ * Assessment details are only required before opening the screen scheduler when the submission is already on the
+ * assessment path (`status === "Assessment"`) and details are still missing.
+ * Direct Screen Call (bypassing assessment) must not force the assessment dialog.
+ * When `screen_scheduled_at` is already set, returns false so we skip the assessment step.
  */
 export function submissionShouldPromptAssessmentBeforeScreen(s: any): boolean {
   if (submissionHasScheduledScreen(s)) return false;
   if (submissionHasAssessmentDetails(s)) return false;
   if (!submissionHasVendorDetails(s)) return false;
-  const st = s.status;
-  return (
-    st === "Vendor Responded" ||
-    st === "Applied" ||
-    st === "Assessment" ||
-    st === "Interview"
-  );
+  return s.status === "Assessment";
 }

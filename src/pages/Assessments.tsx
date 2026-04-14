@@ -73,7 +73,9 @@ export default function AssessmentsPage() {
       <div className="mb-6 space-y-3">
         <div>
           <h1 className="text-2xl font-bold">Assessments</h1>
-          <p className="text-sm text-muted-foreground">Applications in the assessment stage (after vendor response, before screen calls)</p>
+          <p className="text-sm text-muted-foreground">
+            Submissions in Assessment status. After vendor response, screening can go to assessment or screen calls directly—this list is only the assessment branch.
+          </p>
         </div>
         <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
