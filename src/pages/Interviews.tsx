@@ -18,11 +18,38 @@ import { formatInAppDateTime } from "@/lib/appTimezone";
 
 const PAGE_SIZE = 10;
 
+type InterviewSortKey =
+  | "submission_client_name"
+  | "submission_position"
+  | "scheduled_at"
+  | "round_number"
+  | "mode"
+  | "status";
+
 export default function Interviews() {
   const { user, profile, role, isCandidate, isRecruiter, isAgencyAdmin } = useAuth();
   const [page, setPage] = useState(1);
-  const [sortBy, setSortBy] = useState("scheduled_at");
+  const [sortBy, setSortBy] = useState<InterviewSortKey>("scheduled_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
+
+  const toggleInterviewSort = (field: InterviewSortKey) => {
+    if (sortBy === field) {
+      setOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(field);
+      if (field === "scheduled_at" || field === "round_number") setOrder("desc");
+      else setOrder("asc");
+    }
+  };
+
+  const interviewSortArrow = (field: InterviewSortKey) =>
+    sortBy === field ? (
+      order === "asc" ? (
+        <ArrowUp className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      ) : (
+        <ArrowDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      )
+    ) : null;
 
   const { data: result, isLoading } = useQuery({
     queryKey: ["all-interviews", role, user?.id, profile?.linked_candidate_id, profile?.agency_id, page, PAGE_SIZE, sortBy, order],
@@ -60,20 +87,40 @@ export default function Interviews() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Candidate</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Position</TableHead>
                   <TableHead>
-                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("round_number"); setOrder(sortBy === "round_number" ? (order === "asc" ? "desc" : "asc") : "desc"); }}>
-                      Round {sortBy === "round_number" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 font-medium hover:opacity-80"
+                      onClick={() => toggleInterviewSort("submission_client_name")}
+                    >
+                      Client {interviewSortArrow("submission_client_name")}
                     </button>
                   </TableHead>
                   <TableHead>
-                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("scheduled_at"); setOrder(sortBy === "scheduled_at" ? (order === "asc" ? "desc" : "asc") : "desc"); }}>
-                      Date/Time {sortBy === "scheduled_at" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleInterviewSort("submission_position")}>
+                      Position {interviewSortArrow("submission_position")}
                     </button>
                   </TableHead>
-                  <TableHead>Mode</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleInterviewSort("round_number")}>
+                      Round {interviewSortArrow("round_number")}
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleInterviewSort("scheduled_at")}>
+                      Date/Time {interviewSortArrow("scheduled_at")}
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleInterviewSort("mode")}>
+                      Mode {interviewSortArrow("mode")}
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleInterviewSort("status")}>
+                      Status {interviewSortArrow("status")}
+                    </button>
+                  </TableHead>
                   <TableHead className="w-12"></TableHead>
                 </TableRow>
               </TableHeader>

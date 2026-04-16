@@ -42,6 +42,7 @@ export type Database = {
         Row: {
           id: string
           name: string
+          name_sort: string
           type: string
           created_at: string
         }
@@ -65,8 +66,10 @@ export type Database = {
           created_at: string | null
           email: string | null
           first_name: string
+          first_name_sort: string
           id: string
           last_name: string | null
+          last_name_sort: string
           phone: string | null
           recruiter_id: string | null
           resume_url: string | null
@@ -253,6 +256,7 @@ export type Database = {
           created_at: string
           email: string
           full_name: string
+          full_name_sort: string
           id: string
           is_active: boolean | null
           linked_candidate_id: string | null
@@ -294,7 +298,9 @@ export type Database = {
       submissions: {
         Row: {
           candidate_id: string
+          candidate_first_name_sort: string | null
           client_name: string
+          client_name_sort: string
           created_at: string | null
           id: string
           position: string
@@ -389,6 +395,7 @@ export type Database = {
           token: string
           email: string
           full_name: string
+          full_name_sort: string
           role: string
           created_by: string
           used: boolean | null

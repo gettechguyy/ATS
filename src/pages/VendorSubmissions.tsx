@@ -22,7 +22,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Link } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { toast } from "sonner";
 import {
   createSubmission as createSubmissionFn,
@@ -42,6 +42,9 @@ import {
 } from "@/lib/submissionStatusWorkflow";
 
 const PAGE_SIZE = 10;
+
+type VendorSortBy = "created_at" | "client_name" | "position" | "status" | "candidate_first_name";
+
 const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Assessment", "Screen Call", "Interview", "Rejected", "Offered"] as const;
 
 const statusColors: Record<string, string> = {
@@ -59,6 +62,8 @@ export default function VendorSubmissions() {
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<VendorSortBy>("created_at");
+  const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [candidateFilter, setCandidateFilter] = useState<string>("all");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newCandidateId, setNewCandidateId] = useState<string | null>(null);
@@ -142,14 +147,16 @@ export default function VendorSubmissions() {
       page,
       search,
       candidateFilter,
+      sortBy,
+      order,
     ],
     queryFn: () =>
       fetchSpecialSubmissionsPage("vendor_responded", vendorPageContext!, {
         page,
         pageSize: PAGE_SIZE,
         search,
-        sortBy: "created_at",
-        order: "desc",
+        sortBy,
+        order,
         candidateId:
           !isCandidate && candidateFilter !== "all" ? candidateFilter : null,
       }),
@@ -159,6 +166,28 @@ export default function VendorSubmissions() {
   const paginated = vendorPage?.data ?? [];
   const totalCount = vendorPage?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+
+  useEffect(() => setPage(1), [search, candidateFilter, sortBy, order]);
+
+  const toggleVendorSort = (field: VendorSortBy) => {
+    if (sortBy === field) {
+      setOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(field);
+      setOrder(field === "created_at" ? "desc" : "asc");
+    }
+  };
+
+  const vendorSortArrow = (field: VendorSortBy) =>
+    sortBy === field ? (
+      order === "asc" ? (
+        <ArrowUp className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      ) : (
+        <ArrowDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      )
+    ) : null;
+
+  const vendorTableColSpan = isCandidate ? 5 : 6;
 
   // Candidate dropdown for Add Vendor Submission (admin: all, recruiter: own)
   const candidatesQueryFn = async () => {
@@ -535,22 +564,52 @@ export default function VendorSubmissions() {
           <Table>
             <TableHeader>
               <TableRow>
-                {!isCandidate && <TableHead>Candidate</TableHead>}
-                <TableHead>Client</TableHead>
-                <TableHead>Position</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Date</TableHead>
+                {!isCandidate && (
+                  <TableHead>
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 font-medium hover:opacity-80"
+                      onClick={() => toggleVendorSort("candidate_first_name")}
+                    >
+                      Candidate {vendorSortArrow("candidate_first_name")}
+                    </button>
+                  </TableHead>
+                )}
+                <TableHead>
+                  <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleVendorSort("client_name")}>
+                    Client {vendorSortArrow("client_name")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleVendorSort("position")}>
+                    Position {vendorSortArrow("position")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleVendorSort("status")}>
+                    Status {vendorSortArrow("status")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleVendorSort("created_at")}>
+                    Date {vendorSortArrow("created_at")}
+                  </button>
+                </TableHead>
                 <TableHead className="w-24">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">Loading submissions...</TableCell>
+                  <TableCell colSpan={vendorTableColSpan} className="py-6 text-center text-muted-foreground">
+                    Loading submissions...
+                  </TableCell>
                 </TableRow>
               ) : paginated.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-6 text-center text-muted-foreground">No submissions match your filters</TableCell>
+                  <TableCell colSpan={vendorTableColSpan} className="py-6 text-center text-muted-foreground">
+                    No submissions match your filters
+                  </TableCell>
                 </TableRow>
               ) : (
                 paginated.map((s: any) => (

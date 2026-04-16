@@ -12,6 +12,65 @@ type SubmissionStatusFilter =
 
 const SUBMISSIONS_SORT_COLUMNS = ["created_at", "client_name", "position", "status"] as const;
 
+/** DB column for ORDER BY: case-insensitive A–Z for client names (see migration `*_sort` columns). */
+function submissionOrderColumn(sortField: string): string {
+  if (sortField === "client_name") return "client_name_sort";
+  return sortField;
+}
+
+/** Allowed `sortBy` values for `fetchSpecialSubmissionsPage` (includes screen list columns). */
+const SPECIAL_SUBMISSIONS_SORT_COLUMNS = [
+  "created_at",
+  "client_name",
+  "position",
+  "status",
+  "screen_scheduled_at",
+  "screen_mode",
+  "candidate_first_name",
+  "assessment_end_date",
+] as const;
+
+function applySpecialSubmissionsOrder(q: any, col: string, asc: boolean): any {
+  // Use denormalized `candidate_first_name_sort` on submissions — PostgREST ordering by
+  // `foreignTable: candidates` does not reliably order parent rows (see migration 20260416130000).
+  if (col === "candidate_first_name") {
+    return q.order("candidate_first_name_sort", { ascending: asc });
+  }
+  return q.order(submissionOrderColumn(col), { ascending: asc });
+}
+
+function compareMergedSpecialSubmissionRows(a: any, b: any, col: string): number {
+  const str = (v: unknown) => (v == null ? "" : String(v));
+  switch (col) {
+    case "screen_scheduled_at":
+    case "created_at": {
+      const ta = new Date(a[col] ?? 0).getTime();
+      const tb = new Date(b[col] ?? 0).getTime();
+      return ta - tb;
+    }
+    case "assessment_end_date": {
+      const da = str(a[col]);
+      const db = str(b[col]);
+      return da.localeCompare(db, undefined, { sensitivity: "base" });
+    }
+    case "client_name":
+      return str(a.client_name_sort ?? a.client_name).localeCompare(str(b.client_name_sort ?? b.client_name), undefined, {
+        sensitivity: "base",
+      });
+    case "position":
+    case "status":
+    case "screen_mode":
+      return str(a[col]).localeCompare(str(b[col]), undefined, { sensitivity: "base" });
+    case "candidate_first_name": {
+      const na = str(a.candidate_first_name_sort ?? a.candidates?.first_name_sort ?? a.candidates?.first_name);
+      const nb = str(b.candidate_first_name_sort ?? b.candidates?.first_name_sort ?? b.candidates?.first_name);
+      return na.localeCompare(nb, undefined, { sensitivity: "base" });
+    }
+    default:
+      return new Date(a.created_at ?? 0).getTime() - new Date(b.created_at ?? 0).getTime();
+  }
+}
+
 /** PostgREST typically caps each response at ~1000 rows; batch `.range()` calls to load larger windows. */
 const POSTGREST_MAX_ROWS = 1000;
 
@@ -130,7 +189,8 @@ export async function fetchCandidateApplicationSummaries(
   opts: ApplicationSummariesOpts = {}
 ): Promise<CandidateApplicationSummaryRow[]> {
   const { search, status, sortBy, order, candidateId } = opts;
-  const col = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const rawCol = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const orderCol = submissionOrderColumn(rawCol);
   const asc = order === "asc";
 
   let nameIds: string[] = [];
@@ -144,7 +204,7 @@ export async function fetchCandidateApplicationSummaries(
 
   if (ctx.mode === "admin") {
     const createQuery = () => {
-      let q = supabase.from("submissions").select("candidate_id").order(col, { ascending: asc });
+      let q = supabase.from("submissions").select("candidate_id").order(orderCol, { ascending: asc });
       return applySubmissionFiltersMinimal(q, filterOpts);
     };
     minimalRows = await fetchAllRowsForQuery(createQuery);
@@ -154,7 +214,7 @@ export async function fetchCandidateApplicationSummaries(
         .from("submissions")
         .select("candidate_id, candidates!inner(recruiter_id)")
         .eq("candidates.recruiter_id", ctx.recruiterId)
-        .order(col, { ascending: asc });
+        .order(orderCol, { ascending: asc });
       return applySubmissionFiltersMinimal(inner, filterOpts);
     });
   } else if (ctx.mode === "agency") {
@@ -165,7 +225,7 @@ export async function fetchCandidateApplicationSummaries(
       candidateId && allIds.includes(candidateId) ? candidateId : null;
     const idsToUse = filterId ? [filterId] : allIds;
     const createQuery = () => {
-      let q = supabase.from("submissions").select("candidate_id").in("candidate_id", idsToUse).order(col, { ascending: asc });
+      let q = supabase.from("submissions").select("candidate_id").in("candidate_id", idsToUse).order(orderCol, { ascending: asc });
       return applySubmissionFiltersMinimal(q, { ...filterOpts, candidateId: filterId ?? undefined });
     };
     minimalRows = await fetchAllRowsForQuery(createQuery);
@@ -185,7 +245,7 @@ export async function fetchCandidateApplicationSummaries(
           .from("submissions")
           .select("id, candidate_id")
           .in("candidate_id", tlCandidateIds)
-          .order(col, { ascending: asc });
+          .order(orderCol, { ascending: asc });
         return applySubmissionFiltersMinimal(q, filterOpts);
       });
     }
@@ -195,7 +255,7 @@ export async function fetchCandidateApplicationSummaries(
           .from("submissions")
           .select("id, candidate_id")
           .in("recruiter_id", recruiterIds)
-          .order(col, { ascending: asc });
+          .order(orderCol, { ascending: asc });
         return applySubmissionFiltersMinimal(q, filterOpts);
       });
     }
@@ -220,7 +280,7 @@ export async function fetchCandidateApplicationSummaries(
     const slice = candidateKeys.slice(i, i + chunkSize);
     const { data, error } = await supabase
       .from("candidates")
-      .select("id, first_name, last_name, recruiter_id, agency_id")
+      .select("id, first_name, last_name, first_name_sort, last_name_sort, recruiter_id, agency_id")
       .in("id", slice);
     if (error) throw error;
     metaRows.push(...(data ?? []));
@@ -236,7 +296,7 @@ export async function fetchCandidateApplicationSummaries(
 
   rows.sort((a, b) => {
     if (sortBy === "client_name" || sortBy === "position" || sortBy === "status") {
-      return (a.candidateName || "").localeCompare(b.candidateName || "");
+      return (a.candidateName || "").localeCompare(b.candidateName || "", undefined, { sensitivity: "base" });
     }
     if (order === "asc") return a.applicationCount - b.applicationCount;
     return b.applicationCount - a.applicationCount;
@@ -259,7 +319,7 @@ export async function fetchSubmissionsByCandidateWithDetails(
   const createQuery = () => {
     let q = supabase
       .from("submissions")
-      .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)")
+      .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)")
       .eq("candidate_id", candidateId)
       .order("created_at", { ascending: false });
     return applySubmissionFiltersMinimal(q, { status, search, nameCandidateIds: nameIds });
@@ -270,7 +330,7 @@ export async function fetchSubmissionsByCandidateWithDetails(
 export async function fetchSubmissions() {
   const { data, error } = await supabase
     .from("submissions")
-    .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)")
+    .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)")
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data;
@@ -280,7 +340,7 @@ export async function fetchSubmissions() {
 export async function fetchSubmissionsByRecruiter(recruiterId: string) {
   const { data, error } = await supabase
     .from("submissions")
-    .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)")
+    .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)")
     .eq("recruiter_id", recruiterId)
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -290,7 +350,7 @@ export async function fetchSubmissionsByRecruiter(recruiterId: string) {
 export async function fetchSubmissionById(id: string) {
   const { data, error } = await supabase
     .from("submissions")
-    .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)")
+    .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)")
     .eq("id", id)
     .maybeSingle();
   if (error) throw error;
@@ -317,11 +377,12 @@ export type SubmissionsPageOpts = {
 };
 
 function buildSubmissionsQuery(recruiterId?: string, candidateId?: string, sortBy?: string, order?: "asc" | "desc") {
-  const col = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const rawCol = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const col = submissionOrderColumn(rawCol);
   const asc = order === "asc";
   let q = supabase
     .from("submissions")
-    .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
+    .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
     .order(col, { ascending: asc });
   if (recruiterId) q = q.eq("recruiter_id", recruiterId);
   if (candidateId) q = q.eq("candidate_id", candidateId);
@@ -368,12 +429,13 @@ export async function fetchSubmissionsByRecruiterPaginated(recruiterId: string, 
 /** Paginated submissions for all candidates currently assigned to this recruiter (candidates.recruiter_id = recruiterId). */
 export async function fetchSubmissionsForRecruiterCandidatesPaginated(recruiterId: string, opts: SubmissionsPageOpts) {
   const { page, pageSize, search, status, sortBy, order, candidateId } = opts;
-  const col = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const rawCol = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const col = submissionOrderColumn(rawCol);
   const asc = order === "asc";
   const createQuery = () => {
     let q = supabase
       .from("submissions")
-      .select("*, candidates!inner(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
+      .select("*, candidates!inner(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
       .eq("candidates.recruiter_id", recruiterId)
       .order(col, { ascending: asc });
 
@@ -438,6 +500,9 @@ export type SpecialSubmissionsRoleContext =
  * - vendor_responded: Vendor Responded OR Assessment OR Screen Call OR scheduled screen (screen_scheduled_at set).
  * - screen_call: Screen Call OR scheduled screen (same rows as the Screens page).
  * - assessment: status Assessment only (Assessments page).
+ *
+ * Sorting uses `.order()` before `.range()` so pages reflect global order (not client-sorted slices).
+ * Team-lead path merges two queries then sorts in memory by the same column before slicing to the page.
  */
 export async function fetchSpecialSubmissionsPage(
   kind: SpecialSubmissionsKind,
@@ -445,7 +510,14 @@ export async function fetchSpecialSubmissionsPage(
   opts: SubmissionsPageOpts
 ): Promise<{ data: any[]; total: number }> {
   const { page, pageSize, search, sortBy, order, candidateId } = opts;
-  const col = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const defaultSort =
+    kind === "screen_call"
+      ? "screen_scheduled_at"
+      : kind === "assessment"
+        ? "assessment_end_date"
+        : "created_at";
+  const col =
+    sortBy && SPECIAL_SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : defaultSort;
   const asc = order === "asc";
   const searchOr = await buildSearchOrClause(search);
 
@@ -475,9 +547,9 @@ export async function fetchSpecialSubmissionsPage(
       return fetchAllRowsForQuery(() => {
         let q = supabase
           .from("submissions")
-          .select("*, candidates(first_name, last_name, email, team_lead_id, recruiter_id, agency_id)")
-          .in(inCol, ids)
-          .order(col, { ascending: asc });
+          .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, team_lead_id, recruiter_id, agency_id)")
+          .in(inCol, ids);
+        q = applySpecialSubmissionsOrder(q, col, asc);
         q = buildFiltered(q);
         return q;
       });
@@ -492,9 +564,8 @@ export async function fetchSpecialSubmissionsPage(
       merged.push(s);
     }
     merged.sort((x, y) => {
-      const ta = new Date(x.created_at).getTime();
-      const tb = new Date(y.created_at).getTime();
-      return asc ? ta - tb : tb - ta;
+      const c = compareMergedSpecialSubmissionRows(x, y, col);
+      return asc ? c : -c;
     });
     if (candidateId) {
       const f = merged.filter((s) => s.candidate_id === candidateId);
@@ -519,8 +590,8 @@ export async function fetchSpecialSubmissionsPage(
     const createQuery = () => {
       let q = supabase
         .from("submissions")
-        .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
-        .order(col, { ascending: asc });
+        .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" });
+      q = applySpecialSubmissionsOrder(q, col, asc);
       q = applyKindFilter(q);
       if (candidateId) q = q.eq("candidate_id", candidateId);
       if (searchOr) q = q.or(searchOr);
@@ -536,9 +607,9 @@ export async function fetchSpecialSubmissionsPage(
     const createQuery = () => {
       let q = supabase
         .from("submissions")
-        .select("*, candidates!inner(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
-        .eq("candidates.recruiter_id", ctx.recruiterId)
-        .order(col, { ascending: asc });
+        .select("*, candidates!inner(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
+        .eq("candidates.recruiter_id", ctx.recruiterId);
+      q = applySpecialSubmissionsOrder(q, col, asc);
       q = applyKindFilter(q);
       if (candidateId) q = q.eq("candidate_id", candidateId);
       if (searchOr) q = q.or(searchOr);
@@ -558,9 +629,9 @@ export async function fetchSpecialSubmissionsPage(
     const createQuery = () => {
       let q = supabase
         .from("submissions")
-        .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
-        .in("candidate_id", idsToUse)
-        .order(col, { ascending: asc });
+        .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
+        .in("candidate_id", idsToUse);
+      q = applySpecialSubmissionsOrder(q, col, asc);
       q = applyKindFilter(q);
       if (searchOr) q = q.or(searchOr);
       return q;
@@ -574,9 +645,9 @@ export async function fetchSpecialSubmissionsPage(
   const createQuery = () => {
     let q = supabase
       .from("submissions")
-      .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
-      .eq("candidate_id", ctx.linkedCandidateId)
-      .order(col, { ascending: asc });
+      .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
+      .eq("candidate_id", ctx.linkedCandidateId);
+    q = applySpecialSubmissionsOrder(q, col, asc);
     q = applyKindFilter(q);
     if (searchOr) q = q.or(searchOr);
     return q;
@@ -594,7 +665,7 @@ export async function fetchSubmissionsByAgency(agencyId: string) {
   if (candidateIds.length === 0) return [];
   const { data, error } = await supabase
     .from("submissions")
-    .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)")
+    .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)")
     .in("candidate_id", candidateIds)
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -607,13 +678,14 @@ export async function fetchSubmissionsByAgencyPaginated(agencyId: string, opts: 
   const candidateIds = (candidateRows || []).map((c: any) => c.id);
   if (candidateIds.length === 0) return { data: [], total: 0 };
   const { page, pageSize, search, status, sortBy, order, candidateId: filterCandidateId } = opts;
-  const col = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const rawCol = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const col = submissionOrderColumn(rawCol);
   const asc = order === "asc";
   const idsToUse = filterCandidateId && candidateIds.includes(filterCandidateId) ? [filterCandidateId] : candidateIds;
   const createQuery = () => {
     let q = supabase
       .from("submissions")
-      .select("*, candidates(first_name, last_name, email, recruiter_id, agency_id)", { count: "exact" })
+      .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
       .in("candidate_id", idsToUse)
       .order(col, { ascending: asc });
     if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
@@ -638,7 +710,7 @@ export async function fetchSubmissionsByTeamLead(teamLeadProfileId: string) {
   // select submissions where candidate has team_lead_id = teamLeadProfileId
   const { data, error } = await supabase
     .from("submissions")
-    .select("*, candidates(first_name, last_name, email, team_lead_id, recruiter_id, agency_id)")
+    .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, team_lead_id, recruiter_id, agency_id)")
     .or(`candidate_id.in.(select id from candidates where team_lead_id.eq.${teamLeadProfileId}),recruiter_id.in.(select recruiter_id from candidates where team_lead_id.eq.${teamLeadProfileId})`)
     .order("created_at", { ascending: false });
   // Fallback: if supabase does not support subqueries in .or, run two queries and merge
@@ -649,7 +721,7 @@ export async function fetchSubmissionsByTeamLead(teamLeadProfileId: string) {
 
     const byCandidate: any = await (supabase as any)
       .from("submissions")
-      .select("*, candidates(first_name, last_name, email, team_lead_id, recruiter_id, agency_id)")
+      .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, team_lead_id, recruiter_id, agency_id)")
       .in("candidate_id", candidateIds.length ? candidateIds : []);
 
     const recruiterRes: any = await (supabase as any).from("candidates").select("recruiter_id").eq("team_lead_id", teamLeadProfileId);
@@ -657,7 +729,7 @@ export async function fetchSubmissionsByTeamLead(teamLeadProfileId: string) {
 
     const byRecruiter: any = await (supabase as any)
       .from("submissions")
-      .select("*, candidates(first_name, last_name, email, team_lead_id, recruiter_id, agency_id)")
+      .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, team_lead_id, recruiter_id, agency_id)")
       .in("recruiter_id", recruiterIds.length ? recruiterIds : []);
 
     const merged = [...(byCandidate.data || []), ...(byRecruiter.data || [])];

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,13 +19,18 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Users, Shield, Plus, Trash2, Pencil } from "lucide-react";
+import { ArrowDown, ArrowUp, Users, Shield, Plus, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Navigate } from "react-router-dom";
 import { getAppBaseUrl } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
-import { fetchAllProfiles, fetchProfilesByAgency, updateProfile } from "../../dbscripts/functions/profiles";
+import {
+  fetchAllProfiles,
+  fetchProfilesByAgency,
+  updateProfile,
+  type ProfilesListSortOpts,
+} from "../../dbscripts/functions/profiles";
 import { fetchAllUserRoles, updateUserRole, insertUserRole } from "../../dbscripts/functions/userRoles";
 import { fetchCandidatesBasic, updateCandidate } from "../../dbscripts/functions/candidates";
 import { fetchAgencies } from "../../dbscripts/functions/agencies";
@@ -37,18 +42,28 @@ export default function UserManagement() {
   const { isAdmin, createUser, user, isManager, isTeamLead, isAgencyAdmin, profile } = useAuth();
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"team" | "candidates">("team");
+  type UserTableSortKey = "name" | "email" | "joined";
+  const [userTableSort, setUserTableSort] = useState<{ key: UserTableSortKey; order: "asc" | "desc" }>({
+    key: "name",
+    order: "asc",
+  });
+
+  const profileListSortOpts = (s: { key: UserTableSortKey; order: "asc" | "desc" }): ProfilesListSortOpts => ({
+    sortBy: s.key === "name" ? "full_name" : s.key === "email" ? "email" : "created_at",
+    order: s.order,
+  });
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string>("recruiter");
 
   const canAccessUserManagement = isAdmin || isManager || isTeamLead || isAgencyAdmin;
 
   const { data: users, isLoading } = useQuery({
-    queryKey: ["admin-users", isAgencyAdmin ? profile?.agency_id : "all"],
+    queryKey: ["admin-users", isAgencyAdmin ? profile?.agency_id : "all", userTableSort],
     queryFn: async () => {
-      // Agency admin must only see users in their agency (never Thetechguyy / master company users).
+      const sortOpts = profileListSortOpts(userTableSort);
       const profiles = isAgencyAdmin
-        ? (profile?.agency_id ? await fetchProfilesByAgency(profile.agency_id) : [])
-        : await fetchAllProfiles();
+        ? (profile?.agency_id ? await fetchProfilesByAgency(profile.agency_id, sortOpts) : [])
+        : await fetchAllProfiles(sortOpts);
       const roles = await fetchAllUserRoles();
       return profiles.map((p: any) => ({
         ...p,
@@ -96,6 +111,33 @@ export default function UserManagement() {
     const agency = (agencies as any[]).find((a: any) => a.id === u.agency_id);
     return agency ? `${u.full_name} (${agency.name})` : (u.full_name ?? "");
   };
+
+  const filteredUsersForTable = useMemo(() => {
+    return (users || []).filter((u: any) => {
+      if (activeTab === "team") {
+        if (isTeamLead) {
+          return u.user_id === user?.id || (u.role === "recruiter" && recruiterIdsUnderTL.has(u.user_id));
+        }
+        return u.role !== "candidate";
+      }
+      return u.role === "candidate";
+    });
+  }, [users, activeTab, isTeamLead, user?.id, recruiterIdsUnderTL]);
+
+  const toggleUserTableSort = (key: UserTableSortKey) => {
+    setUserTableSort((prev) =>
+      prev.key === key ? { key, order: prev.order === "asc" ? "desc" : "asc" } : { key, order: key === "joined" ? "desc" : "asc" }
+    );
+  };
+
+  const userTableSortArrow = (key: UserTableSortKey) =>
+    userTableSort.key === key ? (
+      userTableSort.order === "asc" ? (
+        <ArrowUp className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      ) : (
+        <ArrowDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      )
+    ) : null;
 
   const updateRoleMutation = useMutation({
     mutationFn: async ({ userId, roleId, newRole }: { userId: string; roleId?: string; newRole: string }) => {
@@ -346,39 +388,34 @@ export default function UserManagement() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleUserTableSort("name")}>
+                      Name {userTableSortArrow("name")}
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleUserTableSort("email")}>
+                      Email {userTableSortArrow("email")}
+                    </button>
+                  </TableHead>
                   <TableHead>Role</TableHead>
                   <TableHead>Linked Candidate</TableHead>
                   <TableHead>Edit / Password</TableHead>
                   <TableHead>Active</TableHead>
-                  <TableHead>Joined</TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleUserTableSort("joined")}>
+                      Joined {userTableSortArrow("joined")}
+                    </button>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                { (users?.filter((u:any) => {
-                      if (activeTab === "team") {
-                        if (isTeamLead) {
-                          // show self and recruiters assigned to this TL
-                          return u.user_id === user?.id || (u.role === "recruiter" && recruiterIdsUnderTL.has(u.user_id));
-                        }
-                        return u.role !== "candidate";
-                      }
-                      return u.role === "candidate";
-                    }) || []).length === 0 ? (
+                {filteredUsersForTable.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">No users found</TableCell>
                   </TableRow>
                 ) : (
-                  users?.filter((u:any) => {
-                      if (activeTab === "team") {
-                        if (isTeamLead) {
-                          return u.user_id === user?.id || (u.role === "recruiter" && recruiterIdsUnderTL.has(u.user_id));
-                        }
-                        return u.role !== "candidate";
-                      }
-                      return u.role === "candidate";
-                    }).map((u: any) => (
+                  filteredUsersForTable.map((u: any) => (
                     <TableRow key={u.id}>
                       <TableCell className="font-medium">{displayUserName(u)}</TableCell>
                       <TableCell className="text-muted-foreground">{u.email}</TableCell>

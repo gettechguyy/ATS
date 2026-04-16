@@ -7,15 +7,23 @@ import { Button } from "@/components/ui/button";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { fetchSpecialSubmissionsPage, type SpecialSubmissionsRoleContext } from "../../dbscripts/functions/submissions";
 import { Link } from "react-router-dom";
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 const PAGE_SIZE = 10;
+
+type AssessmentSortBy =
+  | "assessment_end_date"
+  | "client_name"
+  | "position"
+  | "candidate_first_name";
 
 export default function AssessmentsPage() {
   const { user, profile, isCandidate, isRecruiter, isAdmin, isManager, isTeamLead, isAgencyAdmin } = useAuth();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<AssessmentSortBy>("assessment_end_date");
+  const [order, setOrder] = useState<"asc" | "desc">("desc");
 
   const assessmentsPageContext = useMemo((): SpecialSubmissionsRoleContext | null => {
     if (isCandidate && profile?.linked_candidate_id) {
@@ -48,14 +56,14 @@ export default function AssessmentsPage() {
     : true);
 
   const { data: assessmentsPage, isLoading } = useQuery({
-    queryKey: ["submissions-assessments", assessmentsPageContext, page, search],
+    queryKey: ["submissions-assessments", assessmentsPageContext, page, search, sortBy, order],
     queryFn: () =>
       fetchSpecialSubmissionsPage("assessment", assessmentsPageContext!, {
         page,
         pageSize: PAGE_SIZE,
         search,
-        sortBy: "created_at",
-        order: "desc",
+        sortBy,
+        order,
       }),
     enabled: assessmentsEnabled,
   });
@@ -64,7 +72,25 @@ export default function AssessmentsPage() {
   const totalCount = assessmentsPage?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-  useEffect(() => setPage(1), [search]);
+  useEffect(() => setPage(1), [search, sortBy, order]);
+
+  const toggleSort = (field: AssessmentSortBy) => {
+    if (sortBy === field) {
+      setOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(field);
+      setOrder(field === "assessment_end_date" || field === "created_at" ? "desc" : "asc");
+    }
+  };
+
+  const sortArrow = (field: AssessmentSortBy) =>
+    sortBy === field ? (
+      order === "asc" ? (
+        <ArrowUp className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      ) : (
+        <ArrowDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      )
+    ) : null;
 
   const colSpan = !isCandidate ? 7 : 6;
 
@@ -93,10 +119,36 @@ export default function AssessmentsPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                {!isCandidate && <TableHead>Candidate</TableHead>}
-                <TableHead>Client</TableHead>
-                <TableHead>Position</TableHead>
-                <TableHead>Assessment end</TableHead>
+                {!isCandidate && (
+                  <TableHead>
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 font-medium hover:opacity-80"
+                      onClick={() => toggleSort("candidate_first_name")}
+                    >
+                      Candidate {sortArrow("candidate_first_name")}
+                    </button>
+                  </TableHead>
+                )}
+                <TableHead>
+                  <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleSort("client_name")}>
+                    Client {sortArrow("client_name")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleSort("position")}>
+                    Position {sortArrow("position")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 font-medium hover:opacity-80"
+                    onClick={() => toggleSort("assessment_end_date")}
+                  >
+                    Assessment end {sortArrow("assessment_end_date")}
+                  </button>
+                </TableHead>
                 <TableHead>Link</TableHead>
                 <TableHead>Attachment</TableHead>
                 <TableHead className="w-28">Actions</TableHead>

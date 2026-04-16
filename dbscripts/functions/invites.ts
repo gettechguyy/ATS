@@ -19,8 +19,20 @@ export async function createInvite(invite: {
   if (error) throw error;
 }
 
-export async function fetchInvites() {
-  const { data, error } = await supabase.from("invites").select("*").order("created_at", { ascending: false });
+const INVITES_SORT_COLUMNS = ["email", "full_name", "used", "created_at"] as const;
+
+export type FetchInvitesOpts = {
+  sortBy?: (typeof INVITES_SORT_COLUMNS)[number];
+  order?: "asc" | "desc";
+};
+
+/** Full list (Invites page has no pagination); sorting is applied in Postgres, not in the browser. */
+export async function fetchInvites(opts?: FetchInvitesOpts) {
+  const raw =
+    opts?.sortBy && INVITES_SORT_COLUMNS.includes(opts.sortBy) ? opts.sortBy : "created_at";
+  const sortBy = raw === "full_name" ? "full_name_sort" : raw;
+  const ascending = opts?.order === "asc";
+  const { data, error } = await supabase.from("invites").select("*").order(sortBy, { ascending });
   if (error) throw error;
   return data || [];
 }

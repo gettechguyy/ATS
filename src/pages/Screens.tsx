@@ -12,11 +12,18 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { fetchSpecialSubmissionsPage, updateSubmission, type SpecialSubmissionsRoleContext } from "../../dbscripts/functions/submissions";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { formatInAppDateTime } from "@/lib/appTimezone";
 
 const PAGE_SIZE = 10;
+
+type ScreenSortBy =
+  | "screen_scheduled_at"
+  | "client_name"
+  | "position"
+  | "screen_mode"
+  | "candidate_first_name";
 
 export default function ScreensPage() {
   const { user, profile, isCandidate, isRecruiter, isAdmin, isManager, isTeamLead, isAgencyAdmin } = useAuth();
@@ -28,6 +35,8 @@ export default function ScreensPage() {
   const [outcomeBy, setOutcomeBy] = useState<"candidate" | "recruiter">("recruiter");
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
+  const [sortBy, setSortBy] = useState<ScreenSortBy>("screen_scheduled_at");
+  const [order, setOrder] = useState<"asc" | "desc">("desc");
 
   const screensPageContext = useMemo((): SpecialSubmissionsRoleContext | null => {
     if (isCandidate && profile?.linked_candidate_id) {
@@ -60,14 +69,14 @@ export default function ScreensPage() {
     : true);
 
   const { data: screensPage, isLoading } = useQuery({
-    queryKey: ["submissions-screens", screensPageContext, page, search],
+    queryKey: ["submissions-screens", screensPageContext, page, search, sortBy, order],
     queryFn: () =>
       fetchSpecialSubmissionsPage("screen_call", screensPageContext!, {
         page,
         pageSize: PAGE_SIZE,
         search,
-        sortBy: "created_at",
-        order: "desc",
+        sortBy,
+        order,
       }),
     enabled: screensEnabled,
   });
@@ -76,7 +85,27 @@ export default function ScreensPage() {
   const totalCount = screensPage?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-  useEffect(() => setPage(1), [search]);
+  useEffect(() => setPage(1), [search, sortBy, order]);
+
+  const toggleSort = (field: ScreenSortBy) => {
+    if (sortBy === field) {
+      setOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(field);
+      setOrder(field === "screen_scheduled_at" ? "desc" : "asc");
+    }
+  };
+
+  const sortArrow = (field: ScreenSortBy) =>
+    sortBy === field ? (
+      order === "asc" ? (
+        <ArrowUp className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      ) : (
+        <ArrowDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      )
+    ) : null;
+
+  const tableColSpan = isCandidate ? 7 : 8;
 
   const updateMutation = useMutation({
     mutationFn: async ({ id, payload }: { id: string; payload: any }) => {
@@ -96,6 +125,7 @@ export default function ScreensPage() {
           <h1 className="text-2xl font-bold">Screen Calls</h1>
           <p className="text-sm text-muted-foreground">
             Manage scheduled screen calls and outcomes. Screen calls can be scheduled without an assessment when the workflow skips the assessment stage.
+            Times use US Eastern (EST/EDT). Default sort is newest scheduled first.
           </p>
         </div>
         <div className="relative max-w-md">
@@ -114,11 +144,41 @@ export default function ScreensPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                {!isCandidate && <TableHead>Candidate</TableHead>}
-                <TableHead>Client</TableHead>
-                <TableHead>Position</TableHead>
-                <TableHead>Scheduled</TableHead>
-                <TableHead>Mode</TableHead>
+                {!isCandidate && (
+                  <TableHead>
+                    <button
+                      type="button"
+                      className="flex items-center gap-1 font-medium hover:opacity-80"
+                      onClick={() => toggleSort("candidate_first_name")}
+                    >
+                      Candidate {sortArrow("candidate_first_name")}
+                    </button>
+                  </TableHead>
+                )}
+                <TableHead>
+                  <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleSort("client_name")}>
+                    Client {sortArrow("client_name")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleSort("position")}>
+                    Position {sortArrow("position")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 font-medium hover:opacity-80"
+                    onClick={() => toggleSort("screen_scheduled_at")}
+                  >
+                    Scheduled {sortArrow("screen_scheduled_at")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleSort("screen_mode")}>
+                    Mode {sortArrow("screen_mode")}
+                  </button>
+                </TableHead>
                 <TableHead>Resume / Qs</TableHead>
                 <TableHead>Outcome</TableHead>
                 <TableHead className="w-36">Actions</TableHead>
@@ -126,9 +186,17 @@ export default function ScreensPage() {
             </TableHeader>
             <TableBody>
               {isLoading ? (
-                <TableRow><TableCell colSpan={8} className="py-6 text-center text-muted-foreground">Loading…</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={tableColSpan} className="py-6 text-center text-muted-foreground">
+                    Loading…
+                  </TableCell>
+                </TableRow>
               ) : paginatedScreens.length === 0 ? (
-                <TableRow><TableCell colSpan={8} className="py-6 text-center text-muted-foreground">No screen calls</TableCell></TableRow>
+                <TableRow>
+                  <TableCell colSpan={tableColSpan} className="py-6 text-center text-muted-foreground">
+                    No screen calls
+                  </TableCell>
+                </TableRow>
               ) : paginatedScreens.map((s: any) => (
                 <TableRow key={s.id}>
                   {!isCandidate && <TableCell className="font-medium">{s.candidates?.first_name} {s.candidates?.last_name || ""}</TableCell>}

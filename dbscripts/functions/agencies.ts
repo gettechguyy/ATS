@@ -1,12 +1,20 @@
 import { supabase } from "../../src/integrations/supabase/client";
 
-export async function fetchAgencies() {
-  const { data, error } = await supabase
-    .from("agencies")
-    .select("*")
-    .order("name", { ascending: true });
+const AGENCIES_SORT_COLUMNS = ["name", "type", "is_active"] as const;
+
+export type FetchAgenciesOpts = {
+  sortBy?: (typeof AGENCIES_SORT_COLUMNS)[number];
+  order?: "asc" | "desc";
+};
+
+/** Full list; sorting runs in Postgres. */
+export async function fetchAgencies(opts?: FetchAgenciesOpts) {
+  const raw =
+    opts?.sortBy && AGENCIES_SORT_COLUMNS.includes(opts.sortBy as any) ? opts.sortBy : "name";
+  const sortBy = raw === "name" ? "name_sort" : raw;
+  const ascending = opts?.order === "asc";
+  const { data, error } = await supabase.from("agencies").select("*").order(sortBy, { ascending });
   if (error) {
-    // Table or column may not exist yet; return empty so UI does not crash
     console.warn("fetchAgencies failed (run agency migrations if needed):", error.message);
     return [];
   }

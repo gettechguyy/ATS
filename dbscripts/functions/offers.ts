@@ -31,39 +31,58 @@ export async function fetchOffersByRecruiter(recruiterId: string) {
   return data ?? [];
 }
 
-const OFFERS_SORT_COLUMNS = ["offered_at", "salary", "tentative_start_date", "created_at"] as const;
+const OFFERS_SORT_COLUMNS = [
+  "offered_at",
+  "salary",
+  "tentative_start_date",
+  "created_at",
+  "status",
+  "submission_client_name",
+  "submission_position",
+] as const;
 export type OffersPageOpts = { page: number; pageSize: number; sortBy?: string; order?: "asc" | "desc" };
 
-function offersOrder(sortBy?: string, order?: "asc" | "desc") {
-  const col = sortBy && OFFERS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "offered_at";
-  return { column: col, ascending: order === "asc" };
+function resolveOffersSortColumn(sortBy?: string): string {
+  return sortBy && OFFERS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "offered_at";
+}
+
+function applyOffersOrder(q: any, column: string, ascending: boolean): any {
+  if (column === "submission_client_name") {
+    return q.order("client_name_sort", { ascending, foreignTable: "submissions" });
+  }
+  if (column === "submission_position") {
+    return q.order("position", { ascending, foreignTable: "submissions" });
+  }
+  return q.order(column, { ascending });
 }
 
 export async function fetchAllOffersPaginated(opts: OffersPageOpts) {
   const { page, pageSize, sortBy, order } = opts;
-  const { column, ascending } = offersOrder(sortBy, order);
+  const column = resolveOffersSortColumn(sortBy);
+  const ascending = order === "asc";
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  const { data, error, count } = await supabase
+  let q = supabase
     .from("offers")
-    .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" })
-    .order(column, { ascending })
-    .range(from, to);
+    .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" });
+  q = applyOffersOrder(q, column, ascending);
+  const { data, error, count } = await q.range(from, to);
   if (error) throw error;
   return { data: data ?? [], total: count ?? 0 };
 }
 
 export async function fetchOffersByCandidatePaginated(candidateId: string, opts: OffersPageOpts) {
   const { page, pageSize, sortBy, order } = opts;
-  const { column, ascending } = offersOrder(sortBy, order);
+  const column = resolveOffersSortColumn(sortBy);
+  const ascending = order === "asc";
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  const { data, error, count } = await supabase
+  let q = supabase
     .from("offers")
     .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" })
-    .eq("candidate_id", candidateId)
-    .order(column, { ascending })
-    .range(from, to);
+    .eq("candidate_id", candidateId);
+  q = applyOffersOrder(q, column, ascending);
+  const { data, error, count } = await q.range(from, to);
   if (error) throw error;
   return { data: data ?? [], total: count ?? 0 };
 }
@@ -71,15 +90,16 @@ export async function fetchOffersByCandidatePaginated(candidateId: string, opts:
 /** Recruiter offers: filter by created_by only (no submission_id list). Requires offers.created_by column. */
 export async function fetchOffersByRecruiterPaginated(recruiterId: string, opts: OffersPageOpts) {
   const { page, pageSize, sortBy, order } = opts;
-  const { column, ascending } = offersOrder(sortBy, order);
+  const column = resolveOffersSortColumn(sortBy);
+  const ascending = order === "asc";
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  const { data, error, count } = await supabase
+  let q = supabase
     .from("offers")
     .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" })
-    .eq("created_by", recruiterId)
-    .order(column, { ascending })
-    .range(from, to);
+    .eq("created_by", recruiterId);
+  q = applyOffersOrder(q, column, ascending);
+  const { data, error, count } = await q.range(from, to);
   if (error) throw error;
   return { data: data ?? [], total: count ?? 0 };
 }
@@ -95,24 +115,26 @@ export async function fetchOffersByAgencyPaginated(agencyId: string, opts: Offer
   const recruiterIds = [...new Set((subs || []).map((x: { recruiter_id: string | null }) => x.recruiter_id).filter(Boolean))] as string[];
   const submissionIdSet = new Set(submissionIds);
   const { page, pageSize, sortBy, order } = opts;
-  const { column, ascending } = offersOrder(sortBy, order);
+  const column = resolveOffersSortColumn(sortBy);
+  const ascending = order === "asc";
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   if (recruiterIds.length === 0) {
-    const { data, error, count } = await supabase
+    let q = supabase
       .from("offers")
       .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" })
-      .in("submission_id", submissionIds)
-      .order(column, { ascending })
-      .range(from, to);
+      .in("submission_id", submissionIds);
+    q = applyOffersOrder(q, column, ascending);
+    const { data, error, count } = await q.range(from, to);
     if (error) throw error;
     return { data: data ?? [], total: count ?? 0 };
   }
-  const { data: rawData, error } = await supabase
+  let q = supabase
     .from("offers")
     .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))")
-    .in("created_by", recruiterIds)
-    .order(column, { ascending });
+    .in("created_by", recruiterIds);
+  q = applyOffersOrder(q, column, ascending);
+  const { data: rawData, error } = await q;
   if (error) throw error;
   const filtered = (rawData ?? []).filter((o: any) => submissionIdSet.has(o.submission_id));
   const total = filtered.length;

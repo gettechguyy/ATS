@@ -41,9 +41,11 @@ const appDateTimeFormatter = new Intl.DateTimeFormat("en-US", {
   hour: "numeric",
   minute: "2-digit",
   hour12: true,
+  /** Clarifies Eastern vs UTC in the UI (EDT / EST). */
+  timeZoneName: "short",
 });
 
-/** Format a stored timestamptz for UI in US Eastern (12-hour clock with AM/PM). No timezone suffix. */
+/** Format a stored timestamptz for UI in US Eastern (12-hour clock with AM/PM and EDT/EST). */
 export function formatInAppDateTime(isoOrDate: string | Date | null | undefined): string {
   if (isoOrDate == null || isoOrDate === "") return "—";
   const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;

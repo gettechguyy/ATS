@@ -12,7 +12,7 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Building2, Plus, UserPlus, Pencil } from "lucide-react";
+import { ArrowDown, ArrowUp, Building2, Plus, UserPlus, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Navigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,10 +31,19 @@ export default function Agencies() {
   const [editAgencyOpen, setEditAgencyOpen] = useState(false);
   const [editingAgency, setEditingAgency] = useState<{ id: string; name: string } | null>(null);
   const [editAgencyName, setEditAgencyName] = useState("");
+  type AgencySortKey = "name" | "type" | "is_active";
+  const [agencySort, setAgencySort] = useState<{ key: AgencySortKey; order: "asc" | "desc" }>({
+    key: "name",
+    order: "asc",
+  });
 
   const { data: agencies = [], isLoading } = useQuery({
-    queryKey: ["agencies"],
-    queryFn: fetchAgencies,
+    queryKey: ["agencies", agencySort],
+    queryFn: () =>
+      fetchAgencies({
+        sortBy: agencySort.key,
+        order: agencySort.order,
+      }),
     enabled: isAdmin,
   });
 
@@ -114,6 +123,21 @@ export default function Agencies() {
     onError: (err: Error) => toast.error(err.message),
   });
 
+  const toggleAgencySort = (key: AgencySortKey) => {
+    setAgencySort((prev) =>
+      prev.key === key ? { key, order: prev.order === "asc" ? "desc" : "asc" } : { key, order: key === "is_active" ? "desc" : "asc" }
+    );
+  };
+
+  const agencySortArrow = (key: AgencySortKey) =>
+    agencySort.key === key ? (
+      agencySort.order === "asc" ? (
+        <ArrowUp className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      ) : (
+        <ArrowDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      )
+    ) : null;
+
   const handleEditAgency = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingAgency?.id || !editAgencyName.trim()) return;
@@ -169,9 +193,21 @@ export default function Agencies() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Type</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleAgencySort("name")}>
+                      Name {agencySortArrow("name")}
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleAgencySort("type")}>
+                      Type {agencySortArrow("type")}
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleAgencySort("is_active")}>
+                      Status {agencySortArrow("is_active")}
+                    </button>
+                  </TableHead>
                   <TableHead className="w-64">Actions</TableHead>
                 </TableRow>
               </TableHeader>

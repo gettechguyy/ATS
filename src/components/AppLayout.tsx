@@ -213,7 +213,7 @@ export default function AppLayout() {
             )}
           >
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sidebar-accent to-sidebar-primary/30 text-sm font-semibold text-sidebar-primary">
-              {profile?.full_name?.charAt(0)?.toUpperCase() || "U"}
+              {profile?.full_name?.trim()?.charAt(0)?.toUpperCase() || "U"}
             </div>
             {!collapsed && (
               <div className="min-w-0 flex-1">

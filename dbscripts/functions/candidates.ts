@@ -37,8 +37,15 @@ export type CandidatesPageOpts = {
   technology?: string | null;
 };
 
+function candidateOrderColumn(sortField: string): string {
+  if (sortField === "first_name") return "first_name_sort";
+  if (sortField === "last_name") return "last_name_sort";
+  return sortField;
+}
+
 function buildCandidatesQuery(recruiterId?: string | null, agencyId?: string | null, agencyNotNullOnly?: boolean, sortBy?: string, order?: "asc" | "desc", technology?: string | null) {
-  const col = sortBy && CANDIDATES_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const rawCol = sortBy && CANDIDATES_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
+  const col = candidateOrderColumn(rawCol);
   const asc = order === "asc";
   let q = supabase.from("candidates").select("*", { count: "exact" }).order(col, { ascending: asc });
   if (recruiterId !== undefined && recruiterId !== null) q = q.eq("recruiter_id", recruiterId);

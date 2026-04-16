@@ -31,40 +31,59 @@ export async function fetchInterviewsByRecruiter(recruiterId: string) {
   return data ?? [];
 }
 
-const INTERVIEWS_SORT_COLUMNS = ["scheduled_at", "round_number", "created_at"] as const;
+const INTERVIEWS_SORT_COLUMNS = [
+  "scheduled_at",
+  "round_number",
+  "created_at",
+  "mode",
+  "status",
+  "submission_client_name",
+  "submission_position",
+] as const;
 export type InterviewsPageOpts = { page: number; pageSize: number; sortBy?: string; order?: "asc" | "desc" };
 
-function interviewsOrder(sortBy?: string, order?: "asc" | "desc") {
-  const col = sortBy && INTERVIEWS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "scheduled_at";
-  return { column: col, ascending: order === "asc" };
+function resolveInterviewsSortColumn(sortBy?: string): string {
+  return sortBy && INTERVIEWS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "scheduled_at";
+}
+
+function applyInterviewsOrder(q: any, column: string, ascending: boolean): any {
+  if (column === "submission_client_name") {
+    return q.order("client_name_sort", { ascending, foreignTable: "submissions" });
+  }
+  if (column === "submission_position") {
+    return q.order("position", { ascending, foreignTable: "submissions" });
+  }
+  return q.order(column, { ascending });
 }
 
 /** Server-side paginated. */
 export async function fetchAllInterviewsPaginated(opts: InterviewsPageOpts) {
   const { page, pageSize, sortBy, order } = opts;
-  const { column, ascending } = interviewsOrder(sortBy, order);
+  const column = resolveInterviewsSortColumn(sortBy);
+  const ascending = order === "asc";
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  const { data, error, count } = await supabase
+  let q = supabase
     .from("interviews")
-    .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" })
-    .order(column, { ascending })
-    .range(from, to);
+    .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" });
+  q = applyInterviewsOrder(q, column, ascending);
+  const { data, error, count } = await q.range(from, to);
   if (error) throw error;
   return { data: data ?? [], total: count ?? 0 };
 }
 
 export async function fetchInterviewsByCandidatePaginated(candidateId: string, opts: InterviewsPageOpts) {
   const { page, pageSize, sortBy, order } = opts;
-  const { column, ascending } = interviewsOrder(sortBy, order);
+  const column = resolveInterviewsSortColumn(sortBy);
+  const ascending = order === "asc";
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  const { data, error, count } = await supabase
+  let q = supabase
     .from("interviews")
     .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" })
-    .eq("candidate_id", candidateId)
-    .order(column, { ascending })
-    .range(from, to);
+    .eq("candidate_id", candidateId);
+  q = applyInterviewsOrder(q, column, ascending);
+  const { data, error, count } = await q.range(from, to);
   if (error) throw error;
   return { data: data ?? [], total: count ?? 0 };
 }
@@ -72,15 +91,16 @@ export async function fetchInterviewsByCandidatePaginated(candidateId: string, o
 /** Recruiter interviews: filter by created_by only (no submission_id list). Requires interviews.created_by column. */
 export async function fetchInterviewsByRecruiterPaginated(recruiterId: string, opts: InterviewsPageOpts) {
   const { page, pageSize, sortBy, order } = opts;
-  const { column, ascending } = interviewsOrder(sortBy, order);
+  const column = resolveInterviewsSortColumn(sortBy);
+  const ascending = order === "asc";
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
-  const { data, error, count } = await supabase
+  let q = supabase
     .from("interviews")
     .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" })
-    .eq("created_by", recruiterId)
-    .order(column, { ascending })
-    .range(from, to);
+    .eq("created_by", recruiterId);
+  q = applyInterviewsOrder(q, column, ascending);
+  const { data, error, count } = await q.range(from, to);
   if (error) throw error;
   return { data: data ?? [], total: count ?? 0 };
 }
@@ -96,24 +116,26 @@ export async function fetchInterviewsByAgencyPaginated(agencyId: string, opts: I
   const recruiterIds = [...new Set((subs || []).map((x: { recruiter_id: string | null }) => x.recruiter_id).filter(Boolean))] as string[];
   const submissionIdSet = new Set(submissionIds);
   const { page, pageSize, sortBy, order } = opts;
-  const { column, ascending } = interviewsOrder(sortBy, order);
+  const column = resolveInterviewsSortColumn(sortBy);
+  const ascending = order === "asc";
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   if (recruiterIds.length === 0) {
-    const { data, error, count } = await supabase
+    let q = supabase
       .from("interviews")
       .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" })
-      .in("submission_id", submissionIds)
-      .order(column, { ascending })
-      .range(from, to);
+      .in("submission_id", submissionIds);
+    q = applyInterviewsOrder(q, column, ascending);
+    const { data, error, count } = await q.range(from, to);
     if (error) throw error;
     return { data: data ?? [], total: count ?? 0 };
   }
-  const { data: rawData, error } = await supabase
+  let q = supabase
     .from("interviews")
     .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))")
-    .in("created_by", recruiterIds)
-    .order(column, { ascending });
+    .in("created_by", recruiterIds);
+  q = applyInterviewsOrder(q, column, ascending);
+  const { data: rawData, error } = await q;
   if (error) throw error;
   const filtered = (rawData ?? []).filter((i: any) => submissionIdSet.has(i.submission_id));
   const total = filtered.length;

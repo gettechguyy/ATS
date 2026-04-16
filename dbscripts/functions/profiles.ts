@@ -1,10 +1,28 @@
 import { supabase } from "../../src/integrations/supabase/client";
 
-export async function fetchAllProfiles() {
-  const { data } = await supabase
-    .from("profiles")
-    .select("*")
-    .order("created_at", { ascending: false });
+const PROFILES_LIST_SORT = ["full_name", "email", "created_at"] as const;
+export type ProfilesListSortOpts = {
+  sortBy?: (typeof PROFILES_LIST_SORT)[number];
+  order?: "asc" | "desc";
+};
+
+function profileOrderColumn(sortField: string): string {
+  if (sortField === "full_name") return "full_name_sort";
+  return sortField;
+}
+
+function applyProfilesListOrder(q: any, sortBy: string, ascending: boolean) {
+  return q.order(profileOrderColumn(sortBy), { ascending });
+}
+
+/** User management lists; ordering is applied in Postgres before rows are returned. */
+export async function fetchAllProfiles(opts?: ProfilesListSortOpts) {
+  const sortBy =
+    opts?.sortBy && PROFILES_LIST_SORT.includes(opts.sortBy as any) ? opts.sortBy : "created_at";
+  const ascending = opts?.order === "asc";
+  let q = supabase.from("profiles").select("*");
+  q = applyProfilesListOrder(q, sortBy, ascending);
+  const { data } = await q;
   return data || [];
 }
 
@@ -13,12 +31,13 @@ export async function fetchProfilesBySelect(fields: string) {
   return data || [];
 }
 
-export async function fetchProfilesByAgency(agencyId: string) {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("agency_id", agencyId)
-    .order("created_at", { ascending: false });
+export async function fetchProfilesByAgency(agencyId: string, opts?: ProfilesListSortOpts) {
+  const sortBy =
+    opts?.sortBy && PROFILES_LIST_SORT.includes(opts.sortBy as any) ? opts.sortBy : "created_at";
+  const ascending = opts?.order === "asc";
+  let q = supabase.from("profiles").select("*").eq("agency_id", agencyId);
+  q = applyProfilesListOrder(q, sortBy, ascending);
+  const { data, error } = await q;
   if (error) throw error;
   return data || [];
 }

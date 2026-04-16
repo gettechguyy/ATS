@@ -19,12 +19,39 @@ import { fetchAllOffersPaginated, fetchOffersByCandidatePaginated, fetchOffersBy
 const PAGE_SIZE = 10;
 const OFFER_STATUSES = ["Pending", "Accepted", "Declined"] as const;
 
+type OfferSortKey =
+  | "submission_client_name"
+  | "submission_position"
+  | "salary"
+  | "status"
+  | "tentative_start_date"
+  | "offered_at";
+
 export default function Offers() {
   const { user, profile, role, isCandidate, isRecruiter, isAgencyAdmin } = useAuth();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
-  const [sortBy, setSortBy] = useState("offered_at");
+  const [sortBy, setSortBy] = useState<OfferSortKey>("offered_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
+
+  const toggleOfferSort = (field: OfferSortKey) => {
+    if (sortBy === field) {
+      setOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(field);
+      if (field === "offered_at" || field === "salary" || field === "tentative_start_date") setOrder("desc");
+      else setOrder("asc");
+    }
+  };
+
+  const offerSortArrow = (field: OfferSortKey) =>
+    sortBy === field ? (
+      order === "asc" ? (
+        <ArrowUp className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      ) : (
+        <ArrowDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      )
+    ) : null;
 
   const { data: result, isLoading } = useQuery({
     queryKey: ["all-offers", role, user?.id, profile?.linked_candidate_id, profile?.agency_id, page, PAGE_SIZE, sortBy, order],
@@ -72,23 +99,35 @@ export default function Offers() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Candidate</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Position</TableHead>
                   <TableHead>
-                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("salary"); setOrder(sortBy === "salary" ? (order === "asc" ? "desc" : "asc") : "desc"); }}>
-                      Salary {sortBy === "salary" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleOfferSort("submission_client_name")}>
+                      Client {offerSortArrow("submission_client_name")}
                     </button>
                   </TableHead>
-                  <TableHead>Status</TableHead>
                   <TableHead>
-                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("tentative_start_date"); setOrder(sortBy === "tentative_start_date" ? (order === "asc" ? "desc" : "asc") : "desc"); }}>
-                      Start Date {sortBy === "tentative_start_date" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleOfferSort("submission_position")}>
+                      Position {offerSortArrow("submission_position")}
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleOfferSort("salary")}>
+                      Salary {offerSortArrow("salary")}
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleOfferSort("status")}>
+                      Status {offerSortArrow("status")}
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleOfferSort("tentative_start_date")}>
+                      Start Date {offerSortArrow("tentative_start_date")}
                     </button>
                   </TableHead>
                   <TableHead>Notes</TableHead>
                   <TableHead>
-                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => { setSortBy("offered_at"); setOrder(sortBy === "offered_at" ? (order === "asc" ? "desc" : "asc") : "desc"); }}>
-                      Date {sortBy === "offered_at" ? (order === "asc" ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />) : null}
+                    <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleOfferSort("offered_at")}>
+                      Date {offerSortArrow("offered_at")}
                     </button>
                   </TableHead>
                   <TableHead className="w-12"></TableHead>
