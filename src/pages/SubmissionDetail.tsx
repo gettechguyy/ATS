@@ -38,7 +38,7 @@ import {
   updateOfferStatus as updateOfferStatusFn,
 } from "../../dbscripts/functions/offers";
 import { updateCandidateStatus } from "../../dbscripts/functions/candidates";
-import { formatInAppDateTime } from "@/lib/appTimezone";
+import { formatInAppDateTime, screenScheduledAtToFormValues } from "@/lib/appTimezone";
 import {
   submissionHasAssessmentDetails,
   submissionHasScheduledScreen,
@@ -94,6 +94,9 @@ export default function SubmissionDetail() {
   const [screenQuestionsUrl, setScreenQuestionsUrl] = useState<string | null>(null);
   const [screenResponse, setScreenResponse] = useState<"None" | "Yes" | "No">("None");
   const [screenRejectionNote, setScreenRejectionNote] = useState("");
+  const [screenRescheduleOpen, setScreenRescheduleOpen] = useState(false);
+  const [screenRescheduleDate, setScreenRescheduleDate] = useState("");
+  const [screenRescheduleTime, setScreenRescheduleTime] = useState("");
   const pendingScreenAfterVendorRef = useRef<any | null>(null);
   const pendingAssessmentAfterVendorRef = useRef<any | null>(null);
 
@@ -516,7 +519,7 @@ export default function SubmissionDetail() {
         size="sm"
         className="mb-4"
         onClick={() => {
-          // Go back to the exact page the user came from (e.g., Submissions sheet, Screens).
+          // Go back to the exact page the user came from (e.g., Submissions).
           navigate(-1);
         }}
       >
@@ -584,7 +587,28 @@ export default function SubmissionDetail() {
             )}
             {submission.status === "Screen Call" && (
               <>
-                <div><span className="text-muted-foreground">Scheduled:</span> {formatInAppDateTime(submission.screen_scheduled_at)}</div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span>
+                    <span className="text-muted-foreground">Scheduled:</span> {formatInAppDateTime(submission.screen_scheduled_at)}
+                  </span>
+                  {!isCandidate && submission.screen_scheduled_at && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => {
+                        const { date, time } = screenScheduledAtToFormValues(submission.screen_scheduled_at);
+                        setScreenRescheduleDate(date);
+                        setScreenRescheduleTime(time);
+                        setScreenRescheduleOpen(true);
+                      }}
+                    >
+                      <Clock className="mr-1 h-3 w-3" />
+                      Reschedule
+                    </Button>
+                  )}
+                </div>
                 <div><span className="text-muted-foreground">Mode:</span> {submission.screen_mode || "—"}</div>
                 {submission.screen_link_or_phone && (
                   <div>
@@ -821,6 +845,70 @@ export default function SubmissionDetail() {
                   </div>
                 </div>
                 <Button type="submit" className="w-full" disabled={rescheduleInterview.isPending}>
+                  Confirm Reschedule
+                </Button>
+              </form>
+            </DialogContent>
+          </Dialog>
+
+          <Dialog
+            open={screenRescheduleOpen}
+            onOpenChange={(open) => {
+              setScreenRescheduleOpen(open);
+              if (!open) {
+                setScreenRescheduleDate("");
+                setScreenRescheduleTime("");
+              }
+            }}
+          >
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Reschedule Screen Call</DialogTitle>
+              </DialogHeader>
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  if (!screenRescheduleDate || !screenRescheduleTime) {
+                    toast.error("Please select date and time");
+                    return;
+                  }
+                  const scheduled_at = `${screenRescheduleDate}T${screenRescheduleTime}:00`;
+                  try {
+                    await updateSubmissionMutation.mutateAsync({
+                      id: submission.id,
+                      payload: { screen_scheduled_at: scheduled_at },
+                    });
+                    setScreenRescheduleOpen(false);
+                    setScreenRescheduleDate("");
+                    setScreenRescheduleTime("");
+                  } catch {
+                    /* mutation onError */
+                  }
+                }}
+                className="space-y-4"
+              >
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>New Date *</Label>
+                    <Input
+                      type="date"
+                      value={screenRescheduleDate}
+                      onChange={(ev) => setScreenRescheduleDate(ev.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>New Time *</Label>
+                    <Input
+                      type="time"
+                      value={screenRescheduleTime}
+                      onChange={(ev) => setScreenRescheduleTime(ev.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">Times use US Eastern (same as the rest of the app).</p>
+                <Button type="submit" className="w-full" disabled={updateSubmissionMutation.isPending}>
                   Confirm Reschedule
                 </Button>
               </form>

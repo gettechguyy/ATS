@@ -31,8 +31,12 @@ import {
   createSubmission as createSubmissionFn,
   fetchCandidateApplicationSummaries,
   fetchSubmissionsByCandidateWithDetails,
+  fetchSpecialSubmissionsPage,
   type ApplicationSummariesContext,
+  type PipelineStageFilter,
+  type SpecialSubmissionsRoleContext,
 } from "../../dbscripts/functions/submissions";
+import { formatInAppDateTime } from "@/lib/appTimezone";
 import { fetchCandidates, fetchCandidatesByRecruiter, fetchCandidatesBasic, fetchCandidatesByTeamLead } from "../../dbscripts/functions/candidates";
 import { fetchAgencies } from "../../dbscripts/functions/agencies";
 import { fetchProfilesByRole } from "../../dbscripts/functions/profiles";
@@ -49,6 +53,9 @@ const PAGE_SIZE = 10;
 const CANDIDATES_PAGE_SIZE = 10; // candidates per page in main table (non-candidate view)
 const APPLICATIONS_SHEET_PAGE_SIZE = 10;
 const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Assessment", "Screen Call", "Interview", "Rejected", "Offered"] as const;
+
+/** Staff list mode on Applications: grouped candidates vs pipeline slices (vendor, assessment, screen queues). */
+type ApplicationsListMode = "by_candidate" | "vendor_pipeline" | "assessment" | "screen_call";
 
 const statusColors: Record<string, string> = {
   Applied: "bg-secondary text-secondary-foreground",
@@ -95,6 +102,11 @@ export default function Submissions() {
   const [assessmentUploading, setAssessmentUploading] = useState(false);
 
   const [search, setSearch] = useState("");
+  const [applicationsListMode, setApplicationsListMode] = useState<ApplicationsListMode>("by_candidate");
+  const [pipelinePage, setPipelinePage] = useState(1);
+  const [pipelineSortBy, setPipelineSortBy] = useState<string>("created_at");
+  const [pipelineOrder, setPipelineOrder] = useState<"asc" | "desc">("desc");
+  const [pipelineStageFilter, setPipelineStageFilter] = useState<PipelineStageFilter>("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortBy, setSortBy] = useState("created_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
@@ -120,6 +132,51 @@ export default function Submissions() {
     return null;
   }, [isCandidate, isAgencyAdmin, profile?.agency_id, profile?.id, isRecruiter, user?.id, isTeamLead, isAdmin, isManager]);
 
+  const specialSubmissionsContext = useMemo((): SpecialSubmissionsRoleContext | null => {
+    if (isCandidate && profile?.linked_candidate_id) {
+      return { role: "candidate", linkedCandidateId: profile.linked_candidate_id };
+    }
+    if (isAgencyAdmin && profile?.agency_id) return { role: "agency", agencyId: profile.agency_id };
+    if (isRecruiter && user?.id) return { role: "recruiter", recruiterId: user.id };
+    if (isTeamLead && profile?.id) return { role: "team_lead", teamLeadProfileId: profile.id };
+    if (isAdmin || isManager) return { role: "admin" };
+    return null;
+  }, [
+    isCandidate,
+    profile?.linked_candidate_id,
+    profile?.agency_id,
+    profile?.id,
+    isAgencyAdmin,
+    isRecruiter,
+    user?.id,
+    isTeamLead,
+    isAdmin,
+    isManager,
+  ]);
+
+  const pipelineKind =
+    applicationsListMode === "vendor_pipeline"
+      ? ("vendor_responded" as const)
+      : applicationsListMode === "assessment"
+        ? ("assessment" as const)
+        : applicationsListMode === "screen_call"
+          ? ("screen_call" as const)
+          : null;
+
+  const showStaffPipeline = !isCandidate && applicationsListMode !== "by_candidate";
+
+  const specialSubmissionsEnabled =
+    specialSubmissionsContext != null &&
+    (isCandidate
+      ? !!profile?.linked_candidate_id
+      : isRecruiter
+        ? !!user?.id
+        : isAgencyAdmin
+          ? !!profile?.agency_id
+          : isTeamLead
+            ? !!profile?.id
+            : true);
+
   const { data: applicationSummaries = [], isLoading: loadingSummaries } = useQuery({
     queryKey: ["application-summaries", summariesContext, search, statusFilter, sortBy, order, candidateFilter],
     queryFn: async () => {
@@ -133,7 +190,34 @@ export default function Submissions() {
         candidateId: candidateIdOpt,
       });
     },
-    enabled: !!summariesContext && !!user,
+    enabled: !!summariesContext && !!user && (isCandidate || applicationsListMode === "by_candidate"),
+  });
+
+  const { data: pipelinePageResult, isLoading: loadingPipeline } = useQuery({
+    queryKey: [
+      "submissions-pipeline",
+      pipelineKind,
+      specialSubmissionsContext,
+      pipelinePage,
+      search,
+      pipelineSortBy,
+      pipelineOrder,
+      candidateFilter,
+      applicationsListMode === "vendor_pipeline" ? pipelineStageFilter : null,
+    ],
+    queryFn: () =>
+      fetchSpecialSubmissionsPage(pipelineKind!, specialSubmissionsContext!, {
+        page: pipelinePage,
+        pageSize: PAGE_SIZE,
+        search,
+        sortBy: pipelineSortBy,
+        order: pipelineOrder,
+        candidateId: candidateFilter !== "all" ? candidateFilter : null,
+        pipelineStage: applicationsListMode === "vendor_pipeline" ? pipelineStageFilter : "all",
+      }),
+    enabled: Boolean(
+      showStaffPipeline && specialSubmissionsEnabled && pipelineKind && specialSubmissionsContext
+    ),
   });
 
   const { data: submissionsResult, isLoading: loadingPaginated } = useQuery({
@@ -171,10 +255,50 @@ export default function Submissions() {
   const displayCandidates = !isCandidate
     ? filteredSummaries.slice((page - 1) * CANDIDATES_PAGE_SIZE, page * CANDIDATES_PAGE_SIZE)
     : [];
-  const totalCount = isCandidate ? (submissionsResult?.total ?? 0) : filteredSummaries.length;
-  const totalPages = isCandidate ? Math.max(1, Math.ceil(totalCount / PAGE_SIZE)) : Math.max(1, Math.ceil(totalCount / CANDIDATES_PAGE_SIZE));
-  const isLoading = isCandidate ? loadingPaginated : loadingSummaries;
-  useEffect(() => setPage(1), [search, statusFilter, sortBy, order, candidateFilter]);
+  const pipelineRows = pipelinePageResult?.data ?? [];
+  const pipelineTotal = pipelinePageResult?.total ?? 0;
+  const pipelineTotalPages = Math.max(1, Math.ceil(pipelineTotal / PAGE_SIZE));
+
+  const totalCount = isCandidate
+    ? (submissionsResult?.total ?? 0)
+    : showStaffPipeline
+      ? pipelineTotal
+      : filteredSummaries.length;
+  const totalPages = isCandidate
+    ? Math.max(1, Math.ceil(totalCount / PAGE_SIZE))
+    : showStaffPipeline
+      ? pipelineTotalPages
+      : Math.max(1, Math.ceil(totalCount / CANDIDATES_PAGE_SIZE));
+  const isLoading = isCandidate
+    ? loadingPaginated
+    : showStaffPipeline
+      ? loadingPipeline
+      : loadingSummaries;
+
+  useEffect(() => {
+    setPage(1);
+    setPipelinePage(1);
+  }, [search, statusFilter, sortBy, order, candidateFilter, applicationsListMode, pipelineStageFilter]);
+
+  useEffect(() => {
+    if (applicationsListMode !== "vendor_pipeline") {
+      setPipelineStageFilter("all");
+    }
+  }, [applicationsListMode]);
+
+  useEffect(() => {
+    if (applicationsListMode === "vendor_pipeline") {
+      setPipelineSortBy("created_at");
+      setPipelineOrder("desc");
+    } else if (applicationsListMode === "assessment") {
+      setPipelineSortBy("assessment_end_date");
+      setPipelineOrder("desc");
+    } else if (applicationsListMode === "screen_call") {
+      setPipelineSortBy("screen_scheduled_at");
+      setPipelineOrder("desc");
+    }
+    setPipelinePage(1);
+  }, [applicationsListMode]);
   useEffect(() => {
     if (applicationsSheet?.candidateId) setApplicationsSheetPage(1);
   }, [applicationsSheet?.candidateId]);
@@ -219,6 +343,7 @@ export default function Submissions() {
       queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
       queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
       queryClient.invalidateQueries({ queryKey: ["submissions-assessments"] });
+      queryClient.invalidateQueries({ queryKey: ["submissions-pipeline"] });
       toast.success("Status updated");
     },
   });
@@ -348,6 +473,7 @@ export default function Submissions() {
       queryClient.invalidateQueries({ queryKey: ["submissions-assessments"] });
       queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
       queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
+      queryClient.invalidateQueries({ queryKey: ["submissions-pipeline"] });
       toast.success("Submission updated");
       setVendorDialogOpen(false);
       setVendorSubmission(null);
@@ -456,19 +582,81 @@ export default function Submissions() {
     }
   };
 
+  const togglePipelineSort = (field: string) => {
+    if (pipelineSortBy === field) {
+      setPipelineOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setPipelineSortBy(field);
+      setPipelineOrder(
+        field === "created_at" || field === "screen_scheduled_at" || field === "assessment_end_date" ? "desc" : "asc"
+      );
+    }
+  };
+
+  const pipelineSortArrow = (field: string) =>
+    pipelineSortBy === field ? (
+      pipelineOrder === "asc" ? (
+        <ArrowUp className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      ) : (
+        <ArrowDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
+      )
+    ) : null;
+
   return (
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">{isCandidate ? "My Applications" : "Applications"}</h1>
-        <p className="text-sm text-muted-foreground">{isCandidate ? "Your job applications" : "Track all job applications"}</p>
+        <p className="text-sm text-muted-foreground">
+          {isCandidate
+            ? "Your job applications"
+            : showStaffPipeline
+              ? applicationsListMode === "vendor_pipeline"
+                ? "Vendor pipeline: use Stage to filter Vendor Responded, Assessment, or Screen Call (same combined scope as the Submission list)."
+                : applicationsListMode === "assessment"
+                  ? "Submissions in Assessment status."
+                  : "Screen calls and scheduled screens."
+              : "Track all job applications. Use List to open vendor, assessment, or screen call queues; use Status when viewing by candidate."}
+        </p>
       </div>
 
       <Card className="mb-4">
-        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row">
-            <div className="relative flex-1">
+        <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:flex-wrap">
+            <div className="relative min-w-[200px] flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input placeholder="Search applications..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
           </div>
+          {!isCandidate && (
+            <Select
+              value={applicationsListMode}
+              onValueChange={(v) => setApplicationsListMode(v as ApplicationsListMode)}
+            >
+              <SelectTrigger className="w-[min(100%,280px)] sm:w-[280px]">
+                <SelectValue placeholder="List" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="by_candidate">By candidate</SelectItem>
+                <SelectItem value="vendor_pipeline">Vendor & pipeline</SelectItem>
+                <SelectItem value="assessment">Assessments</SelectItem>
+                <SelectItem value="screen_call">Screen calls</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+          {!isCandidate && applicationsListMode === "vendor_pipeline" && (
+            <Select
+              value={pipelineStageFilter}
+              onValueChange={(v) => setPipelineStageFilter(v as PipelineStageFilter)}
+            >
+              <SelectTrigger className="w-[min(100%,240px)] sm:w-[220px]">
+                <SelectValue placeholder="Stage" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All stages</SelectItem>
+                <SelectItem value="Vendor Responded">Vendor Responded</SelectItem>
+                <SelectItem value="Assessment">Assessment</SelectItem>
+                <SelectItem value="Screen Call">Screen Call</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           {(isAdmin || isRecruiter || isAgencyAdmin) && (
             <div className="flex items-center gap-2">
               <Button
@@ -494,6 +682,7 @@ export default function Submissions() {
               </Button>
             </div>
           )}
+          {(!isCandidate && applicationsListMode === "by_candidate") || isCandidate ? (
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger className="w-52">
               <SelectValue placeholder="Filter by status" />
@@ -505,6 +694,7 @@ export default function Submissions() {
               ))}
             </SelectContent>
           </Select>
+          ) : null}
           {!isCandidate && (
             <Select value={candidateFilter} onValueChange={setCandidateFilter}>
               <SelectTrigger className="w-48">
@@ -560,6 +750,95 @@ export default function Submissions() {
                         ) : "Date"}
                       </TableHead>
                     </>
+                  ) : showStaffPipeline ? (
+                    applicationsListMode === "vendor_pipeline" ? (
+                      <>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("candidate_first_name")}>
+                            Candidate {pipelineSortArrow("candidate_first_name")}
+                          </button>
+                        </TableHead>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("client_name")}>
+                            Client {pipelineSortArrow("client_name")}
+                          </button>
+                        </TableHead>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("position")}>
+                            Position {pipelineSortArrow("position")}
+                          </button>
+                        </TableHead>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("status")}>
+                            Status {pipelineSortArrow("status")}
+                          </button>
+                        </TableHead>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("created_at")}>
+                            Date {pipelineSortArrow("created_at")}
+                          </button>
+                        </TableHead>
+                        <TableHead className="w-12 text-right">Details</TableHead>
+                      </>
+                    ) : applicationsListMode === "assessment" ? (
+                      <>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("candidate_first_name")}>
+                            Candidate {pipelineSortArrow("candidate_first_name")}
+                          </button>
+                        </TableHead>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("client_name")}>
+                            Client {pipelineSortArrow("client_name")}
+                          </button>
+                        </TableHead>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("position")}>
+                            Position {pipelineSortArrow("position")}
+                          </button>
+                        </TableHead>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("assessment_end_date")}>
+                            Assessment end {pipelineSortArrow("assessment_end_date")}
+                          </button>
+                        </TableHead>
+                        <TableHead className="w-12 text-right">Details</TableHead>
+                      </>
+                    ) : (
+                      <>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("candidate_first_name")}>
+                            Candidate {pipelineSortArrow("candidate_first_name")}
+                          </button>
+                        </TableHead>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("client_name")}>
+                            Client {pipelineSortArrow("client_name")}
+                          </button>
+                        </TableHead>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("position")}>
+                            Position {pipelineSortArrow("position")}
+                          </button>
+                        </TableHead>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("screen_scheduled_at")}>
+                            Scheduled {pipelineSortArrow("screen_scheduled_at")}
+                          </button>
+                        </TableHead>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("screen_mode")}>
+                            Mode {pipelineSortArrow("screen_mode")}
+                          </button>
+                        </TableHead>
+                        <TableHead>
+                          <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => togglePipelineSort("status")}>
+                            Status {pipelineSortArrow("status")}
+                          </button>
+                        </TableHead>
+                        <TableHead className="w-12 text-right">Details</TableHead>
+                      </>
+                    )
                   ) : (
                     <>
                       <TableHead>Candidate</TableHead>
@@ -603,6 +882,101 @@ export default function Submissions() {
                       </TableRow>
                     ))
                   )
+                ) : showStaffPipeline ? (
+                  pipelineRows.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={applicationsListMode === "screen_call" ? 7 : applicationsListMode === "assessment" ? 5 : 6}
+                        className="py-8 text-center text-muted-foreground"
+                      >
+                        No submissions match your filters
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    pipelineRows.map((s: any) => {
+                      if (applicationsListMode === "vendor_pipeline") {
+                        return (
+                          <TableRow key={s.id}>
+                            <TableCell className="font-medium">
+                              {s.candidates?.first_name} {s.candidates?.last_name || ""}
+                            </TableCell>
+                            <TableCell>{s.client_name}</TableCell>
+                            <TableCell>{s.position}</TableCell>
+                            <TableCell>
+                              <Select value={s.status} onValueChange={(v) => handleApplicationStatusChange(s, v)}>
+                                <SelectTrigger className="h-8 w-[160px]">
+                                  <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {SUBMISSION_STATUSES.map((st) => (
+                                    <SelectItem key={st} value={st}>
+                                      {st}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {s.created_at ? new Date(s.created_at).toLocaleDateString() : "—"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                                <Link to={`/submissions/${s.id}`} aria-label="Open submission detail">
+                                  <Eye className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+                      if (applicationsListMode === "assessment") {
+                        return (
+                          <TableRow key={s.id}>
+                            <TableCell className="font-medium">
+                              {s.candidates?.first_name} {s.candidates?.last_name || ""}
+                            </TableCell>
+                            <TableCell>{s.client_name}</TableCell>
+                            <TableCell>{s.position}</TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {s.assessment_end_date
+                                ? new Date(`${s.assessment_end_date}T12:00:00`).toLocaleDateString()
+                                : "—"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                                <Link to={`/submissions/${s.id}`} aria-label="Open submission detail">
+                                  <Eye className="h-4 w-4" />
+                                </Link>
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      }
+                      return (
+                        <TableRow key={s.id}>
+                          <TableCell className="font-medium">
+                            {s.candidates?.first_name} {s.candidates?.last_name || ""}
+                          </TableCell>
+                          <TableCell>{s.client_name}</TableCell>
+                          <TableCell>{s.position}</TableCell>
+                          <TableCell className="text-muted-foreground">{formatInAppDateTime(s.screen_scheduled_at)}</TableCell>
+                          <TableCell className="text-muted-foreground">{s.screen_mode || "—"}</TableCell>
+                          <TableCell>
+                            <Badge className={statusColors[s.status] || ""} variant="outline">
+                              {s.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                              <Link to={`/submissions/${s.id}`} aria-label="Open submission detail">
+                                <Eye className="h-4 w-4" />
+                              </Link>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )
                 ) : displayCandidates.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">No candidates with applications found</TableCell>
@@ -642,15 +1016,32 @@ export default function Submissions() {
             <p className="text-sm text-muted-foreground">
               {isCandidate
                 ? `Showing ${(page - 1) * PAGE_SIZE + 1}–${Math.min(page * PAGE_SIZE, totalCount)} of ${totalCount} applications`
-                : `Showing ${(page - 1) * CANDIDATES_PAGE_SIZE + 1}–${Math.min(page * CANDIDATES_PAGE_SIZE, totalCount)} of ${totalCount} candidates`}
+                : showStaffPipeline
+                  ? `Showing ${(pipelinePage - 1) * PAGE_SIZE + 1}–${Math.min(pipelinePage * PAGE_SIZE, totalCount)} of ${totalCount} submissions`
+                  : `Showing ${(page - 1) * CANDIDATES_PAGE_SIZE + 1}–${Math.min(page * CANDIDATES_PAGE_SIZE, totalCount)} of ${totalCount} candidates`}
             </p>
             <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (showStaffPipeline) setPipelinePage((p) => Math.max(1, p - 1));
+                  else setPage((p) => Math.max(1, p - 1));
+                }}
+                disabled={showStaffPipeline ? pipelinePage <= 1 : page <= 1}
+              >
                 <ChevronLeft className="h-4 w-4" /> Previous
               </Button>
-              <Select value={String(page)} onValueChange={(v) => setPage(Number(v))}>
+              <Select
+                value={String(showStaffPipeline ? pipelinePage : page)}
+                onValueChange={(v) => {
+                  const n = Number(v);
+                  if (showStaffPipeline) setPipelinePage(n);
+                  else setPage(n);
+                }}
+              >
                 <SelectTrigger className="w-[7rem] h-8">
-                  <SelectValue>Page {page} of {totalPages}</SelectValue>
+                  <SelectValue>Page {showStaffPipeline ? pipelinePage : page} of {totalPages}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {Array.from({ length: totalPages }, (_, i) => i + 1).map((p) => (
@@ -658,7 +1049,15 @@ export default function Submissions() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button variant="outline" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (showStaffPipeline) setPipelinePage((p) => Math.min(totalPages, p + 1));
+                  else setPage((p) => Math.min(totalPages, p + 1));
+                }}
+                disabled={showStaffPipeline ? pipelinePage >= totalPages : page >= totalPages}
+              >
                 Next <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
@@ -801,6 +1200,7 @@ export default function Submissions() {
               toast.success("Application added");
               queryClient.invalidateQueries({ queryKey: ["submissions"] });
               queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
+              queryClient.invalidateQueries({ queryKey: ["submissions-pipeline"] });
               setAddDialogOpen(false);
               // reset form
               setNewCandidateId(null);

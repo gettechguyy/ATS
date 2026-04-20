@@ -53,6 +53,23 @@ export function formatInAppDateTime(isoOrDate: string | Date | null | undefined)
   return appDateTimeFormatter.format(d);
 }
 
+/**
+ * Split a stored timestamptz into `yyyy-MM-dd` and `HH:mm` in US Eastern for HTML date/time inputs.
+ * Matches how scheduled screen calls are edited elsewhere (naive local combine to timestamptz).
+ */
+export function screenScheduledAtToFormValues(isoOrDate: string | Date | null | undefined): {
+  date: string;
+  time: string;
+} {
+  if (isoOrDate == null || isoOrDate === "") return { date: "", time: "" };
+  const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
+  if (Number.isNaN(d.getTime())) return { date: "", time: "" };
+  return {
+    date: formatInTimeZone(d, APP_TIME_ZONE, "yyyy-MM-dd"),
+    time: formatInTimeZone(d, APP_TIME_ZONE, "HH:mm"),
+  };
+}
+
 export function easternPresetToday(): { from: Date; to: Date } {
   const z = toZonedTime(new Date(), APP_TIME_ZONE);
   return {

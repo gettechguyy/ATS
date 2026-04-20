@@ -22,12 +22,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Link } from "react-router-dom";
-import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronLeft, ChevronRight, Eye, Search } from "lucide-react";
 import { toast } from "sonner";
 import {
   createSubmission as createSubmissionFn,
   updateSubmissionStatus,
   fetchSpecialSubmissionsPage,
+  type PipelineStageFilter,
   type SpecialSubmissionsRoleContext,
 } from "../../dbscripts/functions/submissions";
 import { fetchCandidates, fetchCandidatesByRecruiter, fetchCandidatesBasic } from "../../dbscripts/functions/candidates";
@@ -65,6 +66,7 @@ export default function VendorSubmissions() {
   const [sortBy, setSortBy] = useState<VendorSortBy>("created_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [candidateFilter, setCandidateFilter] = useState<string>("all");
+  const [pipelineStageFilter, setPipelineStageFilter] = useState<PipelineStageFilter>("all");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newCandidateId, setNewCandidateId] = useState<string | null>(null);
   const [newClientName, setNewClientName] = useState("");
@@ -147,6 +149,7 @@ export default function VendorSubmissions() {
       page,
       search,
       candidateFilter,
+      pipelineStageFilter,
       sortBy,
       order,
     ],
@@ -159,6 +162,7 @@ export default function VendorSubmissions() {
         order,
         candidateId:
           !isCandidate && candidateFilter !== "all" ? candidateFilter : null,
+        pipelineStage: pipelineStageFilter,
       }),
     enabled: vendorPageEnabled,
   });
@@ -167,7 +171,7 @@ export default function VendorSubmissions() {
   const totalCount = vendorPage?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
-  useEffect(() => setPage(1), [search, candidateFilter, sortBy, order]);
+  useEffect(() => setPage(1), [search, candidateFilter, pipelineStageFilter, sortBy, order]);
 
   const toggleVendorSort = (field: VendorSortBy) => {
     if (sortBy === field) {
@@ -555,6 +559,22 @@ export default function VendorSubmissions() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="min-w-[220px]">
+              <Select
+                value={pipelineStageFilter}
+                onValueChange={(v) => setPipelineStageFilter(v as PipelineStageFilter)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Stage" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All stages</SelectItem>
+                  <SelectItem value="Vendor Responded">Vendor Responded</SelectItem>
+                  <SelectItem value="Assessment">Assessment</SelectItem>
+                  <SelectItem value="Screen Call">Screen Call</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         )}
       </div>
@@ -595,7 +615,7 @@ export default function VendorSubmissions() {
                     Date {vendorSortArrow("created_at")}
                   </button>
                 </TableHead>
-                <TableHead className="w-24">Actions</TableHead>
+                <TableHead className="w-12 text-right">Details</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -641,9 +661,11 @@ export default function VendorSubmissions() {
                     <TableCell className="text-muted-foreground">
                       {s.created_at ? new Date(s.created_at).toLocaleDateString() : "—"}
                     </TableCell>
-                    <TableCell>
-                      <Button variant="ghost" size="sm" asChild>
-                        <Link to={`/submissions/${s.id}`}>View</Link>
+                    <TableCell className="text-right">
+                      <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
+                        <Link to={`/submissions/${s.id}`} aria-label="Open submission detail">
+                          <Eye className="h-4 w-4" />
+                        </Link>
                       </Button>
                     </TableCell>
                   </TableRow>

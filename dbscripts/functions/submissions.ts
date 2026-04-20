@@ -366,6 +366,9 @@ export async function fetchSubmissionsByCandidate(candidateId: string) {
   return data || [];
 }
 
+/** Narrows `vendor_responded` special list (server-side, preserves pagination). Ignored for other kinds. */
+export type PipelineStageFilter = "all" | "Vendor Responded" | "Assessment" | "Screen Call";
+
 export type SubmissionsPageOpts = {
   page: number;
   pageSize: number;
@@ -374,6 +377,7 @@ export type SubmissionsPageOpts = {
   sortBy?: string;
   order?: "asc" | "desc";
   candidateId?: string | null;
+  pipelineStage?: PipelineStageFilter;
 };
 
 function buildSubmissionsQuery(recruiterId?: string, candidateId?: string, sortBy?: string, order?: "asc" | "desc") {
@@ -498,6 +502,7 @@ export type SpecialSubmissionsRoleContext =
 /**
  * Server-paginated special lists (no full-table fetch).
  * - vendor_responded: Vendor Responded OR Assessment OR Screen Call OR scheduled screen (screen_scheduled_at set).
+ *   Optional `pipelineStage` narrows: Vendor Responded | Assessment | Screen Call (latter = status Screen Call OR any scheduled screen).
  * - screen_call: Screen Call OR scheduled screen (same rows as the Screens page).
  * - assessment: status Assessment only (Assessments page).
  *
@@ -509,7 +514,7 @@ export async function fetchSpecialSubmissionsPage(
   ctx: SpecialSubmissionsRoleContext,
   opts: SubmissionsPageOpts
 ): Promise<{ data: any[]; total: number }> {
-  const { page, pageSize, search, sortBy, order, candidateId } = opts;
+  const { page, pageSize, search, sortBy, order, candidateId, pipelineStage = "all" } = opts;
   const defaultSort =
     kind === "screen_call"
       ? "screen_scheduled_at"
@@ -527,6 +532,17 @@ export async function fetchSpecialSubmissionsPage(
 
   const applyKindFilter = (q: any) => {
     if (kind === "vendor_responded") {
+      if (pipelineStage && pipelineStage !== "all") {
+        if (pipelineStage === "Vendor Responded") {
+          return q.eq("status", "Vendor Responded");
+        }
+        if (pipelineStage === "Assessment") {
+          return q.eq("status", "Assessment");
+        }
+        if (pipelineStage === "Screen Call") {
+          return q.or('status.eq."Screen Call",screen_scheduled_at.not.is.null');
+        }
+      }
       return q.or(vendorPlusScreenOr);
     }
     if (kind === "assessment") {
