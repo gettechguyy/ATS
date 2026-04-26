@@ -57,7 +57,8 @@ const pfInput = "h-9 px-2.5 py-1.5 w-full min-w-0";
 
 export default function CandidateDetail() {
   const { id } = useParams<{ id: string }>();
-  const { user, profile, isAdmin, isRecruiter, isCandidate, isManager, isAgencyAdmin } = useAuth();
+  const { user, profile, isAdmin, isRecruiter, isCandidate, isManager, isAgencyAdmin, isMasterCompany } = useAuth();
+  const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const queryClient = useQueryClient();
   const [subDialogOpen, setSubDialogOpen] = useState(false);
   const [editFirstName, setEditFirstName] = useState("");
@@ -109,15 +110,15 @@ export default function CandidateDetail() {
   const isOwnProfile = isCandidate && profile?.linked_candidate_id === id;
 
   const { data: candidate, isLoading, isError, error: candidateError, refetch: refetchCandidate } = useQuery({
-    queryKey: ["candidate", id],
-    queryFn: () => fetchCandidateById(id!),
-    enabled: !!id,
+    queryKey: ["candidate", id, profile?.company_id],
+    queryFn: () => fetchCandidateById(id!, profile?.company_id ?? undefined),
+    enabled: !!id && !!profile?.company_id,
   });
 
   const { data: agencies } = useQuery({
-    queryKey: ["agencies"],
-    queryFn: fetchAgencies,
-    enabled: !isAgencyAdmin,
+    queryKey: ["agencies", profile?.company_id],
+    queryFn: () => fetchAgencies(profile!.company_id!),
+    enabled: !isAgencyScope && isMasterCompany && !!profile?.company_id,
   });
 
   useEffect(() => {
@@ -163,9 +164,14 @@ export default function CandidateDetail() {
   }, [candidate?.id]);
 
   const { data: submissionsResult } = useQuery({
-    queryKey: ["candidate-submissions", id, applicationsPage, APPLICATIONS_PAGE_SIZE],
-    queryFn: () => fetchSubmissionsByCandidatePaginated(id!, { page: applicationsPage, pageSize: APPLICATIONS_PAGE_SIZE }),
-    enabled: !!id,
+    queryKey: ["candidate-submissions", id, applicationsPage, APPLICATIONS_PAGE_SIZE, profile?.company_id],
+    queryFn: () =>
+      fetchSubmissionsByCandidatePaginated(id!, {
+        page: applicationsPage,
+        pageSize: APPLICATIONS_PAGE_SIZE,
+        companyId: profile!.company_id!,
+      }),
+    enabled: !!id && !!profile?.company_id,
   });
   const submissions = submissionsResult?.data ?? [];
   const submissionsTotal = submissionsResult?.total ?? 0;
@@ -189,11 +195,12 @@ export default function CandidateDetail() {
   });
 
   const { data: recruiters } = useQuery({
-    queryKey: ["recruiters", isAgencyAdmin ? profile?.agency_id : "master"],
-    queryFn: () => fetchProfilesByRole("recruiter", isAgencyAdmin ? profile?.agency_id ?? undefined : undefined),
-    enabled: (isAdmin || isAgencyAdmin) && !!candidate,
+    queryKey: ["recruiters", isAgencyScope ? profile?.agency_id : "master", profile?.company_id],
+    queryFn: () =>
+      fetchProfilesByRole("recruiter", isAgencyScope ? profile?.agency_id ?? undefined : undefined, profile?.company_id),
+    enabled: (isAdmin || isAgencyScope) && !!candidate && !!profile?.company_id,
   });
-  const canAssignRecruiter = isAdmin || (isAgencyAdmin && candidate?.agency_id === profile?.agency_id);
+  const canAssignRecruiter = isAdmin || (isAgencyScope && candidate?.agency_id === profile?.agency_id);
 
   const updateStatus = useMutation({
     mutationFn: (status: string) => updateCandidateStatus(id!, status),
@@ -336,19 +343,19 @@ export default function CandidateDetail() {
     );
   }
 
-  if (isAgencyAdmin && candidate.agency_id !== profile?.agency_id) {
+  if (isAgencyScope && candidate.agency_id !== profile?.agency_id) {
     return <Navigate to="/candidates" replace />;
   }
 
   // Only master admin (not agency admin) and the candidate themselves can see personal contact details.
-  const canSeePersonalDetails = (isAdmin && !isAgencyAdmin) || isOwnProfile;
+  const canSeePersonalDetails = (isAdmin && !isAgencyScope) || isOwnProfile;
   const displayEmail = canSeePersonalDetails ? (candidate.email || "—") : "—";
   const displayPhone = canSeePersonalDetails ? (candidate.phone || "—") : "—";
   const showVisaStatus = isAdmin || isRecruiter || isOwnProfile;
   // Main company sees "Name (Agency Name)" for agency-assigned candidates; agency viewer sees name only.
   const displayCandidateTitle = () => {
     const name = `${candidate.first_name || ""} ${(candidate.last_name || "").trim()}`.trim() || "—";
-    if (isAgencyAdmin || !candidate.agency_id || !agencies?.length) return name;
+    if (!isMasterCompany || isAgencyScope || !candidate.agency_id || !agencies?.length) return name;
     const agency = (agencies as any[]).find((a: any) => a.id === candidate.agency_id);
     return agency ? `${name} (${agency.name})` : name;
   };
@@ -357,12 +364,12 @@ export default function CandidateDetail() {
     if (!recruiterId) return "—";
     const r = recruiters?.find((x: any) => x.user_id === recruiterId);
     const name = r?.full_name ?? recruiterProfile?.full_name ?? "—";
-    if (isAgencyAdmin || !r?.agency_id || !agencies?.length) return name;
+    if (!isMasterCompany || isAgencyScope || !r?.agency_id || !agencies?.length) return name;
     const agency = (agencies as any[]).find((a: any) => a.id === r.agency_id);
     return agency ? `${name} (${agency.name})` : name;
   };
 
-  const canEditBasicIdentity = isOwnProfile || (isAdmin && !isAgencyAdmin);
+  const canEditBasicIdentity = isOwnProfile || (isAdmin && !isAgencyScope);
   const canSaveProfile = isOwnProfile || isAdmin;
 
   try {
@@ -535,7 +542,7 @@ export default function CandidateDetail() {
                             currentUrl={candidate.resume_url}
                             onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
                           />
-                        ) : (isAdmin || isManager || isRecruiter || isAgencyAdmin || isOwnProfile) ? (
+                        ) : (isAdmin || isManager || isRecruiter || isAgencyScope || isOwnProfile) ? (
                           candidate.resume_url ? (
                             <span className="inline-flex items-center gap-2">
                               <a href={candidate.resume_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View Resume</a>
@@ -554,7 +561,7 @@ export default function CandidateDetail() {
                             currentUrl={(candidate as any).cover_letter_url || null}
                             onUploaded={() => queryClient.invalidateQueries({ queryKey: ["candidate", id] })}
                           />
-                        ) : (isAdmin || isManager || isRecruiter || isAgencyAdmin || isOwnProfile) ? (
+                        ) : (isAdmin || isManager || isRecruiter || isAgencyScope || isOwnProfile) ? (
                           (candidate as any).cover_letter_url ? (
                             <span className="inline-flex items-center gap-2">
                               <a href={(candidate as any).cover_letter_url} target="_blank" rel="noopener noreferrer" className="text-xs text-info underline">View Cover Letter</a>

@@ -6,6 +6,7 @@ import {
   loginWithEmailPassword,
   createAppUser,
   type SessionUser,
+  type SessionCompany,
 } from "@/lib/authApi";
 
 export type AppRole = "admin" | "recruiter" | "candidate" | "manager" | "team_lead" | "agency_admin";
@@ -20,6 +21,7 @@ export interface Profile {
   created_at: string;
   updated_at: string;
   agency_id?: string | null;
+  company_id?: string | null;
 }
 
 /** App user (from our app_users table + session). Same shape as before so user.id works everywhere. */
@@ -32,6 +34,9 @@ interface AuthContextType {
   user: AppUser | null;
   profile: Profile | null;
   role: AppRole | null;
+  company: SessionCompany | null;
+  /** Out-marketing agency model (Agencies page, agency assignment, agency_admin) is only for the main tenant. */
+  isMasterCompany: boolean;
   isAdmin: boolean;
   isRecruiter: boolean;
   isTeamLead: boolean;
@@ -40,6 +45,8 @@ interface AuthContextType {
   isAgencyAdmin: boolean;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
+  /** Apply a session (e.g. after company registration) without a separate login. */
+  establishSession: (session: SessionUser) => void;
   createUser: (
     email: string,
     password: string,
@@ -69,6 +76,7 @@ function sessionToProfile(s: SessionUser): Profile | null {
     created_at: p.created_at,
     updated_at: p.updated_at,
     agency_id: p.agency_id ?? null,
+    company_id: p.company_id ?? null,
   };
 }
 
@@ -76,6 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AppUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [role, setRole] = useState<AppRole | null>(null);
+  const [company, setCompany] = useState<SessionCompany | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -84,10 +93,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(sessionToUser(session));
       setProfile(sessionToProfile(session));
       setRole((session.role as AppRole) ?? null);
+      setCompany(session.company ?? null);
     } else {
       setUser(null);
       setProfile(null);
       setRole(null);
+      setCompany(null);
     }
     setLoading(false);
   }, []);
@@ -100,7 +111,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(sessionToUser(data));
     setProfile(sessionToProfile(data));
     setRole((data.role as AppRole) ?? null);
+    setCompany(data.company ?? null);
     return { error: null };
+  };
+
+  const establishSession = (data: SessionUser) => {
+    setStoredSession(data);
+    setUser(sessionToUser(data));
+    setProfile(sessionToProfile(data));
+    setRole((data.role as AppRole) ?? null);
+    setCompany(data.company ?? null);
   };
 
   const createUser = async (
@@ -127,6 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setProfile(null);
     setRole(null);
+    setCompany(null);
   };
 
   return (
@@ -135,6 +156,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         user,
         profile,
         role,
+        company,
+        isMasterCompany: company?.slug === "thetechguyy",
         isAdmin: role === "admin",
         isRecruiter: role === "recruiter",
         isTeamLead: role === "team_lead",
@@ -143,6 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAgencyAdmin: role === "agency_admin",
         loading,
         signIn,
+        establishSession,
         createUser,
         signOut,
       }}

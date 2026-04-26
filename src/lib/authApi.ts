@@ -2,6 +2,12 @@ import { supabase } from "@/integrations/supabase/client";
 
 const SESSION_KEY = "app_session";
 
+export interface SessionCompany {
+  id: string;
+  name: string;
+  slug: string;
+}
+
 export interface SessionUser {
   user_id: string;
   email: string;
@@ -15,8 +21,10 @@ export interface SessionUser {
     created_at: string;
     updated_at: string;
     agency_id?: string | null;
+    company_id?: string | null;
   } | null;
   role: string;
+  company?: SessionCompany | null;
 }
 
 export function getStoredSession(): SessionUser | null {
@@ -138,4 +146,31 @@ export async function updateAppUserDetails(
   const { data, error } = await supabase.rpc("update_app_user_details", args);
   if (error) return { data: null, error: error as Error };
   return { data: data ?? null, error: null };
+}
+
+export async function registerCompany(
+  companyName: string,
+  adminFullName: string,
+  adminEmail: string,
+  adminPassword: string
+): Promise<{ data: SessionUser | null; error: Error | null }> {
+  const name = companyName?.trim();
+  const fullName = adminFullName?.trim();
+  const email = adminEmail?.trim()?.toLowerCase();
+  if (!name || !fullName || !email || !adminPassword) {
+    return { data: null, error: new Error("All fields are required") };
+  }
+  if (adminPassword.length < 8) {
+    return { data: null, error: new Error("Password must be at least 8 characters") };
+  }
+  const { data, error } = await supabase.rpc("register_company", {
+    p_company_name: name,
+    p_admin_email: email,
+    p_admin_password: adminPassword,
+    p_admin_full_name: fullName,
+  });
+  if (error) return { data: null, error: error as Error };
+  const payload = data as unknown as SessionUser | null;
+  if (!payload?.user_id) return { data: null, error: new Error("Registration failed") };
+  return { data: payload, error: null };
 }

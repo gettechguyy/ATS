@@ -8,12 +8,16 @@ export type FetchAgenciesOpts = {
 };
 
 /** Full list; sorting runs in Postgres. */
-export async function fetchAgencies(opts?: FetchAgenciesOpts) {
+export async function fetchAgencies(companyId: string, opts?: FetchAgenciesOpts) {
   const raw =
     opts?.sortBy && AGENCIES_SORT_COLUMNS.includes(opts.sortBy as any) ? opts.sortBy : "name";
   const sortBy = raw === "name" ? "name_sort" : raw;
   const ascending = opts?.order === "asc";
-  const { data, error } = await supabase.from("agencies").select("*").order(sortBy, { ascending });
+  const { data, error } = await supabase
+    .from("agencies")
+    .select("*")
+    .eq("company_id", companyId)
+    .order(sortBy, { ascending });
   if (error) {
     console.warn("fetchAgencies failed (run agency migrations if needed):", error.message);
     return [];
@@ -21,10 +25,10 @@ export async function fetchAgencies(opts?: FetchAgenciesOpts) {
   return data ?? [];
 }
 
-export async function createAgency(payload: { name: string; type?: "in" | "out" }) {
+export async function createAgency(payload: { name: string; type?: "in" | "out"; company_id: string }) {
   const { data, error } = await supabase
     .from("agencies")
-    .insert({ name: payload.name.trim(), type: payload.type ?? "out" })
+    .insert({ name: payload.name.trim(), type: payload.type ?? "out", company_id: payload.company_id })
     .select("id, name, type, created_at")
     .single();
   if (error) throw error;

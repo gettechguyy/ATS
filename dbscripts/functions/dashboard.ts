@@ -15,6 +15,8 @@ async function fetchAllRows<T>(createQuery: () => any, pageSize = 1000): Promise
 
 export type DashboardStatsOptions = {
   role: "admin" | "recruiter" | "candidate" | "manager" | "team_lead" | "agency_admin";
+  /** Required for multi-tenant isolation */
+  companyId: string;
   userId?: string;
   linkedCandidateId?: string | null;
   agencyId?: string | null;
@@ -57,6 +59,8 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
   if (role === "candidate" && !candidateId) return emptyStats();
   if (role === "agency_admin" && !agencyId) return emptyStats();
   if (role === "recruiter" && !recruiterId) return emptyStats();
+  if (!options?.companyId) return emptyStats();
+  const companyId = options.companyId;
 
   const toISO = (d?: string | Date | null) => {
     if (!d) return null;
@@ -72,7 +76,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
 
   /** Fresh builder each call so we can paginate with `.range` (avoids the default ~1000 row cap). */
   const buildCandidatesQuery = () => {
-    let q = supabase.from("candidates").select("id, status, recruiter_id");
+    let q = supabase.from("candidates").select("id, status, recruiter_id").eq("company_id", companyId);
     if (isRecruiterScoped) q = q.eq("recruiter_id", recruiterId!);
     if (isAgencyScoped) q = q.eq("agency_id", agencyId!);
     if (filterCandidateId) q = q.eq("id", filterCandidateId);
@@ -84,7 +88,8 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
   const buildSubmissionsQuery = () => {
     let q = supabase
       .from("submissions")
-      .select("id, status, candidate_id, recruiter_id, screen_scheduled_at, created_at");
+      .select("id, status, candidate_id, recruiter_id, screen_scheduled_at, created_at")
+      .eq("company_id", companyId);
     if (startISO) q = q.gte("created_at", startISO);
     if (endISO) q = q.lte("created_at", endISO);
     if (isRecruiterScoped) q = q.eq("recruiter_id", recruiterId!);
@@ -95,7 +100,8 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
   const buildInterviewsQuery = () => {
     let q = supabase
       .from("interviews")
-      .select("id, scheduled_at, status, created_by, candidate_id, submission_id");
+      .select("id, scheduled_at, status, created_by, candidate_id, submission_id")
+      .eq("company_id", companyId);
     if (startISO) q = q.gte("scheduled_at", startISO);
     if (endISO) q = q.lte("scheduled_at", endISO);
     if (isRecruiterScoped) q = q.eq("created_by", recruiterId!);
@@ -104,7 +110,10 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
   };
 
   const buildOffersQuery = () => {
-    let q = supabase.from("offers").select("id, status, created_by, candidate_id, submission_id");
+    let q = supabase
+      .from("offers")
+      .select("id, status, created_by, candidate_id, submission_id")
+      .eq("company_id", companyId);
     if (startISO) q = q.gte("offered_at", startISO);
     if (endISO) q = q.lte("offered_at", endISO);
     if (isRecruiterScoped) q = q.eq("created_by", recruiterId!);
@@ -132,6 +141,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
         let subQ = supabase
           .from("submissions")
           .select("id, status, candidate_id, recruiter_id, screen_scheduled_at, created_at")
+          .eq("company_id", companyId)
           .in("candidate_id", candidateIds);
         if (startISO) subQ = subQ.gte("created_at", startISO);
         if (endISO) subQ = subQ.lte("created_at", endISO);
@@ -146,6 +156,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
           let intQ = supabase
             .from("interviews")
             .select("id, scheduled_at, status, submission_id, created_by")
+            .eq("company_id", companyId)
             .in("created_by", recruiterIds);
           if (startISO) intQ = intQ.gte("scheduled_at", startISO);
           if (endISO) intQ = intQ.lte("scheduled_at", endISO);
@@ -155,6 +166,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
           let offQ = supabase
             .from("offers")
             .select("id, status, submission_id, created_by")
+            .eq("company_id", companyId)
             .in("created_by", recruiterIds);
           if (startISO) offQ = offQ.gte("created_at", startISO);
           if (endISO) offQ = offQ.lte("created_at", endISO);
@@ -167,13 +179,18 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
           let intQ = supabase
             .from("interviews")
             .select("id, scheduled_at, status, submission_id")
+            .eq("company_id", companyId)
             .in("submission_id", submissionIds);
           if (startISO) intQ = intQ.gte("scheduled_at", startISO);
           if (endISO) intQ = intQ.lte("scheduled_at", endISO);
           return intQ;
         });
         o = await fetchAllRows(() => {
-          let offQ = supabase.from("offers").select("id, status, submission_id").in("submission_id", submissionIds);
+          let offQ = supabase
+            .from("offers")
+            .select("id, status, submission_id")
+            .eq("company_id", companyId)
+            .in("submission_id", submissionIds);
           if (startISO) offQ = offQ.gte("created_at", startISO);
           if (endISO) offQ = offQ.lte("created_at", endISO);
           return offQ;
@@ -209,6 +226,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
         p_candidate_id: filterCandidateId ?? null,
         p_offset: 0,
         p_limit: 200000,
+        p_company_id: companyId,
       });
       if (!error && Array.isArray(data)) {
         aggregatedSubmissionsTotal = data.reduce(
@@ -222,7 +240,11 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
     // Limit candidates to those owned by team lead (team_lead_id = recruiterId (profile id)). Use created_by for interviews/offers to avoid long submission_id lists.
     const teamLeadId = options?.userId!;
     const teamLeadCandidateRows = await fetchAllRows(() =>
-      (supabase as any).from("candidates").select("id").eq("team_lead_id", teamLeadId)
+      (supabase as any)
+        .from("candidates")
+        .select("id")
+        .eq("team_lead_id", teamLeadId)
+        .eq("company_id", companyId)
     );
     const candidateIds = teamLeadCandidateRows.map((r: any) => r.id);
     if (candidateIds.length === 0) {
@@ -236,6 +258,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
           .from("candidates")
           .select("distinct recruiter_id")
           .in("id", candidateIds)
+          .eq("company_id", companyId)
           .neq("recruiter_id", null)
       );
       const recruiterIds = recruiterRows.map((r: any) => r.recruiter_id).filter(Boolean);
@@ -244,30 +267,56 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
         ...(recruiterIds.length ? [`recruiter_id.in.(${recruiterIds.join(",")})`] : []),
       ];
       s = await fetchAllRows(() =>
-        (supabase as any).from("submissions").select("*").or(orParts.join(","))
+        (supabase as any)
+          .from("submissions")
+          .select("*")
+          .eq("company_id", companyId)
+          .or(orParts.join(","))
       );
       const submissionIds = s.map((x: any) => x.id);
       const subSet = new Set(submissionIds);
       if (submissionIds.length > 0 && recruiterIds.length > 0) {
         const intRows = await fetchAllRows(() =>
-          supabase.from("interviews").select("id, scheduled_at, status, submission_id").in("created_by", recruiterIds)
+          supabase
+            .from("interviews")
+            .select("id, scheduled_at, status, submission_id")
+            .eq("company_id", companyId)
+            .in("created_by", recruiterIds)
         );
         const offRows = await fetchAllRows(() =>
-          supabase.from("offers").select("id, status, submission_id").in("created_by", recruiterIds)
+          supabase
+            .from("offers")
+            .select("id, status, submission_id")
+            .eq("company_id", companyId)
+            .in("created_by", recruiterIds)
         );
         i = intRows.filter((x: any) => subSet.has(x.submission_id));
         o = offRows.filter((x: any) => subSet.has(x.submission_id));
       } else if (submissionIds.length > 0) {
         i = await fetchAllRows(() =>
-          supabase.from("interviews").select("id, scheduled_at, status").in("submission_id", submissionIds)
+          supabase
+            .from("interviews")
+            .select("id, scheduled_at, status")
+            .eq("company_id", companyId)
+            .in("submission_id", submissionIds)
         );
-        o = await fetchAllRows(() => supabase.from("offers").select("id, status").in("submission_id", submissionIds));
+        o = await fetchAllRows(() =>
+          supabase
+            .from("offers")
+            .select("id, status")
+            .eq("company_id", companyId)
+            .in("submission_id", submissionIds)
+        );
       } else {
         i = [];
         o = [];
       }
       c = await fetchAllRows(() =>
-        supabase.from("candidates").select("id, status, recruiter_id").in("id", candidateIds)
+        supabase
+          .from("candidates")
+          .select("id, status, recruiter_id")
+          .eq("company_id", companyId)
+          .in("id", candidateIds)
       );
     }
   } else {

@@ -29,7 +29,8 @@ import { fetchCandidatesBasic } from "../../dbscripts/functions/candidates";
 import { fetchProfilesByRole } from "../../dbscripts/functions/profiles";
 
 export default function Dashboard() {
-  const { user, isAdmin, isRecruiter, isCandidate, isManager, isAgencyAdmin, role, profile } = useAuth();
+  const { user, isAdmin, isRecruiter, isCandidate, isManager, isAgencyAdmin, isMasterCompany, role, profile } = useAuth();
+  const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const [dateRange, setDateRange] = useState<{ from?: Date | null; to?: Date | null } | undefined>(undefined);
   const [filterCandidateId, setFilterCandidateId] = useState<string>("");
   const [filterTechnology, setFilterTechnology] = useState<string>("");
@@ -43,18 +44,18 @@ export default function Dashboard() {
         ? user?.id
         : profile?.id ?? user?.id;
 
-  const showFilterDropdowns = isAdmin || isAgencyAdmin;
-  const filterAgencyId = isAgencyAdmin ? profile?.agency_id ?? null : undefined;
+  const showFilterDropdowns = isAdmin || isAgencyScope;
+  const filterAgencyId = isAgencyScope ? profile?.agency_id ?? null : undefined;
 
   const { data: filterCandidates } = useQuery({
-    queryKey: ["dashboard-filter-candidates", filterAgencyId],
-    queryFn: () => fetchCandidatesBasic(filterAgencyId ?? undefined),
-    enabled: showFilterDropdowns,
+    queryKey: ["dashboard-filter-candidates", filterAgencyId, profile?.company_id],
+    queryFn: () => fetchCandidatesBasic(filterAgencyId ?? undefined, profile?.company_id ?? undefined),
+    enabled: showFilterDropdowns && !!profile?.company_id,
   });
   const { data: filterRecruiters } = useQuery({
-    queryKey: ["dashboard-filter-recruiters", filterAgencyId],
-    queryFn: () => fetchProfilesByRole("recruiter", filterAgencyId ?? undefined),
-    enabled: showFilterDropdowns,
+    queryKey: ["dashboard-filter-recruiters", filterAgencyId, profile?.company_id],
+    queryFn: () => fetchProfilesByRole("recruiter", filterAgencyId ?? undefined, profile?.company_id ?? undefined),
+    enabled: showFilterDropdowns && !!profile?.company_id,
   });
   const technologyOptions = useMemo(() => {
     if (!filterCandidates?.length) return [];
@@ -78,6 +79,7 @@ export default function Dashboard() {
       dashboardUserId,
       profile?.linked_candidate_id,
       profile?.agency_id,
+      profile?.company_id,
       dashboardDateFilter.start ? dashboardDateFilter.start.toISOString() : null,
       dashboardDateFilter.end ? dashboardDateFilter.end.toISOString() : null,
       showFilterDropdowns ? filterCandidateId : null,
@@ -87,16 +89,17 @@ export default function Dashboard() {
     queryFn: () =>
       fetchDashboardStats({
         role: effectiveRole as any,
+        companyId: profile!.company_id!,
         userId: dashboardUserId ?? undefined,
         linkedCandidateId: profile?.linked_candidate_id ?? null,
-        agencyId: isAgencyAdmin ? profile?.agency_id ?? null : null,
+        agencyId: isAgencyScope ? profile?.agency_id ?? null : null,
         startDate: dashboardDateFilter.start,
         endDate: dashboardDateFilter.end,
         filterCandidateId: showFilterDropdowns && filterCandidateId ? filterCandidateId : null,
         filterTechnology: showFilterDropdowns && filterTechnology ? filterTechnology : null,
         filterRecruiterId: showFilterDropdowns && filterRecruiterId ? filterRecruiterId : null,
       }),
-    enabled: !!user,
+    enabled: !!user && !!profile?.company_id,
   });
 
   const selectPreset = (preset: "today" | "yesterday" | "thisWeek" | "lastWeek") => {
@@ -175,10 +178,10 @@ export default function Dashboard() {
     <div>
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-foreground">
-          {isAdmin ? "Admin Dashboard" : isManager ? "Manager Dashboard" : isAgencyAdmin ? "Agency Dashboard" : "My Dashboard"}
+          {isAdmin ? "Admin Dashboard" : isManager ? "Manager Dashboard" : isAgencyScope ? "Agency Dashboard" : "My Dashboard"}
         </h1>
         <p className="text-sm text-muted-foreground">
-          {isAdmin ? "Overview of all activity" : isManager ? "Read-only overview" : isAgencyAdmin ? "Your agency's candidates and submissions" : "Your recruiting progress"}
+          {isAdmin ? "Overview of all activity" : isManager ? "Read-only overview" : isAgencyScope ? "Your agency's candidates and submissions" : "Your recruiting progress"}
         </p>
       </div>
 

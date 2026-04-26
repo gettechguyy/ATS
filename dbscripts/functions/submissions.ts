@@ -124,12 +124,16 @@ function aggregateCountsByCandidate(rows: { candidate_id: string }[]): Map<strin
   return m;
 }
 
-async function candidateIdsMatchingNameSearch(term: string): Promise<string[]> {
+async function candidateIdsMatchingNameSearch(term: string, companyId: string): Promise<string[]> {
   const safe = term.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
   if (!safe) return [];
   const t = `%${safe}%`;
   const rows = await fetchAllRowsForQuery(() =>
-    supabase.from("candidates").select("id").or(`first_name.ilike.${t},last_name.ilike.${t}`)
+    supabase
+      .from("candidates")
+      .select("id")
+      .eq("company_id", companyId)
+      .or(`first_name.ilike.${t},last_name.ilike.${t}`)
   );
   return rows.map((r: any) => r.id).filter(Boolean);
 }
@@ -167,10 +171,10 @@ export type CandidateApplicationSummaryRow = {
 };
 
 export type ApplicationSummariesContext =
-  | { mode: "admin" }
-  | { mode: "recruiter"; recruiterId: string }
-  | { mode: "agency"; agencyId: string }
-  | { mode: "team_lead"; teamLeadProfileId: string };
+  | { mode: "admin"; companyId: string }
+  | { mode: "recruiter"; recruiterId: string; companyId: string }
+  | { mode: "agency"; agencyId: string; companyId: string }
+  | { mode: "team_lead"; teamLeadProfileId: string; companyId: string };
 
 export type ApplicationSummariesOpts = {
   search?: string;
@@ -193,9 +197,11 @@ export async function fetchCandidateApplicationSummaries(
   const orderCol = submissionOrderColumn(rawCol);
   const asc = order === "asc";
 
+  const companyId = ctx.companyId;
+
   let nameIds: string[] = [];
   if (search && search.trim()) {
-    nameIds = await candidateIdsMatchingNameSearch(search);
+    nameIds = await candidateIdsMatchingNameSearch(search, companyId);
   }
 
   const filterOpts = { status, candidateId: candidateId ?? undefined, search, nameCandidateIds: nameIds };
@@ -204,7 +210,11 @@ export async function fetchCandidateApplicationSummaries(
 
   if (ctx.mode === "admin") {
     const createQuery = () => {
-      let q = supabase.from("submissions").select("candidate_id").order(orderCol, { ascending: asc });
+      let q = supabase
+        .from("submissions")
+        .select("candidate_id")
+        .eq("company_id", companyId)
+        .order(orderCol, { ascending: asc });
       return applySubmissionFiltersMinimal(q, filterOpts);
     };
     minimalRows = await fetchAllRowsForQuery(createQuery);
@@ -212,28 +222,46 @@ export async function fetchCandidateApplicationSummaries(
     minimalRows = await fetchAllRowsForQuery(() => {
       const inner = supabase
         .from("submissions")
-        .select("candidate_id, candidates!inner(recruiter_id)")
+        .select("candidate_id, candidates!inner(recruiter_id, company_id)")
         .eq("candidates.recruiter_id", ctx.recruiterId)
+        .eq("candidates.company_id", companyId)
         .order(orderCol, { ascending: asc });
       return applySubmissionFiltersMinimal(inner, filterOpts);
     });
   } else if (ctx.mode === "agency") {
-    const { data: candidateRows } = await supabase.from("candidates").select("id").eq("agency_id", ctx.agencyId);
+    const { data: candidateRows } = await supabase
+      .from("candidates")
+      .select("id")
+      .eq("agency_id", ctx.agencyId)
+      .eq("company_id", companyId);
     const allIds = (candidateRows || []).map((c: any) => c.id);
     if (allIds.length === 0) return [];
     const filterId =
       candidateId && allIds.includes(candidateId) ? candidateId : null;
     const idsToUse = filterId ? [filterId] : allIds;
     const createQuery = () => {
-      let q = supabase.from("submissions").select("candidate_id").in("candidate_id", idsToUse).order(orderCol, { ascending: asc });
+      let q = supabase
+        .from("submissions")
+        .select("candidate_id")
+        .eq("company_id", companyId)
+        .in("candidate_id", idsToUse)
+        .order(orderCol, { ascending: asc });
       return applySubmissionFiltersMinimal(q, { ...filterOpts, candidateId: filterId ?? undefined });
     };
     minimalRows = await fetchAllRowsForQuery(createQuery);
   } else {
     const tl = ctx.teamLeadProfileId;
-    const candRes: any = await (supabase as any).from("candidates").select("id").eq("team_lead_id", tl);
+    const candRes: any = await (supabase as any)
+      .from("candidates")
+      .select("id")
+      .eq("team_lead_id", tl)
+      .eq("company_id", companyId);
     const tlCandidateIds = (candRes.data || []).map((r: any) => r.id);
-    const recruiterRes: any = await (supabase as any).from("candidates").select("recruiter_id").eq("team_lead_id", tl);
+    const recruiterRes: any = await (supabase as any)
+      .from("candidates")
+      .select("recruiter_id")
+      .eq("team_lead_id", tl)
+      .eq("company_id", companyId);
     const recruiterIds = (recruiterRes.data || []).map((r: any) => r.recruiter_id).filter(Boolean);
 
     const run = async (builder: () => any) => fetchAllRowsForQuery(builder);
@@ -244,6 +272,7 @@ export async function fetchCandidateApplicationSummaries(
         let q = (supabase as any)
           .from("submissions")
           .select("id, candidate_id")
+          .eq("company_id", companyId)
           .in("candidate_id", tlCandidateIds)
           .order(orderCol, { ascending: asc });
         return applySubmissionFiltersMinimal(q, filterOpts);
@@ -254,6 +283,7 @@ export async function fetchCandidateApplicationSummaries(
         let q = (supabase as any)
           .from("submissions")
           .select("id, candidate_id")
+          .eq("company_id", companyId)
           .in("recruiter_id", recruiterIds)
           .order(orderCol, { ascending: asc });
         return applySubmissionFiltersMinimal(q, filterOpts);
@@ -281,7 +311,8 @@ export async function fetchCandidateApplicationSummaries(
     const { data, error } = await supabase
       .from("candidates")
       .select("id, first_name, last_name, first_name_sort, last_name_sort, recruiter_id, agency_id")
-      .in("id", slice);
+      .in("id", slice)
+      .eq("company_id", companyId);
     if (error) throw error;
     metaRows.push(...(data ?? []));
   }
@@ -308,13 +339,14 @@ export async function fetchCandidateApplicationSummaries(
 /** Full submission rows for one candidate (sheet / detail); batched to avoid row caps. */
 export async function fetchSubmissionsByCandidateWithDetails(
   candidateId: string,
-  opts?: { status?: string; search?: string }
+  opts?: { status?: string; search?: string; companyId?: string }
 ) {
   const status = opts?.status;
   const search = opts?.search;
+  const companyId = opts?.companyId;
   let nameIds: string[] = [];
-  if (search && search.trim()) {
-    nameIds = await candidateIdsMatchingNameSearch(search);
+  if (search && search.trim() && companyId) {
+    nameIds = await candidateIdsMatchingNameSearch(search, companyId);
   }
   const createQuery = () => {
     let q = supabase
@@ -327,21 +359,23 @@ export async function fetchSubmissionsByCandidateWithDetails(
   return fetchAllRowsForQuery(createQuery);
 }
 
-export async function fetchSubmissions() {
+export async function fetchSubmissions(companyId: string) {
   const { data, error } = await supabase
     .from("submissions")
     .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)")
+    .eq("company_id", companyId)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data;
 }
 
 /** Submissions created by / assigned to this recruiter. */
-export async function fetchSubmissionsByRecruiter(recruiterId: string) {
+export async function fetchSubmissionsByRecruiter(recruiterId: string, companyId: string) {
   const { data, error } = await supabase
     .from("submissions")
     .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)")
     .eq("recruiter_id", recruiterId)
+    .eq("company_id", companyId)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data;
@@ -378,9 +412,17 @@ export type SubmissionsPageOpts = {
   order?: "asc" | "desc";
   candidateId?: string | null;
   pipelineStage?: PipelineStageFilter;
+  /** Required for unscoped admin lists and recruiter-all views */
+  companyId?: string;
 };
 
-function buildSubmissionsQuery(recruiterId?: string, candidateId?: string, sortBy?: string, order?: "asc" | "desc") {
+function buildSubmissionsQuery(
+  recruiterId?: string,
+  candidateId?: string,
+  sortBy?: string,
+  order?: "asc" | "desc",
+  companyId?: string
+) {
   const rawCol = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
   const col = submissionOrderColumn(rawCol);
   const asc = order === "asc";
@@ -388,6 +430,7 @@ function buildSubmissionsQuery(recruiterId?: string, candidateId?: string, sortB
     .from("submissions")
     .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
     .order(col, { ascending: asc });
+  if (companyId) q = q.eq("company_id", companyId);
   if (recruiterId) q = q.eq("recruiter_id", recruiterId);
   if (candidateId) q = q.eq("candidate_id", candidateId);
   return q;
@@ -395,9 +438,10 @@ function buildSubmissionsQuery(recruiterId?: string, candidateId?: string, sortB
 
 /** Server-side paginated submissions. Optional search, status, sort, candidateId. */
 export async function fetchSubmissionsPaginated(opts: SubmissionsPageOpts) {
-  const { page, pageSize, search, status, sortBy, order, candidateId } = opts;
+  const { page, pageSize, search, status, sortBy, order, candidateId, companyId } = opts;
+  if (!companyId) throw new Error("companyId is required");
   const createQuery = () => {
-    let q = buildSubmissionsQuery(undefined, candidateId ?? undefined, sortBy, order);
+    let q = buildSubmissionsQuery(undefined, candidateId ?? undefined, sortBy, order, companyId);
     if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
     if (search && search.trim()) {
       const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
@@ -413,9 +457,10 @@ export async function fetchSubmissionsPaginated(opts: SubmissionsPageOpts) {
 }
 
 export async function fetchSubmissionsByRecruiterPaginated(recruiterId: string, opts: SubmissionsPageOpts) {
-  const { page, pageSize, search, status, sortBy, order, candidateId } = opts;
+  const { page, pageSize, search, status, sortBy, order, candidateId, companyId } = opts;
+  if (!companyId) throw new Error("companyId is required");
   const createQuery = () => {
-    let q = buildSubmissionsQuery(recruiterId, candidateId ?? undefined, sortBy, order);
+    let q = buildSubmissionsQuery(recruiterId, candidateId ?? undefined, sortBy, order, companyId);
     if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
     if (search && search.trim()) {
       const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
@@ -432,7 +477,8 @@ export async function fetchSubmissionsByRecruiterPaginated(recruiterId: string, 
 
 /** Paginated submissions for all candidates currently assigned to this recruiter (candidates.recruiter_id = recruiterId). */
 export async function fetchSubmissionsForRecruiterCandidatesPaginated(recruiterId: string, opts: SubmissionsPageOpts) {
-  const { page, pageSize, search, status, sortBy, order, candidateId } = opts;
+  const { page, pageSize, search, status, sortBy, order, candidateId, companyId } = opts;
+  if (!companyId) throw new Error("companyId is required");
   const rawCol = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
   const col = submissionOrderColumn(rawCol);
   const asc = order === "asc";
@@ -440,7 +486,9 @@ export async function fetchSubmissionsForRecruiterCandidatesPaginated(recruiterI
     let q = supabase
       .from("submissions")
       .select("*, candidates!inner(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
+      .eq("company_id", companyId)
       .eq("candidates.recruiter_id", recruiterId)
+      .eq("candidates.company_id", companyId)
       .order(col, { ascending: asc });
 
     if (candidateId) q = q.eq("candidate_id", candidateId);
@@ -460,9 +508,10 @@ export async function fetchSubmissionsForRecruiterCandidatesPaginated(recruiterI
 }
 
 export async function fetchSubmissionsByCandidatePaginated(candidateId: string, opts: SubmissionsPageOpts) {
-  const { page, pageSize, search, status, sortBy, order } = opts;
+  const { page, pageSize, search, status, sortBy, order, companyId } = opts;
+  if (!companyId) throw new Error("companyId is required");
   const createQuery = () => {
-    let q = buildSubmissionsQuery(undefined, candidateId, sortBy, order);
+    let q = buildSubmissionsQuery(undefined, candidateId, sortBy, order, companyId);
     if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
     if (search && search.trim()) {
       const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
@@ -478,9 +527,9 @@ export async function fetchSubmissionsByCandidatePaginated(candidateId: string, 
 }
 
 /** Client/position ILIKE plus candidate name matches (batched ID lookup). */
-async function buildSearchOrClause(search?: string): Promise<string | null> {
+async function buildSearchOrClause(search: string | undefined, companyId: string): Promise<string | null> {
   if (!search?.trim()) return null;
-  const nameIds = await candidateIdsMatchingNameSearch(search);
+  const nameIds = await candidateIdsMatchingNameSearch(search, companyId);
   const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
   const term = `%${safe}%`;
   const parts = [`client_name.ilike.${term}`, `position.ilike.${term}`];
@@ -493,11 +542,11 @@ async function buildSearchOrClause(search?: string): Promise<string | null> {
 export type SpecialSubmissionsKind = "vendor_responded" | "screen_call" | "assessment";
 
 export type SpecialSubmissionsRoleContext =
-  | { role: "admin" }
-  | { role: "recruiter"; recruiterId: string }
-  | { role: "agency"; agencyId: string }
-  | { role: "team_lead"; teamLeadProfileId: string }
-  | { role: "candidate"; linkedCandidateId: string };
+  | { role: "admin"; companyId: string }
+  | { role: "recruiter"; recruiterId: string; companyId: string }
+  | { role: "agency"; agencyId: string; companyId: string }
+  | { role: "team_lead"; teamLeadProfileId: string; companyId: string }
+  | { role: "candidate"; linkedCandidateId: string; companyId: string };
 
 /**
  * Server-paginated special lists (no full-table fetch).
@@ -524,7 +573,8 @@ export async function fetchSpecialSubmissionsPage(
   const col =
     sortBy && SPECIAL_SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : defaultSort;
   const asc = order === "asc";
-  const searchOr = await buildSearchOrClause(search);
+  const companyId = ctx.companyId;
+  const searchOr = await buildSearchOrClause(search, companyId);
 
   /** Submissions page: vendor work + assessment + anything that counts as a screen call. */
   const vendorPlusScreenOr =
@@ -553,9 +603,17 @@ export async function fetchSpecialSubmissionsPage(
 
   const mergeTeamLeadRows = async (buildFiltered: (q: any) => any) => {
     const tl = (ctx as { role: "team_lead"; teamLeadProfileId: string }).teamLeadProfileId;
-    const candRes: any = await (supabase as any).from("candidates").select("id").eq("team_lead_id", tl);
+    const candRes: any = await (supabase as any)
+      .from("candidates")
+      .select("id")
+      .eq("team_lead_id", tl)
+      .eq("company_id", companyId);
     const tlCandidateIds = (candRes.data || []).map((r: any) => r.id);
-    const recruiterRes: any = await (supabase as any).from("candidates").select("recruiter_id").eq("team_lead_id", tl);
+    const recruiterRes: any = await (supabase as any)
+      .from("candidates")
+      .select("recruiter_id")
+      .eq("team_lead_id", tl)
+      .eq("company_id", companyId);
     const recruiterIds = (recruiterRes.data || []).map((r: any) => r.recruiter_id).filter(Boolean);
 
     const run = (inCol: "candidate_id" | "recruiter_id", ids: string[]) => {
@@ -564,6 +622,7 @@ export async function fetchSpecialSubmissionsPage(
         let q = supabase
           .from("submissions")
           .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, team_lead_id, recruiter_id, agency_id)")
+          .eq("company_id", companyId)
           .in(inCol, ids);
         q = applySpecialSubmissionsOrder(q, col, asc);
         q = buildFiltered(q);
@@ -606,7 +665,8 @@ export async function fetchSpecialSubmissionsPage(
     const createQuery = () => {
       let q = supabase
         .from("submissions")
-        .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" });
+        .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
+        .eq("company_id", companyId);
       q = applySpecialSubmissionsOrder(q, col, asc);
       q = applyKindFilter(q);
       if (candidateId) q = q.eq("candidate_id", candidateId);
@@ -624,7 +684,9 @@ export async function fetchSpecialSubmissionsPage(
       let q = supabase
         .from("submissions")
         .select("*, candidates!inner(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
-        .eq("candidates.recruiter_id", ctx.recruiterId);
+        .eq("company_id", companyId)
+        .eq("candidates.recruiter_id", ctx.recruiterId)
+        .eq("candidates.company_id", companyId);
       q = applySpecialSubmissionsOrder(q, col, asc);
       q = applyKindFilter(q);
       if (candidateId) q = q.eq("candidate_id", candidateId);
@@ -638,7 +700,11 @@ export async function fetchSpecialSubmissionsPage(
   }
 
   if (ctx.role === "agency") {
-    const { data: candidateRows } = await supabase.from("candidates").select("id").eq("agency_id", ctx.agencyId);
+    const { data: candidateRows } = await supabase
+      .from("candidates")
+      .select("id")
+      .eq("agency_id", ctx.agencyId)
+      .eq("company_id", companyId);
     const allIds = (candidateRows || []).map((c: any) => c.id);
     if (allIds.length === 0) return { data: [], total: 0 };
     const idsToUse = candidateId && allIds.includes(candidateId) ? [candidateId] : allIds;
@@ -646,6 +712,7 @@ export async function fetchSpecialSubmissionsPage(
       let q = supabase
         .from("submissions")
         .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
+        .eq("company_id", companyId)
         .in("candidate_id", idsToUse);
       q = applySpecialSubmissionsOrder(q, col, asc);
       q = applyKindFilter(q);
@@ -662,6 +729,7 @@ export async function fetchSpecialSubmissionsPage(
     let q = supabase
       .from("submissions")
       .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
+      .eq("company_id", companyId)
       .eq("candidate_id", ctx.linkedCandidateId);
     q = applySpecialSubmissionsOrder(q, col, asc);
     q = applyKindFilter(q);
@@ -675,13 +743,18 @@ export async function fetchSpecialSubmissionsPage(
 }
 
 /** All submissions whose candidate is assigned to this agency (e.g. for Screens). */
-export async function fetchSubmissionsByAgency(agencyId: string) {
-  const { data: candidateRows } = await supabase.from("candidates").select("id").eq("agency_id", agencyId);
+export async function fetchSubmissionsByAgency(agencyId: string, companyId: string) {
+  const { data: candidateRows } = await supabase
+    .from("candidates")
+    .select("id")
+    .eq("agency_id", agencyId)
+    .eq("company_id", companyId);
   const candidateIds = (candidateRows || []).map((c: any) => c.id);
   if (candidateIds.length === 0) return [];
   const { data, error } = await supabase
     .from("submissions")
     .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)")
+    .eq("company_id", companyId)
     .in("candidate_id", candidateIds)
     .order("created_at", { ascending: false });
   if (error) throw error;
@@ -689,8 +762,12 @@ export async function fetchSubmissionsByAgency(agencyId: string) {
 }
 
 /** Submissions for an agency: only submissions whose candidate is assigned to this agency. Optional candidateId filter. */
-export async function fetchSubmissionsByAgencyPaginated(agencyId: string, opts: SubmissionsPageOpts) {
-  const { data: candidateRows } = await supabase.from("candidates").select("id").eq("agency_id", agencyId);
+export async function fetchSubmissionsByAgencyPaginated(agencyId: string, companyId: string, opts: SubmissionsPageOpts) {
+  const { data: candidateRows } = await supabase
+    .from("candidates")
+    .select("id")
+    .eq("agency_id", agencyId)
+    .eq("company_id", companyId);
   const candidateIds = (candidateRows || []).map((c: any) => c.id);
   if (candidateIds.length === 0) return { data: [], total: 0 };
   const { page, pageSize, search, status, sortBy, order, candidateId: filterCandidateId } = opts;
@@ -702,6 +779,7 @@ export async function fetchSubmissionsByAgencyPaginated(agencyId: string, opts: 
     let q = supabase
       .from("submissions")
       .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
+      .eq("company_id", companyId)
       .in("candidate_id", idsToUse)
       .order(col, { ascending: asc });
     if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
@@ -722,30 +800,41 @@ export async function fetchSubmissionsByAgencyPaginated(agencyId: string, opts: 
  *  - any submission whose candidate.team_lead_id = teamLeadProfileId
  *  - OR any submission whose recruiter_id is assigned to any candidate of the team lead
  */
-export async function fetchSubmissionsByTeamLead(teamLeadProfileId: string) {
+export async function fetchSubmissionsByTeamLead(teamLeadProfileId: string, companyId: string) {
   // select submissions where candidate has team_lead_id = teamLeadProfileId
   const { data, error } = await supabase
     .from("submissions")
     .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, team_lead_id, recruiter_id, agency_id)")
+    .eq("company_id", companyId)
     .or(`candidate_id.in.(select id from candidates where team_lead_id.eq.${teamLeadProfileId}),recruiter_id.in.(select recruiter_id from candidates where team_lead_id.eq.${teamLeadProfileId})`)
     .order("created_at", { ascending: false });
   // Fallback: if supabase does not support subqueries in .or, run two queries and merge
   if (error) {
     // Fetch candidate IDs for the team lead first to avoid complex nested type inference
-    const candRes: any = await (supabase as any).from("candidates").select("id").eq("team_lead_id", teamLeadProfileId);
+    const candRes: any = await (supabase as any)
+      .from("candidates")
+      .select("id")
+      .eq("team_lead_id", teamLeadProfileId)
+      .eq("company_id", companyId);
     const candidateIds = (candRes.data || []).map((r: any) => r.id);
 
     const byCandidate: any = await (supabase as any)
       .from("submissions")
       .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, team_lead_id, recruiter_id, agency_id)")
+      .eq("company_id", companyId)
       .in("candidate_id", candidateIds.length ? candidateIds : []);
 
-    const recruiterRes: any = await (supabase as any).from("candidates").select("recruiter_id").eq("team_lead_id", teamLeadProfileId);
+    const recruiterRes: any = await (supabase as any)
+      .from("candidates")
+      .select("recruiter_id")
+      .eq("team_lead_id", teamLeadProfileId)
+      .eq("company_id", companyId);
     const recruiterIds = (recruiterRes.data || []).map((r: any) => r.recruiter_id).filter(Boolean);
 
     const byRecruiter: any = await (supabase as any)
       .from("submissions")
       .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, team_lead_id, recruiter_id, agency_id)")
+      .eq("company_id", companyId)
       .in("recruiter_id", recruiterIds.length ? recruiterIds : []);
 
     const merged = [...(byCandidate.data || []), ...(byRecruiter.data || [])];

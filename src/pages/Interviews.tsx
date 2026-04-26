@@ -27,7 +27,8 @@ type InterviewSortKey =
   | "status";
 
 export default function Interviews() {
-  const { user, profile, role, isCandidate, isRecruiter, isAgencyAdmin } = useAuth();
+  const { user, profile, role, isCandidate, isRecruiter, isAgencyAdmin, isMasterCompany } = useAuth();
+  const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<InterviewSortKey>("scheduled_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
@@ -52,15 +53,21 @@ export default function Interviews() {
     ) : null;
 
   const { data: result, isLoading } = useQuery({
-    queryKey: ["all-interviews", role, user?.id, profile?.linked_candidate_id, profile?.agency_id, page, PAGE_SIZE, sortBy, order],
+    queryKey: ["all-interviews", role, user?.id, profile?.linked_candidate_id, profile?.agency_id, profile?.company_id, page, PAGE_SIZE, sortBy, order],
     queryFn: async () => {
+      const companyId = profile?.company_id;
       if (isCandidate) {
         if (!profile?.linked_candidate_id) return { data: [], total: 0 };
         return fetchInterviewsByCandidatePaginated(profile.linked_candidate_id, { page, pageSize: PAGE_SIZE, sortBy, order });
       }
-      if (isAgencyAdmin && profile?.agency_id) return fetchInterviewsByAgencyPaginated(profile.agency_id, { page, pageSize: PAGE_SIZE, sortBy, order });
-      if (isRecruiter && user?.id) return fetchInterviewsByRecruiterPaginated(user.id, { page, pageSize: PAGE_SIZE, sortBy, order });
-      return fetchAllInterviewsPaginated({ page, pageSize: PAGE_SIZE, sortBy, order });
+      if (!companyId) return { data: [], total: 0 };
+      if (isAgencyScope && profile?.agency_id) {
+        return fetchInterviewsByAgencyPaginated(profile.agency_id, companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
+      }
+      if (isRecruiter && user?.id) {
+        return fetchInterviewsByRecruiterPaginated(user.id, companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
+      }
+      return fetchAllInterviewsPaginated(companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
     },
   });
 

@@ -59,7 +59,8 @@ const statusColors: Record<string, string> = {
 };
 
 export default function VendorSubmissions() {
-  const { user, profile, isCandidate, isRecruiter, isAdmin, isManager, isTeamLead, isAgencyAdmin } = useAuth();
+  const { user, profile, isCandidate, isRecruiter, isAdmin, isManager, isTeamLead, isAgencyAdmin, isMasterCompany } = useAuth();
+  const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState("");
@@ -112,21 +113,24 @@ export default function VendorSubmissions() {
   const [assessmentFile, setAssessmentFile] = useState<File | null>(null);
   const [assessmentUploading, setAssessmentUploading] = useState(false);
 
+  const compId = profile?.company_id;
   const vendorPageContext = useMemo((): SpecialSubmissionsRoleContext | null => {
-    if (isCandidate && profile?.linked_candidate_id) {
-      return { role: "candidate", linkedCandidateId: profile.linked_candidate_id };
+    if (isCandidate && profile?.linked_candidate_id && compId) {
+      return { role: "candidate", linkedCandidateId: profile.linked_candidate_id, companyId: compId };
     }
-    if (isAgencyAdmin && profile?.agency_id) return { role: "agency", agencyId: profile.agency_id };
-    if (isRecruiter && user?.id) return { role: "recruiter", recruiterId: user.id };
-    if (isTeamLead && profile?.id) return { role: "team_lead", teamLeadProfileId: profile.id };
-    if (isAdmin || isManager) return { role: "admin" };
+    if (!compId) return null;
+    if (isAgencyScope && profile?.agency_id) return { role: "agency", agencyId: profile.agency_id, companyId: compId };
+    if (isRecruiter && user?.id) return { role: "recruiter", recruiterId: user.id, companyId: compId };
+    if (isTeamLead && profile?.id) return { role: "team_lead", teamLeadProfileId: profile.id, companyId: compId };
+    if (isAdmin || isManager) return { role: "admin", companyId: compId };
     return null;
   }, [
     isCandidate,
     profile?.linked_candidate_id,
     profile?.agency_id,
     profile?.id,
-    isAgencyAdmin,
+    compId,
+    isAgencyScope,
     isRecruiter,
     user?.id,
     isTeamLead,
@@ -138,7 +142,7 @@ export default function VendorSubmissions() {
     vendorPageContext != null &&
     (isCandidate ? !!profile?.linked_candidate_id
     : isRecruiter ? !!user?.id
-    : isAgencyAdmin ? !!profile?.agency_id
+    : isAgencyScope ? !!profile?.agency_id
     : isTeamLead ? !!profile?.id
     : true);
 
@@ -195,16 +199,19 @@ export default function VendorSubmissions() {
 
   // Candidate dropdown for Add Vendor Submission (admin: all, recruiter: own)
   const candidatesQueryFn = async () => {
-    if (isAdmin || isManager) return fetchCandidates();
-    if (isRecruiter && user?.id) return fetchCandidatesByRecruiter(user.id);
-    if (isAgencyAdmin && profile?.agency_id) return fetchCandidatesBasic(profile.agency_id);
+    if (!profile?.company_id) return [];
+    if (isAdmin || isManager) return fetchCandidates(profile.company_id);
+    if (isRecruiter && user?.id) return fetchCandidatesByRecruiter(user.id, profile.company_id);
+    if (isAgencyScope && profile?.agency_id) return fetchCandidatesBasic(profile.agency_id, profile.company_id);
     return [];
   };
 
   const { data: candidates = [], isLoading: candidatesLoading } = useQuery({
-    queryKey: ["vendor-submissions-candidates", user?.id],
+    queryKey: ["vendor-submissions-candidates", user?.id, profile?.company_id],
     queryFn: candidatesQueryFn,
-    enabled: isAdmin || isManager || (isRecruiter && !!user?.id) || (isAgencyAdmin && !!profile?.agency_id),
+    enabled:
+      !!profile?.company_id &&
+      (isAdmin || isManager || (isRecruiter && !!user?.id) || (isAgencyScope && !!profile?.agency_id)),
   });
 
   const createSubmission = useMutation({

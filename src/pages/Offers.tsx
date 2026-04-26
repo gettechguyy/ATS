@@ -28,7 +28,8 @@ type OfferSortKey =
   | "offered_at";
 
 export default function Offers() {
-  const { user, profile, role, isCandidate, isRecruiter, isAgencyAdmin } = useAuth();
+  const { user, profile, role, isCandidate, isRecruiter, isAgencyAdmin, isMasterCompany } = useAuth();
+  const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<OfferSortKey>("offered_at");
@@ -54,15 +55,21 @@ export default function Offers() {
     ) : null;
 
   const { data: result, isLoading } = useQuery({
-    queryKey: ["all-offers", role, user?.id, profile?.linked_candidate_id, profile?.agency_id, page, PAGE_SIZE, sortBy, order],
+    queryKey: ["all-offers", role, user?.id, profile?.linked_candidate_id, profile?.agency_id, profile?.company_id, page, PAGE_SIZE, sortBy, order],
     queryFn: async () => {
+      const companyId = profile?.company_id;
       if (isCandidate) {
         if (!profile?.linked_candidate_id) return { data: [], total: 0 };
         return fetchOffersByCandidatePaginated(profile.linked_candidate_id, { page, pageSize: PAGE_SIZE, sortBy, order });
       }
-      if (isAgencyAdmin && profile?.agency_id) return fetchOffersByAgencyPaginated(profile.agency_id, { page, pageSize: PAGE_SIZE, sortBy, order });
-      if (isRecruiter && user?.id) return fetchOffersByRecruiterPaginated(user.id, { page, pageSize: PAGE_SIZE, sortBy, order });
-      return fetchAllOffersPaginated({ page, pageSize: PAGE_SIZE, sortBy, order });
+      if (!companyId) return { data: [], total: 0 };
+      if (isAgencyScope && profile?.agency_id) {
+        return fetchOffersByAgencyPaginated(profile.agency_id, companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
+      }
+      if (isRecruiter && user?.id) {
+        return fetchOffersByRecruiterPaginated(user.id, companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
+      }
+      return fetchAllOffersPaginated(companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
     },
   });
 

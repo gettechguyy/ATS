@@ -68,7 +68,8 @@ const statusColors: Record<string, string> = {
 };
 
 export default function Submissions() {
-  const { user, profile, role, isCandidate, isRecruiter, isAdmin, isManager, isTeamLead, isAgencyAdmin } = useAuth();
+  const { user, profile, role, isCandidate, isRecruiter, isAdmin, isManager, isTeamLead, isAgencyAdmin, isMasterCompany } = useAuth();
+  const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const queryClient = useQueryClient();
   const [vendorDialogOpen, setVendorDialogOpen] = useState(false);
   const [vendorSubmission, setVendorSubmission] = useState<any | null>(null);
@@ -123,30 +124,34 @@ export default function Submissions() {
 
   const isPaginatedRole = !isTeamLead;
 
+  const companyId = profile?.company_id;
   const summariesContext = useMemo((): ApplicationSummariesContext | null => {
     if (isCandidate) return null;
-    if (isAgencyAdmin && profile?.agency_id) return { mode: "agency", agencyId: profile.agency_id };
-    if (isRecruiter && user?.id) return { mode: "recruiter", recruiterId: user.id };
-    if (isTeamLead && profile?.id) return { mode: "team_lead", teamLeadProfileId: profile.id };
-    if (isAdmin || isManager) return { mode: "admin" };
+    if (!companyId) return null;
+    if (isAgencyScope && profile?.agency_id) return { mode: "agency", agencyId: profile.agency_id, companyId };
+    if (isRecruiter && user?.id) return { mode: "recruiter", recruiterId: user.id, companyId };
+    if (isTeamLead && profile?.id) return { mode: "team_lead", teamLeadProfileId: profile.id, companyId };
+    if (isAdmin || isManager) return { mode: "admin", companyId };
     return null;
-  }, [isCandidate, isAgencyAdmin, profile?.agency_id, profile?.id, isRecruiter, user?.id, isTeamLead, isAdmin, isManager]);
+  }, [isCandidate, isAgencyScope, profile?.agency_id, profile?.id, companyId, isRecruiter, user?.id, isTeamLead, isAdmin, isManager]);
 
   const specialSubmissionsContext = useMemo((): SpecialSubmissionsRoleContext | null => {
-    if (isCandidate && profile?.linked_candidate_id) {
-      return { role: "candidate", linkedCandidateId: profile.linked_candidate_id };
+    if (isCandidate && profile?.linked_candidate_id && companyId) {
+      return { role: "candidate", linkedCandidateId: profile.linked_candidate_id, companyId };
     }
-    if (isAgencyAdmin && profile?.agency_id) return { role: "agency", agencyId: profile.agency_id };
-    if (isRecruiter && user?.id) return { role: "recruiter", recruiterId: user.id };
-    if (isTeamLead && profile?.id) return { role: "team_lead", teamLeadProfileId: profile.id };
-    if (isAdmin || isManager) return { role: "admin" };
+    if (!companyId) return null;
+    if (isAgencyScope && profile?.agency_id) return { role: "agency", agencyId: profile.agency_id, companyId };
+    if (isRecruiter && user?.id) return { role: "recruiter", recruiterId: user.id, companyId };
+    if (isTeamLead && profile?.id) return { role: "team_lead", teamLeadProfileId: profile.id, companyId };
+    if (isAdmin || isManager) return { role: "admin", companyId };
     return null;
   }, [
     isCandidate,
     profile?.linked_candidate_id,
     profile?.agency_id,
     profile?.id,
-    isAgencyAdmin,
+    companyId,
+    isAgencyScope,
     isRecruiter,
     user?.id,
     isTeamLead,
@@ -171,7 +176,7 @@ export default function Submissions() {
       ? !!profile?.linked_candidate_id
       : isRecruiter
         ? !!user?.id
-        : isAgencyAdmin
+        : isAgencyScope
           ? !!profile?.agency_id
           : isTeamLead
             ? !!profile?.id
@@ -224,7 +229,15 @@ export default function Submissions() {
     queryKey: ["submissions", role, user?.id, profile?.linked_candidate_id, page, PAGE_SIZE, search, statusFilter, sortBy, order],
     queryFn: async () => {
       if (!profile?.linked_candidate_id) return { data: [], total: 0 };
-      return fetchSubmissionsByCandidatePaginated(profile.linked_candidate_id, { page, pageSize: PAGE_SIZE, search, status: statusFilter, sortBy, order });
+      return fetchSubmissionsByCandidatePaginated(profile.linked_candidate_id, {
+        page,
+        pageSize: PAGE_SIZE,
+        search,
+        status: statusFilter,
+        sortBy,
+        order,
+        companyId: profile.company_id!,
+      });
     },
     enabled: isPaginatedRole && !!user && isCandidate,
   });
@@ -235,8 +248,9 @@ export default function Submissions() {
       fetchSubmissionsByCandidateWithDetails(applicationsSheet!.candidateId, {
         status: statusFilter,
         search,
+        companyId: profile?.company_id,
       }),
-    enabled: !!applicationsSheet?.candidateId,
+    enabled: !!applicationsSheet?.candidateId && !!profile?.company_id,
   });
 
   const filteredSummaries = useMemo(() => {
@@ -245,11 +259,11 @@ export default function Submissions() {
     if (isRecruiter && user?.id) {
       rows = rows.filter((r) => !r.recruiterId || r.recruiterId === user.id);
     }
-    if (isAgencyAdmin && profile?.agency_id) {
+    if (isAgencyScope && profile?.agency_id) {
       rows = rows.filter((r) => !r.agencyId || r.agencyId === profile.agency_id);
     }
     return rows;
-  }, [applicationSummaries, isCandidate, isRecruiter, user?.id, isAgencyAdmin, profile?.agency_id]);
+  }, [applicationSummaries, isCandidate, isRecruiter, user?.id, isAgencyScope, profile?.agency_id]);
 
   const displaySubmissions = isCandidate ? (submissionsResult?.data ?? []) : [];
   const displayCandidates = !isCandidate
@@ -305,28 +319,32 @@ export default function Submissions() {
 
   // fetch candidates for Add Application dropdown and for filter dropdown (admin: all, agency: agency, recruiter: assigned, team lead: under TL)
   const candidatesQueryFn = async () => {
-    if (isAdmin || isManager) return fetchCandidates();
-    if (isAgencyAdmin && profile?.agency_id) return fetchCandidatesBasic(profile.agency_id);
-    if (isRecruiter && user?.id) return fetchCandidatesByRecruiter(user.id);
-    if (isTeamLead && profile?.id) return fetchCandidatesByTeamLead(profile.id);
+    const cid = profile?.company_id;
+    if (!cid) return [];
+    if (isAdmin || isManager) return fetchCandidates(cid);
+    if (isAgencyScope && profile?.agency_id) return fetchCandidatesBasic(profile.agency_id, cid);
+    if (isRecruiter && user?.id) return fetchCandidatesByRecruiter(user.id, cid);
+    if (isTeamLead && profile?.id) return fetchCandidatesByTeamLead(profile.id, cid);
     return [];
   };
 
   const { data: candidates = [], isLoading: candidatesLoading } = useQuery({
-    queryKey: ["candidates-dropdown", role, user?.id, profile?.agency_id, profile?.id],
+    queryKey: ["candidates-dropdown", role, user?.id, profile?.agency_id, profile?.id, profile?.company_id],
     queryFn: candidatesQueryFn,
-    enabled: isAdmin || isManager || (isRecruiter && !!user?.id) || (isAgencyAdmin && !!profile?.agency_id) || (isTeamLead && !!profile?.id),
+    enabled:
+      !!profile?.company_id &&
+      (isAdmin || isManager || (isRecruiter && !!user?.id) || (isAgencyScope && !!profile?.agency_id) || (isTeamLead && !!profile?.id)),
   });
 
   const { data: agencies = [] } = useQuery({
-    queryKey: ["agencies-submissions"],
-    queryFn: fetchAgencies,
-    enabled: !isCandidate,
+    queryKey: ["agencies-submissions", profile?.company_id],
+    queryFn: () => fetchAgencies(profile!.company_id!),
+    enabled: !isCandidate && isMasterCompany && !!profile?.company_id,
   });
   const { data: recruiters = [] } = useQuery({
-    queryKey: ["recruiters-submissions", isAgencyAdmin ? profile?.agency_id : "all"],
-    queryFn: () => fetchProfilesByRole("recruiter", isAgencyAdmin ? profile?.agency_id ?? undefined : undefined),
-    enabled: !isCandidate,
+    queryKey: ["recruiters-submissions", isAgencyScope ? profile?.agency_id : "all", profile?.company_id],
+    queryFn: () => fetchProfilesByRole("recruiter", isAgencyScope ? profile?.agency_id ?? undefined : undefined, profile?.company_id),
+    enabled: !isCandidate && !!profile?.company_id,
   });
 
   const getRecruiterName = (recruiterId: string | null) =>
@@ -657,7 +675,7 @@ export default function Submissions() {
               </SelectContent>
             </Select>
           )}
-          {(isAdmin || isRecruiter || isAgencyAdmin) && (
+          {(isAdmin || isRecruiter || isAgencyScope) && (
             <div className="flex items-center gap-2">
               <Button
                 size="sm"
@@ -670,13 +688,13 @@ export default function Submissions() {
                     toast.error("No candidates assigned to you. Please create or assign a candidate first.");
                     return;
                   }
-                  if (isAgencyAdmin && (!candidates || candidates.length === 0)) {
+                  if (isAgencyScope && (!candidates || candidates.length === 0)) {
                     toast.error("No candidates assigned to your agency yet. Master admin must assign candidates to your agency first.");
                     return;
                   }
                   setAddDialogOpen(true);
                 }}
-                disabled={candidatesLoading || (isRecruiter && (!candidates || candidates.length === 0)) || (isAgencyAdmin && (!candidates || candidates.length === 0))}
+                disabled={candidatesLoading || (isRecruiter && (!candidates || candidates.length === 0)) || (isAgencyScope && (!candidates || candidates.length === 0))}
               >
                 Add Application
               </Button>
@@ -844,7 +862,7 @@ export default function Submissions() {
                       <TableHead>Candidate</TableHead>
                       <TableHead>Recruiter</TableHead>
                       <TableHead>Application count</TableHead>
-                      <TableHead>Agency</TableHead>
+                      {isMasterCompany && <TableHead>Agency</TableHead>}
                       <TableHead className="w-10">Actions</TableHead>
                     </>
                   )}
@@ -979,7 +997,7 @@ export default function Submissions() {
                   )
                 ) : displayCandidates.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="py-8 text-center text-muted-foreground">No candidates with applications found</TableCell>
+                    <TableCell colSpan={isMasterCompany ? 5 : 4} className="py-8 text-center text-muted-foreground">No candidates with applications found</TableCell>
                   </TableRow>
                 ) : (
                   displayCandidates.map((row) => (
@@ -987,7 +1005,7 @@ export default function Submissions() {
                       <TableCell className="font-medium">{row.candidateName}</TableCell>
                       <TableCell className="text-muted-foreground">{getRecruiterName(row.recruiterId)}</TableCell>
                       <TableCell>{row.applicationCount}</TableCell>
-                      <TableCell className="text-muted-foreground">{getAgencyName(row.agencyId)}</TableCell>
+                      {isMasterCompany && <TableCell className="text-muted-foreground">{getAgencyName(row.agencyId)}</TableCell>}
                       <TableCell className="w-10 p-1">
                         {row.applicationCount >= 1 ? (
                           <Button

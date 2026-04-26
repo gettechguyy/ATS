@@ -46,7 +46,8 @@ const statusColors: Record<string, string> = {
 };
 
 export default function Candidates() {
-  const { user, profile, isAdmin, isRecruiter, isManager, isCandidate, isAgencyAdmin } = useAuth();
+  const { user, profile, isAdmin, isRecruiter, isManager, isCandidate, isAgencyAdmin, isMasterCompany } = useAuth();
+  const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -64,16 +65,18 @@ export default function Candidates() {
   if (isCandidate) return <Navigate to="/" replace />;
 
   const canSeeAllCandidates = isAdmin || isManager;
+  const showAgencyColumn = isAdmin && !isAgencyScope && isMasterCompany;
   const { data: recruiters } = useQuery({
-    queryKey: ["recruiters", isAgencyAdmin ? profile?.agency_id : "master"],
-    queryFn: () => fetchProfilesByRole("recruiter", isAgencyAdmin ? profile?.agency_id ?? undefined : undefined),
-    enabled: !isCandidate,
+    queryKey: ["recruiters", isAgencyScope ? profile?.agency_id : "master", profile?.company_id],
+    queryFn: () =>
+      fetchProfilesByRole("recruiter", isAgencyScope ? profile?.agency_id ?? undefined : undefined, profile?.company_id ?? undefined),
+    enabled: !isCandidate && !!profile?.company_id,
   });
 
   const { data: agencies } = useQuery({
-    queryKey: ["agencies"],
-    queryFn: fetchAgencies,
-    enabled: !isAgencyAdmin,
+    queryKey: ["agencies", profile?.company_id],
+    queryFn: () => fetchAgencies(profile!.company_id!),
+    enabled: !isAgencyScope && isMasterCompany && !!profile?.company_id,
   });
 
   const activeAgencies = (agencies || []).filter((a: any) => a.is_active !== false);
@@ -88,19 +91,37 @@ export default function Candidates() {
   const { data: technologyOptions } = useQuery({
     queryKey: [
       "candidate-technologies",
-      isAgencyAdmin ? profile?.agency_id : effectiveAgencyForTech ?? "all",
+      isAgencyScope ? profile?.agency_id : effectiveAgencyForTech ?? "all",
       effectiveRecruiterForTech ?? "all",
     ],
-    queryFn: () => fetchCandidateTechnologies(
-      isAgencyAdmin ? profile?.agency_id ?? undefined : effectiveAgencyForTech,
-      effectiveRecruiterForTech,
-    ),
-    enabled: !isCandidate,
+    queryFn: () =>
+      fetchCandidateTechnologies(
+        isAgencyScope ? profile?.agency_id ?? undefined : effectiveAgencyForTech,
+        effectiveRecruiterForTech,
+        profile?.company_id ?? undefined
+      ),
+    enabled: !isCandidate && !!profile?.company_id,
   });
 
   const { data: candidatesResult, isLoading } = useQuery({
-    queryKey: ["candidates", canSeeAllCandidates ? "all" : isAgencyAdmin ? profile?.agency_id : user?.id, page, PAGE_SIZE, search, statusFilter, technologyFilter, agencyFilterKind, agencyFilterId, recruiterFilterKind, recruiterFilterId, sortBy, order],
+    queryKey: [
+      "candidates",
+      canSeeAllCandidates ? "all" : isAgencyScope ? profile?.agency_id : user?.id,
+      profile?.company_id,
+      page,
+      PAGE_SIZE,
+      search,
+      statusFilter,
+      technologyFilter,
+      agencyFilterKind,
+      agencyFilterId,
+      recruiterFilterKind,
+      recruiterFilterId,
+      sortBy,
+      order,
+    ],
     queryFn: () => {
+      const companyId = profile!.company_id!;
       const opts = {
         page,
         pageSize: PAGE_SIZE,
@@ -112,8 +133,9 @@ export default function Candidates() {
         agencyId: effectiveAgencyId,
         agencyNotNullOnly,
         recruiterId: effectiveRecruiterId,
+        companyId,
       };
-      if (isAgencyAdmin) {
+      if (isAgencyScope) {
         if (profile?.agency_id) return fetchCandidatesPaginated({ ...opts, agencyId: profile.agency_id });
         return Promise.resolve({ data: [], total: 0 });
       }
@@ -122,7 +144,7 @@ export default function Candidates() {
       }
       return fetchCandidatesByRecruiterPaginated(user!.id, opts);
     },
-    enabled: !!user && !isCandidate,
+    enabled: !!user && !isCandidate && !!profile?.company_id,
   });
   const candidates = candidatesResult?.data ?? [];
   const totalCount = candidatesResult?.total ?? 0;
@@ -149,6 +171,7 @@ export default function Candidates() {
         email,
         phone,
         recruiter_id,
+        company_id: profile!.company_id!,
         status: "New",
       });
 
@@ -171,7 +194,15 @@ export default function Candidates() {
 
           // 3) Create an invite tied to this candidate so the user can set a new password via the invite flow.
           const token = crypto.randomUUID();
-          await createInvite({ token, email, full_name: `${first_name} ${last_name || ""}`, role: "candidate", created_by: user?.id || "", candidate_id: created?.id });
+          await createInvite({
+            token,
+            email,
+            full_name: `${first_name} ${last_name || ""}`,
+            role: "candidate",
+            created_by: user?.id || "",
+            company_id: profile!.company_id!,
+            candidate_id: created?.id,
+          });
           const inviteLink = `${getAppBaseUrl()}/set-password?token=${token}`;
           const webhook = import.meta.env.VITE_INVITE_WEBHOOK as string | undefined;
           if (webhook) {
@@ -230,19 +261,19 @@ export default function Candidates() {
   const displayRecruiterName = (recruiterId: string) => {
     const r = recruiters?.find((x: any) => x.user_id === recruiterId);
     const name = r?.full_name || "Unassigned";
-    if (isAgencyAdmin || !r?.agency_id || !agencies?.length) return name;
+    if (!isMasterCompany || isAgencyScope || !r?.agency_id || !agencies?.length) return name;
     const agency = (agencies as any[]).find((a: any) => a.id === r.agency_id);
     return agency ? `${name} (${agency.name})` : name;
   };
 
   // Recruiters and agency admin/employees must not see personal email/phone — show as "—".
-  const cannotSeePersonalContact = isRecruiter || isAgencyAdmin;
+  const cannotSeePersonalContact = isRecruiter || isAgencyScope;
   const displayEmail = (c: any) => (cannotSeePersonalContact ? "—" : (c.email || "—"));
   const displayPhone = (c: any) => (cannotSeePersonalContact ? "—" : (c.phone || "—"));
   // Main company (admin/manager/recruiter) sees "Name (Agency Name)" for agency-assigned candidates; agency viewer sees name only.
   const displayCandidateName = (c: any) => {
     const name = `${c.first_name || ""} ${(c.last_name || "").trim()}`.trim() || "—";
-    if (isAgencyAdmin || !c?.agency_id || !agencies?.length) return name;
+    if (!isMasterCompany || isAgencyScope || !c?.agency_id || !agencies?.length) return name;
     const agency = (agencies as any[]).find((a: any) => a.id === c.agency_id);
     return agency ? `${name} (${agency.name})` : name;
   };
@@ -254,7 +285,7 @@ export default function Candidates() {
           <h1 className="text-2xl font-bold text-foreground">Candidates</h1>
           <p className="text-sm text-muted-foreground">Manage candidate pipeline</p>
         </div>
-        {(isAdmin && !isAgencyAdmin) && (
+        {(isAdmin && !isAgencyScope) && (
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
             <Button><Plus className="mr-2 h-4 w-4" />Add Candidate</Button>
@@ -328,7 +359,7 @@ export default function Candidates() {
               ))}
             </SelectContent>
           </Select>
-          {canSeeAllCandidates && agencies && (
+          {canSeeAllCandidates && isMasterCompany && agencies && (
             <>
               <Select value={agencyFilterKind} onValueChange={(v) => { setAgencyFilterKind(v as "all" | "none" | "agency"); if (v !== "agency") setAgencyFilterId(""); }}>
                 <SelectTrigger className="w-40">
@@ -409,7 +440,7 @@ export default function Candidates() {
                       <TableHead>Technology</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Recruiter</TableHead>
-                      {isAdmin && !isAgencyAdmin && <TableHead>Agency</TableHead>}
+                      {showAgencyColumn && <TableHead>Agency</TableHead>}
                     </>
                   ) : (
                     <>
@@ -419,8 +450,8 @@ export default function Candidates() {
                       <TableHead>Screen</TableHead>
                       <TableHead>Interview</TableHead>
                       <TableHead>Marketing Start Date</TableHead>
-                      <TableHead>Last Agency Apply</TableHead>
-                      {isAdmin && !isAgencyAdmin && <TableHead>Agency</TableHead>}
+                      <TableHead>{isMasterCompany ? "Last agency apply" : "Last application"}</TableHead>
+                      {showAgencyColumn && <TableHead>Agency</TableHead>}
                     </>
                   )}
                   <TableHead className="w-20"></TableHead>
@@ -429,7 +460,7 @@ export default function Candidates() {
               <TableBody>
                 {candidates.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={tableLayout2 ? (isAdmin && !isAgencyAdmin ? 9 : 8) : (isAdmin && !isAgencyAdmin ? 8 : 7)} className="py-8 text-center text-muted-foreground">No candidates found</TableCell>
+                    <TableCell colSpan={tableLayout2 ? (showAgencyColumn ? 9 : 8) : (showAgencyColumn ? 8 : 7)} className="py-8 text-center text-muted-foreground">No candidates found</TableCell>
                   </TableRow>
                 ) : !tableLayout2 ? (
                   candidates.map((c: any) => (
@@ -440,7 +471,7 @@ export default function Candidates() {
                       <TableCell className="text-muted-foreground">{(c as any).technology || "—"}</TableCell>
                       <TableCell><Badge className={statusColors[c.status] || ""}>{c.status}</Badge></TableCell>
                       <TableCell className="text-muted-foreground">{displayRecruiterName(c.recruiter_id)}</TableCell>
-                      {isAdmin && !isAgencyAdmin && (
+                      {showAgencyColumn && (
                         <TableCell>
                           <Select
                             value={activeAgencies.some((a: any) => a.id === c.agency_id && a.is_active !== false) ? (c.agency_id ?? "none") : "none"}
@@ -500,7 +531,7 @@ export default function Candidates() {
                         <TableCell className="text-muted-foreground">
                           {stats?.lastApplicationAt ? new Date(stats.lastApplicationAt).toLocaleDateString() : "—"}
                         </TableCell>
-                      {isAdmin && !isAgencyAdmin && (
+                      {showAgencyColumn && (
                           <TableCell>
                             <Select
                             value={activeAgencies.some((a: any) => a.id === c.agency_id && a.is_active !== false) ? (c.agency_id ?? "none") : "none"}

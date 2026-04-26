@@ -1,20 +1,22 @@
 import { supabase } from "../../src/integrations/supabase/client";
 
-export async function fetchCandidates() {
+export async function fetchCandidates(companyId: string) {
   const { data, error } = await supabase
     .from("candidates")
     .select("*")
+    .eq("company_id", companyId)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data;
 }
 
 /** Only candidates assigned to this recruiter (recruiter_id = recruiterId). */
-export async function fetchCandidatesByRecruiter(recruiterId: string) {
+export async function fetchCandidatesByRecruiter(recruiterId: string, companyId: string) {
   const { data, error } = await supabase
     .from("candidates")
     .select("*")
     .eq("recruiter_id", recruiterId)
+    .eq("company_id", companyId)
     .order("created_at", { ascending: false });
   if (error) throw error;
   return data;
@@ -28,6 +30,8 @@ export type CandidatesPageOpts = {
   status?: string;
   sortBy?: string;
   order?: "asc" | "desc";
+  /** Multi-tenant scope (required for list queries) */
+  companyId?: string;
   /** undefined = all, null = no agency assigned, string = that agency */
   agencyId?: string | null;
   /** when true, only candidates with agency_id IS NOT NULL (used when filter is "Agency" but no specific agency chosen) */
@@ -43,11 +47,20 @@ function candidateOrderColumn(sortField: string): string {
   return sortField;
 }
 
-function buildCandidatesQuery(recruiterId?: string | null, agencyId?: string | null, agencyNotNullOnly?: boolean, sortBy?: string, order?: "asc" | "desc", technology?: string | null) {
+function buildCandidatesQuery(
+  recruiterId?: string | null,
+  agencyId?: string | null,
+  agencyNotNullOnly?: boolean,
+  sortBy?: string,
+  order?: "asc" | "desc",
+  technology?: string | null,
+  companyId?: string | null
+) {
   const rawCol = sortBy && CANDIDATES_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
   const col = candidateOrderColumn(rawCol);
   const asc = order === "asc";
   let q = supabase.from("candidates").select("*", { count: "exact" }).order(col, { ascending: asc });
+  if (companyId) q = q.eq("company_id", companyId);
   if (recruiterId !== undefined && recruiterId !== null) q = q.eq("recruiter_id", recruiterId);
   else if (recruiterId === null) q = q.is("recruiter_id", null);
   // Agency: specific ID takes precedence, then null (None), then agencyNotNullOnly (Agency filter but no selection)
@@ -61,8 +74,9 @@ function buildCandidatesQuery(recruiterId?: string | null, agencyId?: string | n
 
 /** Server-side paginated + optional search, status, sort, agencyId, recruiterId, technology. Returns { data, total } */
 export async function fetchCandidatesPaginated(opts: CandidatesPageOpts) {
-  const { page, pageSize, search, status, sortBy, order, agencyId, agencyNotNullOnly, recruiterId, technology } = opts;
-  let q = buildCandidatesQuery(recruiterId, agencyId, agencyNotNullOnly, sortBy, order, technology ?? undefined);
+  const { page, pageSize, search, status, sortBy, order, agencyId, agencyNotNullOnly, recruiterId, technology, companyId } = opts;
+  if (!companyId) throw new Error("companyId is required");
+  let q = buildCandidatesQuery(recruiterId, agencyId, agencyNotNullOnly, sortBy, order, technology ?? undefined, companyId);
   if (status && status !== "all") q = q.eq("status", status);
   if (search && search.trim()) {
     const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
@@ -77,8 +91,9 @@ export async function fetchCandidatesPaginated(opts: CandidatesPageOpts) {
 }
 
 export async function fetchCandidatesByRecruiterPaginated(recruiterId: string, opts: CandidatesPageOpts) {
-  const { page, pageSize, search, status, sortBy, order, agencyId, agencyNotNullOnly, technology } = opts;
-  let q = buildCandidatesQuery(recruiterId, agencyId ?? undefined, agencyNotNullOnly, sortBy, order, technology ?? undefined);
+  const { page, pageSize, search, status, sortBy, order, agencyId, agencyNotNullOnly, technology, companyId } = opts;
+  if (!companyId) throw new Error("companyId is required");
+  let q = buildCandidatesQuery(recruiterId, agencyId ?? undefined, agencyNotNullOnly, sortBy, order, technology ?? undefined, companyId);
   if (status && status !== "all") q = q.eq("status", status);
   if (search && search.trim()) {
     const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
@@ -92,20 +107,19 @@ export async function fetchCandidatesByRecruiterPaginated(recruiterId: string, o
   return { data: data ?? [], total: count ?? 0 };
 }
 
-export async function fetchCandidateById(id: string) {
-  const { data, error } = await supabase
-    .from("candidates")
-    .select("*")
-    .eq("id", id)
-    .maybeSingle();
+export async function fetchCandidateById(id: string, companyId?: string) {
+  let q = supabase.from("candidates").select("*").eq("id", id);
+  if (companyId) q = q.eq("company_id", companyId);
+  const { data, error } = await q.maybeSingle();
   if (error) throw error;
   return data;
 }
 
-export async function fetchCandidatesBasic(agencyId?: string | null) {
+export async function fetchCandidatesBasic(agencyId?: string | null, companyId?: string | null) {
   let q = supabase
     .from("candidates")
     .select("id, first_name, last_name, email, recruiter_id, team_lead_id, agency_id, technology");
+  if (companyId != null) q = q.eq("company_id", companyId);
   if (agencyId != null) q = q.eq("agency_id", agencyId);
   const { data } = await q;
   return data || [];
@@ -114,8 +128,13 @@ export async function fetchCandidatesBasic(agencyId?: string | null) {
 /** Distinct technology values for filter dropdown.
  * Optionally scoped by agency and/or recruiter.
  */
-export async function fetchCandidateTechnologies(agencyId?: string | null, recruiterId?: string | null): Promise<string[]> {
+export async function fetchCandidateTechnologies(
+  agencyId?: string | null,
+  recruiterId?: string | null,
+  companyId?: string | null
+): Promise<string[]> {
   let q = supabase.from("candidates").select("technology");
+  if (companyId != null) q = q.eq("company_id", companyId);
   if (agencyId != null) q = q.eq("agency_id", agencyId);
   if (recruiterId !== undefined) {
     if (recruiterId === null) q = q.is("recruiter_id", null);
@@ -131,12 +150,13 @@ export async function fetchCandidateTechnologies(agencyId?: string | null, recru
 }
 
 /** Candidates assigned to this team lead (team_lead_id = profile id). */
-export async function fetchCandidatesByTeamLead(teamLeadProfileId: string) {
-  const { data, error } = await supabase
+export async function fetchCandidatesByTeamLead(teamLeadProfileId: string, companyId?: string) {
+  let q = supabase
     .from("candidates")
     .select("id, first_name, last_name, email, recruiter_id, team_lead_id, agency_id")
-    .eq("team_lead_id", teamLeadProfileId)
-    .order("created_at", { ascending: false });
+    .eq("team_lead_id", teamLeadProfileId);
+  if (companyId) q = q.eq("company_id", companyId);
+  const { data, error } = await q.order("created_at", { ascending: false });
   if (error) throw error;
   return data || [];
 }
@@ -149,8 +169,10 @@ export async function createCandidate(candidate: {
   email?: string | null;
   phone?: string | null;
   recruiter_id: string;
+  company_id: string;
   status?: string;
   visa_status?: string | null;
+  agency_id?: string | null;
 }) {
   const { data, error } = await supabase.from("candidates").insert({
     first_name: candidate.first_name,
@@ -158,6 +180,8 @@ export async function createCandidate(candidate: {
     email: candidate.email || null,
     phone: candidate.phone || null,
     recruiter_id: candidate.recruiter_id,
+    company_id: candidate.company_id,
+    agency_id: candidate.agency_id ?? null,
     status: (candidate.status || "New") as any,
     visa_status: candidate.visa_status || "Other",
   }).select("id").single();

@@ -50,10 +50,12 @@ const allNavItems = [
 ];
 
 function useCandidateProfileComplete(candidateId: string | null) {
+  const { profile } = useAuth();
+  const companyId = profile?.company_id;
   const { data: candidate } = useQuery({
-    queryKey: ["candidate-profile-complete", candidateId],
-    queryFn: () => fetchCandidateById(candidateId!),
-    enabled: !!candidateId,
+    queryKey: ["candidate-profile-complete", candidateId, companyId],
+    queryFn: () => fetchCandidateById(candidateId!, companyId),
+    enabled: !!candidateId && !!companyId,
   });
   const { data: educations } = useQuery({
     queryKey: ["candidate-educations-complete", candidateId],
@@ -76,7 +78,7 @@ function useCandidateProfileComplete(candidateId: string | null) {
 }
 
 export default function AppLayout() {
-  const { user, profile, role, isAdmin, loading, signOut } = useAuth();
+  const { user, profile, role, isAdmin, loading, signOut, company, isMasterCompany } = useAuth();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -96,7 +98,14 @@ export default function AppLayout() {
 
   if (!user) return <Navigate to="/login" replace />;
 
-  const navItems = allNavItems.filter((item) => item.roles.includes(role || "recruiter"));
+  if (role === "agency_admin" && !isMasterCompany) {
+    return <Navigate to="/" replace />;
+  }
+
+  const navItems = allNavItems.filter(
+    (item) =>
+      item.roles.includes(role || "recruiter") && (item.to !== "/admin/agencies" || isMasterCompany)
+  );
 
   return (
     <div className="flex min-h-screen w-full min-w-0 bg-background overflow-x-hidden">
@@ -125,9 +134,14 @@ export default function AppLayout() {
             <Briefcase className="h-5 w-5" />
           </div>
           {!collapsed && (
-            <span className="text-base font-semibold tracking-tight text-sidebar-primary">
-              HireTrack
-            </span>
+            <div className="min-w-0 flex-1">
+              <span className="block text-base font-semibold tracking-tight text-sidebar-primary">HireTrack</span>
+              {company?.name ? (
+                <span className="block truncate text-xs text-sidebar-foreground/70" title={company.name}>
+                  {company.name}
+                </span>
+              ) : null}
+            </div>
           )}
           <Button
             variant="ghost"

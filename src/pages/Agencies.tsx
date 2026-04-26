@@ -19,7 +19,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { fetchAgencies, createAgency, updateAgency } from "../../dbscripts/functions/agencies";
 
 export default function Agencies() {
-  const { isAdmin, user, createUser } = useAuth();
+  const { isAdmin, user, createUser, profile, isMasterCompany } = useAuth();
   const queryClient = useQueryClient();
   const [addAgencyOpen, setAddAgencyOpen] = useState(false);
   const [newAgencyName, setNewAgencyName] = useState("");
@@ -38,17 +38,17 @@ export default function Agencies() {
   });
 
   const { data: agencies = [], isLoading } = useQuery({
-    queryKey: ["agencies", agencySort],
+    queryKey: ["agencies", profile?.company_id, agencySort],
     queryFn: () =>
-      fetchAgencies({
+      fetchAgencies(profile!.company_id!, {
         sortBy: agencySort.key,
         order: agencySort.order,
       }),
-    enabled: isAdmin,
+    enabled: isAdmin && !!profile?.company_id,
   });
 
   const createAgencyMutation = useMutation({
-    mutationFn: (name: string) => createAgency({ name, type: "out" }),
+    mutationFn: (name: string) => createAgency({ name, type: "out", company_id: profile!.company_id! }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["agencies"] });
       setAddAgencyOpen(false);
@@ -144,7 +144,7 @@ export default function Agencies() {
     updateAgencyMutation.mutate({ id: editingAgency.id, name: editAgencyName.trim() });
   };
 
-  if (!isAdmin) return <Navigate to="/" replace />;
+  if (!isAdmin || !isMasterCompany) return <Navigate to="/" replace />;
 
   return (
     <div>

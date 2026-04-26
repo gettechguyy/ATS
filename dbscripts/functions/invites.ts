@@ -6,6 +6,7 @@ export async function createInvite(invite: {
   full_name: string;
   role: string;
   created_by: string;
+  company_id: string;
   candidate_id?: string | null;
 }) {
   const { error } = await supabase.from("invites").insert({
@@ -14,6 +15,7 @@ export async function createInvite(invite: {
     full_name: invite.full_name,
     role: invite.role,
     created_by: invite.created_by,
+    company_id: invite.company_id,
     ...(invite.candidate_id != null && { candidate_id: invite.candidate_id }),
   });
   if (error) throw error;
@@ -27,12 +29,16 @@ export type FetchInvitesOpts = {
 };
 
 /** Full list (Invites page has no pagination); sorting is applied in Postgres, not in the browser. */
-export async function fetchInvites(opts?: FetchInvitesOpts) {
+export async function fetchInvites(companyId: string, opts?: FetchInvitesOpts) {
   const raw =
     opts?.sortBy && INVITES_SORT_COLUMNS.includes(opts.sortBy) ? opts.sortBy : "created_at";
   const sortBy = raw === "full_name" ? "full_name_sort" : raw;
   const ascending = opts?.order === "asc";
-  const { data, error } = await supabase.from("invites").select("*").order(sortBy, { ascending });
+  const { data, error } = await supabase
+    .from("invites")
+    .select("*")
+    .eq("company_id", companyId)
+    .order(sortBy, { ascending });
   if (error) throw error;
   return data || [];
 }

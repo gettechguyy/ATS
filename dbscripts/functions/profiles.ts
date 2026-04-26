@@ -16,11 +16,11 @@ function applyProfilesListOrder(q: any, sortBy: string, ascending: boolean) {
 }
 
 /** User management lists; ordering is applied in Postgres before rows are returned. */
-export async function fetchAllProfiles(opts?: ProfilesListSortOpts) {
+export async function fetchAllProfiles(companyId: string, opts?: ProfilesListSortOpts) {
   const sortBy =
     opts?.sortBy && PROFILES_LIST_SORT.includes(opts.sortBy as any) ? opts.sortBy : "created_at";
   const ascending = opts?.order === "asc";
-  let q = supabase.from("profiles").select("*");
+  let q = supabase.from("profiles").select("*").eq("company_id", companyId);
   q = applyProfilesListOrder(q, sortBy, ascending);
   const { data } = await q;
   return data || [];
@@ -31,11 +31,12 @@ export async function fetchProfilesBySelect(fields: string) {
   return data || [];
 }
 
-export async function fetchProfilesByAgency(agencyId: string, opts?: ProfilesListSortOpts) {
+export async function fetchProfilesByAgency(agencyId: string, opts?: ProfilesListSortOpts, companyId?: string) {
   const sortBy =
     opts?.sortBy && PROFILES_LIST_SORT.includes(opts.sortBy as any) ? opts.sortBy : "created_at";
   const ascending = opts?.order === "asc";
   let q = supabase.from("profiles").select("*").eq("agency_id", agencyId);
+  if (companyId) q = q.eq("company_id", companyId);
   q = applyProfilesListOrder(q, sortBy, ascending);
   const { data, error } = await q;
   if (error) throw error;
@@ -69,7 +70,7 @@ export async function updateProfile(userId: string, updates: Record<string, any>
 }
 
 // Fetch profiles for users that have a specific role in user_roles table.
-export async function fetchProfilesByRole(role: string, agencyId?: string | null) {
+export async function fetchProfilesByRole(role: string, agencyId?: string | null, companyId?: string | null) {
   const { data: rolesData, error: rolesError } = await supabase
     .from("user_roles")
     .select("user_id")
@@ -81,6 +82,7 @@ export async function fetchProfilesByRole(role: string, agencyId?: string | null
     .from("profiles")
     .select("user_id, full_name, email, agency_id")
     .in("user_id", userIds as string[]);
+  if (companyId != null) q = q.eq("company_id", companyId);
   if (agencyId != null) q = q.eq("agency_id", agencyId);
   const { data: profiles } = await q;
   return profiles || [];

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ import { ArrowDown, ArrowUp } from "lucide-react";
 type InviteSortKey = NonNullable<FetchInvitesOpts["sortBy"]>;
 
 export default function InvitesPage() {
+  const { profile } = useAuth();
   const [copied, setCopied] = useState<string | null>(null);
   const [inviteSort, setInviteSort] = useState<{ key: InviteSortKey; order: "asc" | "desc" }>({
     key: "created_at",
@@ -17,12 +19,13 @@ export default function InvitesPage() {
   });
 
   const { data: invites = [], isLoading } = useQuery({
-    queryKey: ["invites", inviteSort],
+    queryKey: ["invites", profile?.company_id, inviteSort],
     queryFn: () =>
-      fetchInvites({
+      fetchInvites(profile!.company_id!, {
         sortBy: inviteSort.key,
         order: inviteSort.order,
       }),
+    enabled: !!profile?.company_id,
   });
 
   const toggleInviteSort = (key: InviteSortKey) => {

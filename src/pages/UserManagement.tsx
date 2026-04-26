@@ -39,7 +39,8 @@ import { updateAppUserPassword, updateAppUserDetails } from "@/lib/authApi";
 const ROLES = ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] as const;
 
 export default function UserManagement() {
-  const { isAdmin, createUser, user, isManager, isTeamLead, isAgencyAdmin, profile } = useAuth();
+  const { isAdmin, createUser, user, isManager, isTeamLead, isAgencyAdmin, isMasterCompany, profile } = useAuth();
+  const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<"team" | "candidates">("team");
   type UserTableSortKey = "name" | "email" | "joined";
@@ -55,15 +56,17 @@ export default function UserManagement() {
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState<string>("recruiter");
 
-  const canAccessUserManagement = isAdmin || isManager || isTeamLead || isAgencyAdmin;
+  const canAccessUserManagement = isAdmin || isManager || isTeamLead || isAgencyScope;
 
   const { data: users, isLoading } = useQuery({
-    queryKey: ["admin-users", isAgencyAdmin ? profile?.agency_id : "all", userTableSort],
+    queryKey: ["admin-users", isAgencyScope ? profile?.agency_id : "all", profile?.company_id, userTableSort],
     queryFn: async () => {
       const sortOpts = profileListSortOpts(userTableSort);
-      const profiles = isAgencyAdmin
-        ? (profile?.agency_id ? await fetchProfilesByAgency(profile.agency_id, sortOpts) : [])
-        : await fetchAllProfiles(sortOpts);
+      const companyId = profile?.company_id;
+      if (!companyId) return [];
+      const profiles = isAgencyScope
+        ? (profile?.agency_id ? await fetchProfilesByAgency(profile.agency_id, sortOpts, companyId) : [])
+        : await fetchAllProfiles(companyId, sortOpts);
       const roles = await fetchAllUserRoles();
       return profiles.map((p: any) => ({
         ...p,
@@ -71,19 +74,23 @@ export default function UserManagement() {
         roleId: roles.find((r: any) => r.user_id === p.user_id)?.id,
       }));
     },
-    enabled: canAccessUserManagement && (!isAgencyAdmin || !!profile?.agency_id),
+    enabled: canAccessUserManagement && (!isAgencyScope || !!profile?.agency_id) && !!profile?.company_id,
   });
 
   const { data: agencies } = useQuery({
-    queryKey: ["agencies"],
-    queryFn: fetchAgencies,
-    enabled: !isAgencyAdmin,
+    queryKey: ["agencies", profile?.company_id],
+    queryFn: () => fetchAgencies(profile!.company_id!),
+    enabled: !isAgencyScope && isMasterCompany && !!profile?.company_id,
   });
 
   const { data: candidates } = useQuery({
-    queryKey: ["all-candidates-for-linking", isAgencyAdmin ? profile?.agency_id : "all"],
-    queryFn: () => fetchCandidatesBasic(isAgencyAdmin ? profile?.agency_id ?? undefined : undefined),
-    enabled: isAdmin || isManager || isTeamLead,
+    queryKey: ["all-candidates-for-linking", isAgencyScope ? profile?.agency_id : "all", profile?.company_id],
+    queryFn: () =>
+      fetchCandidatesBasic(
+        isAgencyScope ? profile?.agency_id ?? undefined : undefined,
+        profile?.company_id ?? undefined
+      ),
+    enabled: (isAdmin || isManager || isTeamLead) && !!profile?.company_id,
   });
   // recruiter ids under this team lead (may be app_user ids or profile ids depending on schema)
   const recruiterIdsUnderTL = new Set<string>();
@@ -104,10 +111,10 @@ export default function UserManagement() {
   });
   const candidateOptionList = Array.from(candidateOptionsMap.entries()).map(([key, c]) => ({ key, ...c }));
   // Agency admin and recruiters must not see candidate personal email.
-  const displayCandidateEmail = (c: any) => (isAgencyAdmin ? "" : (c?.email || ""));
+  const displayCandidateEmail = (c: any) => (isAgencyScope ? "" : (c?.email || ""));
   // Main company (admin/manager/team lead) sees "Name (Agency Name)" for agency users; agency viewer sees name only.
   const displayUserName = (u: any) => {
-    if (isAgencyAdmin || !u?.agency_id || !agencies?.length) return u?.full_name ?? "";
+    if (!isMasterCompany || isAgencyScope || !u?.agency_id || !agencies?.length) return u?.full_name ?? "";
     const agency = (agencies as any[]).find((a: any) => a.id === u.agency_id);
     return agency ? `${u.full_name} (${agency.name})` : (u.full_name ?? "");
   };
@@ -246,16 +253,23 @@ export default function UserManagement() {
      For other roles we continue to create the user with a password. */
   const createUserMutation = useMutation({
     mutationFn: async (fd: FormData) => {
-      if (!(isAdmin || isManager || isTeamLead || isAgencyAdmin)) throw new Error("Not authorized to create users");
+      if (!(isAdmin || isManager || isTeamLead || isAgencyScope)) throw new Error("Not authorized to create users");
       const role = (fd.get("role") as string) || selectedRole;
-      if (isAgencyAdmin && role !== "recruiter" && role !== "agency_admin") throw new Error("Agency admin can only create recruiters or agency admins for their agency");
+      if (isAgencyScope && role !== "recruiter" && role !== "agency_admin") throw new Error("Agency admin can only create recruiters or agency admins for their agency");
       const email = fd.get("email") as string;
       const fullName = fd.get("full_name") as string;
       // Candidates should always be invited (invite token + webhook)
       if (role === "candidate") {
         const token = crypto.randomUUID();
         const { createInvite } = await import("../../dbscripts/functions/invites");
-        await createInvite({ token, email, full_name: fullName, role, created_by: user?.id || "" });
+        await createInvite({
+          token,
+          email,
+          full_name: fullName,
+          role,
+          created_by: user?.id || "",
+          company_id: profile!.company_id!,
+        });
         const inviteLink = `${getAppBaseUrl()}/set-password?token=${token}`;
         const webhook = import.meta.env.VITE_INVITE_WEBHOOK as string | undefined;
         if (webhook) {
@@ -302,7 +316,7 @@ export default function UserManagement() {
           <p className="text-sm text-muted-foreground">Manage team members, roles, and candidate assignments</p>
         </div>
         <div className="flex items-center gap-2">
-          {!isAgencyAdmin && (
+          {!isAgencyScope && (
           <div className="tabs inline-flex rounded-md bg-muted p-1">
             <button
               className={`px-3 py-1 rounded ${activeTab === "team" ? "bg-background font-medium" : "text-muted-foreground"}`}
@@ -319,7 +333,7 @@ export default function UserManagement() {
           </div>
           )}
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-            {(isAdmin || isManager || isTeamLead || isAgencyAdmin) && (
+            {(isAdmin || isManager || isTeamLead || isAgencyScope) && (
               <DialogTrigger asChild>
                 <Button><Plus className="mr-2 h-4 w-4" />Create User</Button>
               </DialogTrigger>
@@ -355,7 +369,7 @@ export default function UserManagement() {
                     <Select value={selectedRole} onValueChange={setSelectedRole}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                    { (isAgencyAdmin ? ["agency_admin", "recruiter"] : isTeamLead ? ["recruiter","candidate"] : ROLES.filter(r => r !== "candidate")) .map((r) => {
+                    { (isAgencyScope ? ["agency_admin", "recruiter"] : isTeamLead ? ["recruiter","candidate"] : ROLES.filter(r => r !== "candidate" && (isMasterCompany || r !== "agency_admin"))) .map((r) => {
                           const label = r === "team_lead" ? "Team Lead" : r === "agency_admin" ? "Admin" : r.replace('_',' ').replace(/\b\w/g, c => c.toUpperCase());
                           return <SelectItem key={r} value={r}><Badge variant={r === "admin" || r === "agency_admin" ? "default" : "secondary"} className="capitalize">{label}</Badge></SelectItem>;
                         })}
@@ -376,7 +390,7 @@ export default function UserManagement() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="h-4 w-4" /> {isAgencyAdmin ? "Agency" : "Team"} Members ({users?.length || 0})
+            <Users className="h-4 w-4" /> {isAgencyScope ? "Agency" : "Team"} Members ({users?.length || 0})
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -420,7 +434,7 @@ export default function UserManagement() {
                       <TableCell className="font-medium">{displayUserName(u)}</TableCell>
                       <TableCell className="text-muted-foreground">{u.email}</TableCell>
                       <TableCell>
-                      {(isTeamLead && (u.role === "candidate" || u.role === "recruiter")) || isAgencyAdmin ? (
+                      {(isTeamLead && (u.role === "candidate" || u.role === "recruiter")) || isAgencyScope ? (
                         <Badge className="capitalize">{u.role === "agency_admin" ? "Admin" : u.role.replace('_',' ')}</Badge>
                       ) : (
                         <Select
@@ -465,7 +479,7 @@ export default function UserManagement() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {(isAdmin || isManager || isTeamLead || isAgencyAdmin) && (
+                        {(isAdmin || isManager || isTeamLead || isAgencyScope) && (
                           <div className="flex flex-wrap gap-1">
                             <Button size="sm" variant="ghost" onClick={() => {
                               setEditDetailsTargetUser(u);
