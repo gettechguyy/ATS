@@ -1155,12 +1155,27 @@ export default function VendorSubmissions() {
               await updateSubmissionMutation.mutateAsync({ id: screenSubmission.id, payload });
               setScreenDialogOpen(false);
               try {
-                const result = await notifySchedulingEmail("screen_call_scheduled", screenSubmission, {
-                  scheduledAtIso: scheduled_at,
-                  mode: screenMode,
-                  linkOrPhone: screenLinkOrPhone,
-                  recruiterName: profile?.full_name ?? null,
-                });
+                const result = await notifySchedulingEmail(
+                  "screen_call_scheduled",
+                  {
+                    ...screenSubmission,
+                    screen_resume_url: screenResumeUrl,
+                    screen_questions_url: screenQuestionsUrl,
+                    screen_response_status: screenResponse === "None" ? null : screenResponse,
+                    screen_rejection_note: screenResponse === "No" ? screenRejectionNote || null : null,
+                    status: "Screen Call",
+                  },
+                  {
+                    scheduledAtIso: scheduled_at,
+                    mode: screenMode,
+                    linkOrPhone: screenLinkOrPhone,
+                    recruiterName: profile?.full_name ?? null,
+                    resumeUrl: screenResumeUrl,
+                    interviewQuestionsUrl: screenQuestionsUrl,
+                    status: screenResponse === "None" ? null : screenResponse,
+                    rejectionNote: screenResponse === "No" ? screenRejectionNote || null : null,
+                  }
+                );
                 if (result.sent === false) toast.info("Screen call saved; candidate has no email on file.");
               } catch {
                 toast.warning("Screen call saved, but the candidate notification email could not be sent.");

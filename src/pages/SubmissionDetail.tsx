@@ -159,7 +159,7 @@ export default function SubmissionDetail() {
         virtual_link: mode === "Virtual" ? virtualLink : null,
         interview_questions_url: url,
       });
-      return { scheduledAt, mode, linkOrPhone: virtualLink };
+      return { scheduledAt, mode, linkOrPhone: virtualLink, interviewQuestionsUrl: url };
     },
     onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ["submission-interviews", id] });
@@ -173,6 +173,8 @@ export default function SubmissionDetail() {
             linkOrPhone: data.linkOrPhone,
             roundNumber: nextRound,
             recruiterName: profile?.full_name ?? null,
+            status: "Scheduled",
+            interviewQuestionsUrl: data.interviewQuestionsUrl,
           });
           if (result.sent === false) toast.info("Interview saved; candidate has no email on file.");
         } catch {
@@ -224,6 +226,8 @@ export default function SubmissionDetail() {
             linkOrPhone: interview.virtual_link,
             roundNumber: interview.round_number,
             recruiterName: profile?.full_name ?? null,
+            status: interview.status,
+            interviewQuestionsUrl: interview.interview_questions_url,
           });
           if (result.sent === false) toast.info("Interview rescheduled; candidate has no email on file.");
         } catch {
@@ -920,6 +924,10 @@ export default function SubmissionDetail() {
                         mode: submission.screen_mode || "Virtual",
                         linkOrPhone: submission.screen_link_or_phone,
                         recruiterName: profile?.full_name ?? null,
+                        resumeUrl: submission.screen_resume_url,
+                        interviewQuestionsUrl: submission.screen_questions_url,
+                        status: submission.screen_response_status,
+                        rejectionNote: submission.screen_rejection_note,
                       });
                       if (result.sent === false) toast.info("Screen call rescheduled; candidate has no email on file.");
                     } catch {
@@ -1376,12 +1384,27 @@ export default function SubmissionDetail() {
               await updateSubmissionMutation.mutateAsync({ id: screenSubmission.id, payload });
               setScreenDialogOpen(false);
               try {
-                const result = await notifySchedulingEmail("screen_call_scheduled", screenSubmission, {
-                  scheduledAtIso: scheduled_at,
-                  mode: screenMode,
-                  linkOrPhone: screenLinkOrPhone,
-                  recruiterName: profile?.full_name ?? null,
-                });
+                const result = await notifySchedulingEmail(
+                  "screen_call_scheduled",
+                  {
+                    ...screenSubmission,
+                    screen_resume_url: screenResumeUrl,
+                    screen_questions_url: screenQuestionsUrl,
+                    screen_response_status: screenResponse === "None" ? null : screenResponse,
+                    screen_rejection_note: screenResponse === "No" ? screenRejectionNote || null : null,
+                    status: "Screen Call",
+                  },
+                  {
+                    scheduledAtIso: scheduled_at,
+                    mode: screenMode,
+                    linkOrPhone: screenLinkOrPhone,
+                    recruiterName: profile?.full_name ?? null,
+                    resumeUrl: screenResumeUrl,
+                    interviewQuestionsUrl: screenQuestionsUrl,
+                    status: screenResponse === "None" ? null : screenResponse,
+                    rejectionNote: screenResponse === "No" ? screenRejectionNote || null : null,
+                  }
+                );
                 if (result.sent === false) toast.info("Screen call saved; candidate has no email on file.");
               } catch {
                 toast.warning("Screen call saved, but the candidate notification email could not be sent.");
