@@ -48,6 +48,7 @@ import {
   submissionHasVendorDetails,
   submissionShouldPromptAssessmentBeforeScreen,
 } from "@/lib/submissionStatusWorkflow";
+import { notifySchedulingEmail } from "@/lib/schedulingEmail";
 
 const PAGE_SIZE = 10;
 const CANDIDATES_PAGE_SIZE = 10; // candidates per page in main table (non-candidate view)
@@ -1545,6 +1546,17 @@ export default function Submissions() {
 
             await updateSubmissionMutation.mutateAsync({ id: screenSubmission.id, payload });
             setScreenDialogOpen(false);
+            try {
+              const result = await notifySchedulingEmail("screen_call_scheduled", screenSubmission, {
+                scheduledAtIso: scheduled_at,
+                mode: screenMode,
+                linkOrPhone: screenLinkOrPhone,
+                recruiterName: profile?.full_name ?? null,
+              });
+              if (result.sent === false) toast.info("Screen call saved; candidate has no email on file.");
+            } catch {
+              toast.warning("Screen call saved, but the candidate notification email could not be sent.");
+            }
             setScreenSubmission(null);
             setScreenDate("");
             setScreenTime("");

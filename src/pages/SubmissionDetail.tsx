@@ -45,6 +45,7 @@ import {
   submissionHasVendorDetails,
   submissionShouldPromptAssessmentBeforeScreen,
 } from "@/lib/submissionStatusWorkflow";
+import { notifySchedulingEmail } from "@/lib/schedulingEmail";
 
 const INTERVIEW_STATUSES = ["Scheduled", "Passed", "Rejected", "Rescheduled"] as const;
 const INTERVIEW_MODES = ["Virtual", "Onsite", "Phone"] as const;
@@ -144,6 +145,8 @@ export default function SubmissionDetail() {
       if (!file || (file as any).size === 0) {
         throw new Error("Interview questions file is required");
       }
+      const scheduledAt = `${fd.get("date")}T${fd.get("time")}:00`;
+      const virtualLink = (fd.get("virtual_link") as string) || null;
       // upload file to storage
       const url = await uploadInterviewQuestions(id!, file as File);
       await createInterviewFn({
@@ -152,15 +155,30 @@ export default function SubmissionDetail() {
         created_by: submission!.recruiter_id ?? null,
         round_number: nextRound,
         mode,
-        scheduled_at: `${fd.get("date")}T${fd.get("time")}:00`,
-        virtual_link: mode === "Virtual" ? (fd.get("virtual_link") as string) || null : null,
+        scheduled_at: scheduledAt,
+        virtual_link: mode === "Virtual" ? virtualLink : null,
         interview_questions_url: url,
       });
+      return { scheduledAt, mode, linkOrPhone: virtualLink };
     },
-    onSuccess: () => {
+    onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ["submission-interviews", id] });
       setInterviewDialogOpen(false);
       toast.success("Interview scheduled");
+      if (submission && data) {
+        try {
+          const result = await notifySchedulingEmail("interview_scheduled", submission, {
+            scheduledAtIso: data.scheduledAt,
+            mode: data.mode,
+            linkOrPhone: data.linkOrPhone,
+            roundNumber: nextRound,
+            recruiterName: profile?.full_name ?? null,
+          });
+          if (result.sent === false) toast.info("Interview saved; candidate has no email on file.");
+        } catch {
+          toast.warning("Interview saved, but the candidate notification email could not be sent.");
+        }
+      }
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -190,13 +208,28 @@ export default function SubmissionDetail() {
       const interview = interviews?.find((i: any) => i.id === interviewId);
       if (!interview) throw new Error("Interview not found");
       await rescheduleInterviewFn(interviewId, interview.scheduled_at, newDate, user!.id);
+      return { interview, newDate };
     },
-    onSuccess: () => {
+    onSuccess: async ({ interview, newDate }) => {
       queryClient.invalidateQueries({ queryKey: ["submission-interviews", id] });
       queryClient.invalidateQueries({ queryKey: ["reschedule-logs", id] });
       setRescheduleDialogOpen(false);
       setRescheduleInterviewId(null);
       toast.success("Interview rescheduled");
+      if (submission) {
+        try {
+          const result = await notifySchedulingEmail("interview_rescheduled", submission, {
+            scheduledAtIso: newDate,
+            mode: interview.mode,
+            linkOrPhone: interview.virtual_link,
+            roundNumber: interview.round_number,
+            recruiterName: profile?.full_name ?? null,
+          });
+          if (result.sent === false) toast.info("Interview rescheduled; candidate has no email on file.");
+        } catch {
+          toast.warning("Interview rescheduled, but the candidate notification email could not be sent.");
+        }
+      }
     },
     onError: (err: Error) => toast.error(err.message),
   });
@@ -881,6 +914,17 @@ export default function SubmissionDetail() {
                     setScreenRescheduleOpen(false);
                     setScreenRescheduleDate("");
                     setScreenRescheduleTime("");
+                    try {
+                      const result = await notifySchedulingEmail("screen_call_rescheduled", submission, {
+                        scheduledAtIso: scheduled_at,
+                        mode: submission.screen_mode || "Virtual",
+                        linkOrPhone: submission.screen_link_or_phone,
+                        recruiterName: profile?.full_name ?? null,
+                      });
+                      if (result.sent === false) toast.info("Screen call rescheduled; candidate has no email on file.");
+                    } catch {
+                      toast.warning("Screen call rescheduled, but the candidate notification email could not be sent.");
+                    }
                   } catch {
                     /* mutation onError */
                   }
@@ -1331,6 +1375,17 @@ export default function SubmissionDetail() {
               };
               await updateSubmissionMutation.mutateAsync({ id: screenSubmission.id, payload });
               setScreenDialogOpen(false);
+              try {
+                const result = await notifySchedulingEmail("screen_call_scheduled", screenSubmission, {
+                  scheduledAtIso: scheduled_at,
+                  mode: screenMode,
+                  linkOrPhone: screenLinkOrPhone,
+                  recruiterName: profile?.full_name ?? null,
+                });
+                if (result.sent === false) toast.info("Screen call saved; candidate has no email on file.");
+              } catch {
+                toast.warning("Screen call saved, but the candidate notification email could not be sent.");
+              }
               setScreenSubmission(null);
               resetScreenDialogFields();
             }}
