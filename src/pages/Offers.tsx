@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -157,11 +157,7 @@ export default function Offers() {
                         <TableCell>
                           <Select value={o.status} onValueChange={(v) => updateStatus.mutate({ id: o.id, status: v })}>
                             <SelectTrigger className="h-7 w-auto border-0 p-0">
-                              <Badge className={
-                                o.status === "Accepted" ? "bg-success text-success-foreground" :
-                                o.status === "Declined" ? "bg-destructive text-destructive-foreground" :
-                                "bg-warning/10 text-warning"
-                              }>{o.status}</Badge>
+                              <StatusBadge status={o.status} />
                             </SelectTrigger>
                             <SelectContent>
                               {OFFER_STATUSES.map((s) => (

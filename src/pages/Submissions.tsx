@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
  
 import { Input } from "@/components/ui/input";
@@ -57,16 +57,6 @@ const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Assessment", "Scree
 
 /** Staff list mode on Applications: grouped candidates vs pipeline slices (vendor, assessment, screen queues). */
 type ApplicationsListMode = "by_candidate" | "vendor_pipeline" | "assessment" | "screen_call";
-
-const statusColors: Record<string, string> = {
-  Applied: "bg-secondary text-secondary-foreground",
-  Assessment: "bg-primary/10 text-primary",
-  "Screen Call": "bg-info/10 text-info",
-  Interview: "bg-warning/10 text-warning",
-  Rejected: "bg-destructive/10 text-destructive",
-  Offered: "bg-success/10 text-success",
-  "Vendor Responded": "bg-info/10 text-info",
-};
 
 export default function Submissions() {
   const { user, profile, role, isCandidate, isRecruiter, isAdmin, isManager, isTeamLead, isAgencyAdmin, isMasterCompany } = useAuth();
@@ -888,7 +878,7 @@ export default function Submissions() {
                             onValueChange={(v) => handleApplicationStatusChange(s, v)}
                           >
                             <SelectTrigger className="h-8 w-[150px]">
-                              <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
+                              <StatusBadge status={s.status} />
                             </SelectTrigger>
                             <SelectContent>
                               {SUBMISSION_STATUSES.map((st) => (
@@ -924,7 +914,7 @@ export default function Submissions() {
                             <TableCell>
                               <Select value={s.status} onValueChange={(v) => handleApplicationStatusChange(s, v)}>
                                 <SelectTrigger className="h-8 w-[160px]">
-                                  <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
+                                  <StatusBadge status={s.status} />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {SUBMISSION_STATUSES.map((st) => (
@@ -981,9 +971,7 @@ export default function Submissions() {
                           <TableCell className="text-muted-foreground">{formatInAppDateTime(s.screen_scheduled_at)}</TableCell>
                           <TableCell className="text-muted-foreground">{s.screen_mode || "—"}</TableCell>
                           <TableCell>
-                            <Badge className={statusColors[s.status] || ""} variant="outline">
-                              {s.status}
-                            </Badge>
+                            <StatusBadge status={s.status} />
                           </TableCell>
                           <TableCell className="text-right">
                             <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
@@ -1127,7 +1115,7 @@ export default function Submissions() {
                                 onValueChange={(v) => handleApplicationStatusChange(s, v)}
                               >
                                 <SelectTrigger className="h-8 w-[140px]">
-                                  <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
+                                  <StatusBadge status={s.status} />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {SUBMISSION_STATUSES.map((st) => (

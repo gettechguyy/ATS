@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -52,16 +53,6 @@ const INTERVIEW_MODES = ["Virtual", "Onsite", "Phone"] as const;
 const OFFER_STATUSES = ["Pending", "Accepted", "Declined"] as const;
 
 const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Assessment", "Screen Call", "Interview", "Rejected", "Offered"] as const;
-
-const statusColors: Record<string, string> = {
-  Applied: "bg-secondary text-secondary-foreground",
-  Assessment: "bg-primary/10 text-primary",
-  "Screen Call": "bg-info/10 text-info",
-  Interview: "bg-warning/10 text-warning",
-  Rejected: "bg-destructive/10 text-destructive",
-  Offered: "bg-success/10 text-success",
-  "Vendor Responded": "bg-info/10 text-info",
-};
 
 export default function SubmissionDetail() {
   const { id } = useParams<{ id: string }>();
@@ -584,7 +575,7 @@ export default function SubmissionDetail() {
               {!isCandidate ? (
                 <Select value={submission.status} onValueChange={handleSubmissionStatusChange}>
                   <SelectTrigger className="h-auto min-h-0 w-auto max-w-full border-0 p-0">
-                    <Badge className={statusColors[submission.status] ?? ""} variant="outline">{submission.status}</Badge>
+                    <StatusBadge status={submission.status} />
                   </SelectTrigger>
                   <SelectContent>
                     {SUBMISSION_STATUSES.map((st) => (
@@ -593,7 +584,7 @@ export default function SubmissionDetail() {
                   </SelectContent>
                 </Select>
               ) : (
-                <Badge className={statusColors[submission.status] ?? ""} variant="outline">{submission.status}</Badge>
+                <StatusBadge status={submission.status} />
               )}
             </div>
             <div><span className="text-muted-foreground">Created:</span> {new Date(submission.created_at!).toLocaleDateString()}</div>
@@ -813,7 +804,7 @@ export default function SubmissionDetail() {
                         </TableCell>
                         <TableCell>
                           {isCandidate ? (
-                            <Badge variant="secondary">{iv.status}</Badge>
+                            <StatusBadge status={iv.status} />
                           ) : (
                             <Select value={iv.status} onValueChange={async (v) => {
                               try {
@@ -824,7 +815,7 @@ export default function SubmissionDetail() {
                               }
                             }}>
                               <SelectTrigger className="h-7 w-auto border-0 p-0">
-                                <Badge variant="secondary">{iv.status}</Badge>
+                                <StatusBadge status={iv.status} />
                               </SelectTrigger>
                               <SelectContent>
                                 {INTERVIEW_STATUSES.map((s) => (
@@ -1074,11 +1065,7 @@ export default function SubmissionDetail() {
                         <TableCell>
                           <Select value={o.status} onValueChange={(v) => updateOfferStatus.mutate({ offerId: o.id, status: v })}>
                             <SelectTrigger className="h-7 w-auto border-0 p-0">
-                              <Badge className={
-                                o.status === "Accepted" ? "bg-success text-success-foreground" :
-                                o.status === "Declined" ? "bg-destructive text-destructive-foreground" :
-                                "bg-warning/10 text-warning"
-                              }>{o.status}</Badge>
+                              <StatusBadge status={o.status} />
                             </SelectTrigger>
                             <SelectContent>
                               {OFFER_STATUSES.map((s) => (

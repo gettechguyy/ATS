@@ -42,7 +42,7 @@ export function NotificationBell({ userId, companyId }: NotificationBellProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-xl" aria-label="Notifications">
+        <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-xl" aria-label="Activity">
           <Bell className="h-4 w-4" />
           <AnimatePresence>
             {unreadCount > 0 ? (
@@ -63,7 +63,7 @@ export function NotificationBell({ userId, companyId }: NotificationBellProps) {
         <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
           <DropdownMenuLabel className="flex items-center gap-2 p-0 text-sm font-semibold">
             <Sparkles className="h-4 w-4 text-primary" />
-            Notifications
+            Activity
             {unreadCount > 0 ? (
               <span className="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
                 {unreadCount} new
@@ -153,7 +153,7 @@ export function NotificationBell({ userId, companyId }: NotificationBellProps) {
         <DropdownMenuSeparator className="m-0" />
         <div className="p-2">
           <Button variant="outline" size="sm" className="w-full rounded-lg" asChild>
-            <Link to="/notifications">View all notifications</Link>
+            <Link to="/activity">View all activity</Link>
           </Button>
         </div>
       </DropdownMenuContent>

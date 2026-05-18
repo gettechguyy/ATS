@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -34,17 +34,6 @@ import { getAppBaseUrl } from "@/lib/utils";
 const CANDIDATE_STATUSES = ["New", "Ready For Assign", "Ready For Marketing", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
 
 const PAGE_SIZE = 10;
-const statusColors: Record<string, string> = {
-  New: "bg-secondary text-secondary-foreground",
-  "Ready For Assign": "bg-muted text-muted-foreground",
-  "Ready For Marketing": "bg-info/10 text-info",
-  "In Marketing": "bg-info/10 text-info",
-  Placed: "bg-success text-success-foreground",
-  Backout: "bg-destructive/10 text-destructive",
-  "On Bench": "bg-warning/10 text-warning",
-  "In Training": "bg-accent text-accent-foreground",
-};
-
 export default function Candidates() {
   const { user, profile, isAdmin, isRecruiter, isManager, isCandidate, isAgencyAdmin, isMasterCompany } = useAuth();
   const isAgencyScope = isAgencyAdmin && isMasterCompany;
@@ -469,7 +458,7 @@ export default function Candidates() {
                       <TableCell className="text-muted-foreground">{c.visa_status || "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{(c as any).gender || "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{(c as any).technology || "—"}</TableCell>
-                      <TableCell><Badge className={statusColors[c.status] || ""}>{c.status}</Badge></TableCell>
+                      <TableCell><StatusBadge status={c.status} /></TableCell>
                       <TableCell className="text-muted-foreground">{displayRecruiterName(c.recruiter_id)}</TableCell>
                       {showAgencyColumn && (
                         <TableCell>

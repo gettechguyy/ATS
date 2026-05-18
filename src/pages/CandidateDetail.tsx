@@ -8,7 +8,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -693,7 +693,7 @@ export default function CandidateDetail() {
                     {!isAdmin && (
                       <div className={`space-y-1 ${pfField}`}>
                         <p className="text-xs font-medium text-muted-foreground">Status</p>
-                        <Badge variant="outline">{safeStatus}</Badge>
+                        <StatusBadge status={safeStatus} />
                       </div>
                     )}
                     <div className={pfField}>
@@ -884,7 +884,7 @@ export default function CandidateDetail() {
                       <TableCell className="text-muted-foreground">{(applicationsPage - 1) * APPLICATIONS_PAGE_SIZE + idx + 1}</TableCell>
                       <TableCell className="font-medium">{s.client_name}</TableCell>
                       <TableCell>{s.position}</TableCell>
-                      <TableCell><Badge variant="outline">{s.status}</Badge></TableCell>
+                      <TableCell><StatusBadge status={s.status} /></TableCell>
                       <TableCell className="text-muted-foreground">{new Date(s.created_at).toLocaleDateString()}</TableCell>
                       <TableCell className="text-muted-foreground text-sm">{displayRecruiterName(s.recruiter_id ?? null)}</TableCell>
                       <TableCell>

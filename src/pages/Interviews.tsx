@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -147,7 +148,7 @@ export default function Interviews() {
                         <TableCell><Badge variant="outline">Round {iv.round_number}</Badge></TableCell>
                         <TableCell>{formatInAppDateTime(iv.scheduled_at)}</TableCell>
                         <TableCell><Badge variant="secondary">{iv.mode}</Badge></TableCell>
-                        <TableCell><Badge variant="outline">{iv.status}</Badge></TableCell>
+                        <TableCell><StatusBadge status={iv.status} /></TableCell>
                         <TableCell>
                           <Button variant="ghost" size="icon" asChild>
                             <Link to={`/submissions/${iv.submission_id}`}><Eye className="h-4 w-4" /></Link>

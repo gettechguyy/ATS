@@ -4,7 +4,7 @@ import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, FileText, Calendar as CalendarIcon, Gift, TrendingUp, Briefcase, ClipboardList } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { fetchDashboardStats } from "../../dbscripts/functions/dashboard";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
@@ -306,7 +306,7 @@ export default function Dashboard() {
                     className="flex items-center gap-2 rounded-xl border border-border/60 bg-muted/30 px-3 py-2 transition-colors hover:bg-muted/50"
                     whileHover={{ scale: 1.02 }}
                   >
-                    <Badge variant="outline">{status}</Badge>
+                    <StatusBadge status={status} />
                     <span className="text-lg font-bold tabular-nums">{count as number}</span>
                   </motion.div>
                 ))}

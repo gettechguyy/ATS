@@ -51,7 +51,7 @@ const allNavItems: (CommandNavItem & { roles: string[]; masterOnly?: boolean })[
   { to: "/offers", icon: Gift, label: "Offers", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },
   { to: "/admin/agencies", icon: Building2, label: "Agencies", roles: ["admin"], masterOnly: true },
   { to: "/admin/users", icon: Shield, label: "User Management", roles: ["admin", "manager", "team_lead", "agency_admin"] },
-  { to: "/notifications", icon: Bell, label: "Notifications", roles: ["admin"] },
+  { to: "/activity", icon: Bell, label: "Activity", roles: ["admin"], keywords: "notifications alerts" },
 ];
 
 function useCandidateProfileComplete(candidateId: string | null) {

@@ -73,7 +73,8 @@ const App = () => (
                 }
               />
               <Route path="/admin/invites" element={<InvitesPage />} />
-              <Route path="/notifications" element={<Notifications />} />
+              <Route path="/activity" element={<Notifications />} />
+              <Route path="/notifications" element={<Navigate to="/activity" replace />} />
               <Route path="/set-password" element={<SetPasswordPage />} />
             </Route>
             <Route path="*" element={<NotFound />} />

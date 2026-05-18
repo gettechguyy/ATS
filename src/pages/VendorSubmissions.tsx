@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableHeader, TableRow, TableHead, TableBody, TableCell } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -48,16 +48,6 @@ const PAGE_SIZE = 10;
 type VendorSortBy = "created_at" | "client_name" | "position" | "status" | "candidate_first_name";
 
 const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Assessment", "Screen Call", "Interview", "Rejected", "Offered"] as const;
-
-const statusColors: Record<string, string> = {
-  Applied: "bg-secondary text-secondary-foreground",
-  Assessment: "bg-primary/10 text-primary",
-  "Screen Call": "bg-info/10 text-info",
-  Interview: "bg-warning/10 text-warning",
-  Rejected: "bg-destructive/10 text-destructive",
-  Offered: "bg-success/10 text-success",
-  "Vendor Responded": "bg-info/10 text-info",
-};
 
 export default function VendorSubmissions() {
   const { user, profile, isCandidate, isRecruiter, isAdmin, isManager, isTeamLead, isAgencyAdmin, isMasterCompany } = useAuth();
@@ -655,7 +645,7 @@ export default function VendorSubmissions() {
                         onValueChange={(v) => handleSubmissionStatusChange(s, v)}
                       >
                         <SelectTrigger className="h-8 w-[160px]">
-                          <Badge className={statusColors[s.status] || ""}>{s.status}</Badge>
+                          <StatusBadge status={s.status} />
                         </SelectTrigger>
                         <SelectContent>
                           {SUBMISSION_STATUSES.map((st) => (

@@ -45,8 +45,8 @@ export default function Notifications() {
   return (
     <PageShell>
       <PageHeader
-        title="Notifications"
-        description="Real-time alerts when candidates, interviews, and offers are added to your company."
+        title="Activity"
+        description="Real-time updates when candidates, interviews, and offers are added to your company."
         actions={
           unreadCount > 0 ? (
             <Button
@@ -83,7 +83,7 @@ export default function Notifications() {
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
                 <Bell className="h-6 w-6 text-muted-foreground" />
               </div>
-              <p className="text-sm text-muted-foreground">No notifications yet.</p>
+              <p className="text-sm text-muted-foreground">No activity yet.</p>
             </div>
           ) : (
             <ul className="divide-y divide-border/60">
