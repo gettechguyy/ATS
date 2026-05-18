@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { motion } from "framer-motion";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, FileText, Calendar as CalendarIcon, Gift, TrendingUp, Briefcase, ClipboardList } from "lucide-react";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { fetchDashboardStats } from "../../dbscripts/functions/dashboard";
 import { Button } from "@/components/ui/button";
@@ -27,9 +27,23 @@ import {
 import { Label } from "@/components/ui/label";
 import { fetchCandidatesBasic } from "../../dbscripts/functions/candidates";
 import { fetchProfilesByRole } from "../../dbscripts/functions/profiles";
+import { PageHeader } from "@/components/layout/PageHeader";
+import { PageShell } from "@/components/layout/PageShell";
+import { StatCard } from "@/components/premium/StatCard";
+import { staggerContainer } from "@/lib/motion";
+import { cn } from "@/lib/utils";
+
+const pipelineColors = [
+  "from-[hsl(217,96%,58%)] to-[hsl(270,85%,62%)]",
+  "from-[hsl(270,85%,62%)] to-[hsl(340,82%,58%)]",
+  "from-[hsl(187,92%,48%)] to-[hsl(199,89%,48%)]",
+  "from-amber-500 to-orange-500",
+  "from-emerald-500 to-teal-500",
+  "from-rose-500 to-pink-500",
+];
 
 export default function Dashboard() {
-  const { user, isAdmin, isRecruiter, isCandidate, isManager, isAgencyAdmin, isMasterCompany, role, profile } = useAuth();
+  const { user, isAdmin, isCandidate, isManager, isAgencyAdmin, isMasterCompany, role, profile } = useAuth();
   const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const [dateRange, setDateRange] = useState<{ from?: Date | null; to?: Date | null } | undefined>(undefined);
   const [filterCandidateId, setFilterCandidateId] = useState<string>("");
@@ -60,7 +74,7 @@ export default function Dashboard() {
   const technologyOptions = useMemo(() => {
     if (!filterCandidates?.length) return [];
     const set = new Set<string>();
-    (filterCandidates as any[]).forEach((c: any) => {
+    (filterCandidates as { technology?: string }[]).forEach((c) => {
       const t = c?.technology?.trim();
       if (t) set.add(t);
     });
@@ -88,7 +102,7 @@ export default function Dashboard() {
     ],
     queryFn: () =>
       fetchDashboardStats({
-        role: effectiveRole as any,
+        role: effectiveRole as "admin" | "recruiter" | "candidate" | "manager" | "team_lead" | "agency_admin",
         companyId: profile!.company_id!,
         userId: dashboardUserId ?? undefined,
         linkedCandidateId: profile?.linked_candidate_id ?? null,
@@ -116,48 +130,48 @@ export default function Dashboard() {
     return f === t ? f : `${f} — ${t}`;
   }, [dateRange]);
 
-  // Candidate-specific dashboard
+  const dateFilters = (
+    <motion.div className="flex flex-wrap items-center gap-2" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      {(["today", "yesterday", "thisWeek", "lastWeek"] as const).map((p) => (
+        <Button key={p} variant="outline" size="sm" className="rounded-lg" onClick={() => selectPreset(p)}>
+          {p === "today" ? "Today" : p === "yesterday" ? "Yesterday" : p === "thisWeek" ? "This Week" : "Last Week"}
+        </Button>
+      ))}
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="sm" className="rounded-lg text-muted-foreground">
+            {rangeLabel}
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-auto rounded-xl border-border/60 p-0 shadow-xl">
+          <Calendar mode="range" selected={dateRange as { from?: Date; to?: Date }} onSelect={(r) => setDateRange(r)} />
+        </PopoverContent>
+      </Popover>
+    </motion.div>
+  );
+
   if (isCandidate) {
+    const cards = [
+      { title: "My Applications", value: stats?.totalSubmissions, icon: FileText, color: "text-info" },
+      { title: "Assessments", value: stats?.totalAssessments, icon: ClipboardList, color: "text-primary" },
+      { title: "Screen Calls", value: stats?.totalScreenCalls, icon: CalendarIcon, color: "text-info" },
+      { title: "Interviews", value: stats?.totalInterviews, icon: CalendarIcon, color: "text-warning" },
+      { title: "Offers", value: stats?.totalOffers, icon: Gift, color: "text-success" },
+    ];
     return (
-      <div>
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-foreground">My Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Your recruitment progress</p>
-        </div>
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => selectPreset("today")}>Today</Button>
-            <Button variant="outline" size="sm" onClick={() => selectPreset("yesterday")}>Yesterday</Button>
-            <Button variant="outline" size="sm" onClick={() => selectPreset("thisWeek")}>This Week</Button>
-            <Button variant="outline" size="sm" onClick={() => selectPreset("lastWeek")}>Last Week</Button>
-          </div>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="ghost" size="sm">{rangeLabel}</Button>
-            </PopoverTrigger>
-            <PopoverContent align="start" className="w-auto">
-              <Calendar
-                mode="range"
-                selected={dateRange as any}
-                onSelect={(r: any) => setDateRange(r)}
-              />
-            </PopoverContent>
-          </Popover>
-        </div>
-        {isLoading ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[...Array(4)].map((_, i) => <Card key={i}><CardContent className="p-6"><Skeleton className="h-8 w-16" /></CardContent></Card>)}
-          </div>
-        ) : (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard title="My Applications" value={stats?.totalSubmissions} icon={FileText} color="text-info" />
-            <StatCard title="Assessments" value={stats?.totalAssessments} icon={ClipboardList} color="text-primary" />
-            <StatCard title="Screen Calls" value={stats?.totalScreenCalls} icon={CalendarIcon} color="text-info" />
-            <StatCard title="Interviews" value={stats?.totalInterviews} icon={CalendarIcon} color="text-warning" />
-            <StatCard title="Offers" value={stats?.totalOffers} icon={Gift} color="text-success" />
-          </div>
-        )}
-      </div>
+      <PageShell>
+        <PageHeader title="My Dashboard" description="Your recruitment progress at a glance" actions={dateFilters} />
+        <motion.div
+          className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+          variants={staggerContainer}
+          initial="initial"
+          animate="animate"
+        >
+          {cards.map((c, i) => (
+            <StatCard key={c.title} {...c} isLoading={isLoading} index={i} />
+          ))}
+        </motion.div>
+      </PageShell>
     );
   }
 
@@ -174,166 +188,157 @@ export default function Dashboard() {
     { title: "Placements", value: stats?.candidatesByStatus?.Placed, icon: Briefcase, color: "text-success" },
   ];
 
+  const pipelineSteps = stats
+    ? [
+        { label: "Applications", count: stats.totalSubmissions },
+        { label: "Assessments", count: stats.totalAssessments },
+        { label: "Screen Calls", count: stats.totalScreenCalls },
+        { label: "Interviews", count: stats.totalInterviews },
+        { label: "Offers", count: stats.totalOffers },
+        { label: "Placed", count: stats.candidatesByStatus.Placed },
+      ]
+    : [];
+
+  const maxPipeline = Math.max(...pipelineSteps.map((s) => s.count ?? 0), 1);
+
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-foreground">
-          {isAdmin ? "Admin Dashboard" : isManager ? "Manager Dashboard" : isAgencyScope ? "Agency Dashboard" : "My Dashboard"}
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          {isAdmin ? "Overview of all activity" : isManager ? "Read-only overview" : isAgencyScope ? "Your agency's candidates and submissions" : "Your recruiting progress"}
-        </p>
-      </div>
+    <PageShell>
+      <PageHeader
+        title={
+          isAdmin ? "Admin Dashboard" : isManager ? "Manager Dashboard" : isAgencyScope ? "Agency Dashboard" : "Recruiting Dashboard"
+        }
+        description={
+          isAdmin
+            ? "Real-time overview of hiring activity across your organization"
+            : isManager
+              ? "Read-only overview of team performance"
+              : isAgencyScope
+                ? "Your agency's candidates and submissions"
+                : "Your recruiting pipeline and velocity"
+        }
+        actions={dateFilters}
+      />
 
-      <div className="mb-4 flex flex-wrap items-center gap-4">
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => selectPreset("today")}>Today</Button>
-          <Button variant="outline" size="sm" onClick={() => selectPreset("yesterday")}>Yesterday</Button>
-          <Button variant="outline" size="sm" onClick={() => selectPreset("thisWeek")}>This Week</Button>
-          <Button variant="outline" size="sm" onClick={() => selectPreset("lastWeek")}>Last Week</Button>
-        </div>
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="ghost" size="sm">{rangeLabel}</Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-auto">
-            <Calendar
-              mode="range"
-              selected={dateRange as any}
-              onSelect={(r: any) => setDateRange(r)}
-            />
-          </PopoverContent>
-        </Popover>
-        {showFilterDropdowns && (
-          <div className="flex flex-wrap items-center gap-3 border-l pl-4">
-            <div className="flex items-center gap-2">
-              <Label className="text-sm text-muted-foreground whitespace-nowrap">Candidate</Label>
-              <Select value={filterCandidateId || "all"} onValueChange={(v) => setFilterCandidateId(v === "all" ? "" : v)}>
-                <SelectTrigger className="w-[180px] h-8">
-                  <SelectValue placeholder="All candidates" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All candidates</SelectItem>
-                  {(filterCandidates || []).map((c: any) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {[c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || c.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-sm text-muted-foreground whitespace-nowrap">Technology</Label>
-              <Select value={filterTechnology || "all"} onValueChange={(v) => setFilterTechnology(v === "all" ? "" : v)}>
-                <SelectTrigger className="w-[140px] h-8">
-                  <SelectValue placeholder="All" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All</SelectItem>
-                  {technologyOptions.map((t) => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="text-sm text-muted-foreground whitespace-nowrap">Recruiter</Label>
-              <Select value={filterRecruiterId || "all"} onValueChange={(v) => setFilterRecruiterId(v === "all" ? "" : v)}>
-                <SelectTrigger className="w-[160px] h-8">
-                  <SelectValue placeholder="All recruiters" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All recruiters</SelectItem>
-                  {(filterRecruiters || []).map((r: any) => (
-                    <SelectItem key={r.user_id} value={r.user_id}>
-                      {r.full_name || r.email || r.user_id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+      {showFilterDropdowns && (
+        <motion.div
+          className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-border/60 bg-card/60 p-4 backdrop-blur-sm"
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <div className="flex items-center gap-2">
+            <Label className="whitespace-nowrap text-xs text-muted-foreground">Candidate</Label>
+            <Select value={filterCandidateId || "all"} onValueChange={(v) => setFilterCandidateId(v === "all" ? "" : v)}>
+              <SelectTrigger className="h-9 w-[180px] rounded-lg">
+                <SelectValue placeholder="All candidates" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All candidates</SelectItem>
+                {(filterCandidates || []).map((c: { id: string; first_name?: string; last_name?: string; email?: string }) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {[c.first_name, c.last_name].filter(Boolean).join(" ") || c.email || c.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
-        )}
-      </div>
+          <motion.div className="flex items-center gap-2">
+            <Label className="whitespace-nowrap text-xs text-muted-foreground">Technology</Label>
+            <Select value={filterTechnology || "all"} onValueChange={(v) => setFilterTechnology(v === "all" ? "" : v)}>
+              <SelectTrigger className="h-9 w-[140px] rounded-lg">
+                <SelectValue placeholder="All" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                {technologyOptions.map((t) => (
+                  <SelectItem key={t} value={t}>
+                    {t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </motion.div>
+          <div className="flex items-center gap-2">
+            <Label className="whitespace-nowrap text-xs text-muted-foreground">Recruiter</Label>
+            <Select value={filterRecruiterId || "all"} onValueChange={(v) => setFilterRecruiterId(v === "all" ? "" : v)}>
+              <SelectTrigger className="h-9 w-[160px] rounded-lg">
+                <SelectValue placeholder="All recruiters" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All recruiters</SelectItem>
+                {(filterRecruiters || []).map((r: { user_id: string; full_name?: string; email?: string }) => (
+                  <SelectItem key={r.user_id} value={r.user_id}>
+                    {r.full_name || r.email || r.user_id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </motion.div>
+      )}
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {statCards.map((card) => (
-          <StatCard key={card.title} {...card} isLoading={isLoading} />
+      <motion.div
+        className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+        variants={staggerContainer}
+        initial="initial"
+        animate="animate"
+      >
+        {statCards.map((card, i) => (
+          <StatCard key={card.title} {...card} isLoading={isLoading} index={i} />
         ))}
-      </div>
+      </motion.div>
 
       {stats && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-base">Candidates by Status</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-3">
-              {Object.entries(stats.candidatesByStatus).map(([status, count]) => (
-                <div key={status} className="flex items-center gap-2 rounded-md border px-3 py-2">
-                  <Badge variant="outline">{status}</Badge>
-                  <span className="text-lg font-bold text-foreground">{count as number}</span>
+        <motion.div
+          className="mt-8 grid gap-6 lg:grid-cols-2"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+        >
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold">Candidates by status</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(stats.candidatesByStatus).map(([status, count]) => (
+                  <motion.div
+                    key={status}
+                    className="flex items-center gap-2 rounded-xl border border-border/60 bg-muted/30 px-3 py-2 transition-colors hover:bg-muted/50"
+                    whileHover={{ scale: 1.02 }}
+                  >
+                    <Badge variant="outline">{status}</Badge>
+                    <span className="text-lg font-bold tabular-nums">{count as number}</span>
+                  </motion.div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base font-semibold">Hiring funnel</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {pipelineSteps.map((step, i) => (
+                <div key={step.label} className="space-y-1.5">
+                  <motion.div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">{step.label}</span>
+                    <span className="font-semibold tabular-nums">{step.count}</span>
+                  </motion.div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted/60">
+                    <motion.div
+                      className={cn("h-full rounded-full bg-gradient-to-r", pipelineColors[i % pipelineColors.length])}
+                      initial={{ width: 0 }}
+                      animate={{ width: `${((step.count ?? 0) / maxPipeline) * 100}%` }}
+                      transition={{ duration: 0.6, delay: i * 0.08, ease: "easeOut" }}
+                    />
+                  </div>
                 </div>
               ))}
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </motion.div>
       )}
-
-      {stats && (
-        <Card className="mt-6">
-          <CardHeader>
-            <CardTitle className="text-base">Pipeline Summary</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-4">
-          {(() => {
-            const steps = [
-              { label: "Applications", count: stats.totalSubmissions },
-              { label: "Assessments", count: stats.totalAssessments },
-              { label: "Screen Calls", count: stats.totalScreenCalls },
-              { label: "Interviews", count: stats.totalInterviews },
-              { label: "Offers", count: stats.totalOffers },
-              { label: "Placed", count: stats.candidatesByStatus.Placed },
-            ];
-            return steps.map((step, i) => (
-              <div key={step.label} className="flex items-center gap-2">
-                <div className="text-center">
-                  <p className="text-xl font-bold text-foreground">{step.count}</p>
-                  <p className="text-xs text-muted-foreground">{step.label}</p>
-                </div>
-                {i < steps.length - 1 && <span className="text-muted-foreground">→</span>}
-              </div>
-            ));
-          })()}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function StatCard({ title, value, icon: Icon, color, isLoading }: {
-  title: string;
-  value?: number;
-  icon: any;
-  color: string;
-  isLoading?: boolean;
-}) {
-  return (
-    <Card className="stat-card">
-      <CardHeader className="flex flex-row items-center justify-between pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <Icon className={`h-4 w-4 ${color}`} />
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <Skeleton className="h-8 w-16" />
-        ) : (
-          <p className="text-2xl font-bold text-foreground">{value ?? 0}</p>
-        )}
-      </CardContent>
-    </Card>
+    </PageShell>
   );
 }

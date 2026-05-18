@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
@@ -22,6 +23,7 @@ import Agencies from "@/pages/Agencies";
 import InvitesPage from "@/pages/Invites";
 import SetPasswordPage from "@/pages/SetPassword";
 import MyProfile from "@/pages/MyProfile";
+import Notifications from "@/pages/Notifications";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -41,6 +43,7 @@ function MasterCompanyRoute({ children }: { children: ReactNode }) {
 
 const App = () => (
   <QueryClientProvider client={queryClient}>
+    <ThemeProvider>
     <TooltipProvider>
       <Toaster />
       <Sonner />
@@ -70,6 +73,7 @@ const App = () => (
                 }
               />
               <Route path="/admin/invites" element={<InvitesPage />} />
+              <Route path="/notifications" element={<Notifications />} />
               <Route path="/set-password" element={<SetPasswordPage />} />
             </Route>
             <Route path="*" element={<NotFound />} />
@@ -77,6 +81,7 @@ const App = () => (
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
+    </ThemeProvider>
   </QueryClientProvider>
 );
 

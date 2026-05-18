@@ -80,10 +80,10 @@ export async function fetchProfilesByRole(role: string, agencyId?: string | null
   if (userIds.length === 0) return [];
   let q = supabase
     .from("profiles")
-    .select("user_id, full_name, email, agency_id")
+    .select("user_id, full_name, email, agency_id, is_active")
     .in("user_id", userIds as string[]);
   if (companyId != null) q = q.eq("company_id", companyId);
   if (agencyId != null) q = q.eq("agency_id", agencyId);
   const { data: profiles } = await q;
-  return profiles || [];
+  return (profiles || []).filter((p: { is_active?: boolean }) => p.is_active !== false);
 }

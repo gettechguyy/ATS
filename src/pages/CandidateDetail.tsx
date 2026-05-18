@@ -34,8 +34,7 @@ import { fetchCandidateById, updateCandidateStatus, updateCandidate as updateCan
 import { fetchEducationsByCandidate, createEducation, deleteEducation } from "../../dbscripts/functions/educations";
 import { fetchExperiencesByCandidate, createExperience, deleteExperience } from "../../dbscripts/functions/experiences";
 import { fetchSubmissionsByCandidatePaginated, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
-import { fetchProfileName, fetchProfilesBySelect, fetchProfilesByRole } from "../../dbscripts/functions/profiles";
-import { fetchAllUserRoles } from "../../dbscripts/functions/userRoles";
+import { fetchProfileName, fetchProfilesByRole } from "../../dbscripts/functions/profiles";
 import { fetchAgencies } from "../../dbscripts/functions/agencies";
 
 const CANDIDATE_STATUSES = ["New", "Ready For Assign", "Ready For Marketing", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
@@ -1183,16 +1182,25 @@ export default function CandidateDetail() {
                           marketing_other: marketingOther || null,
                         });
 
-                        // 2) Only after save succeeds, call the webhook to notify admins/managers
+                        // 2) Only after save succeeds, call the webhook to notify company admins
                         const webhook = import.meta.env.VITE_MARKETING_WEBHOOK as string | undefined;
                         if (webhook) {
                           try {
-                            const roles = await fetchAllUserRoles();
-                            const adminManagerUserIds = (roles || []).filter((r: any) => r.role === "admin" || r.role === "manager").map((r: any) => r.user_id);
-                            let recipients: string[] = [];
-                            if (adminManagerUserIds.length > 0) {
-                              const profiles = await fetchProfilesBySelect("user_id, full_name, email");
-                              recipients = (profiles || []).filter((p: any) => adminManagerUserIds.includes(p.user_id)).map((p: any) => p.email).filter(Boolean);
+                            const companyId =
+                              (candidate as { company_id?: string }).company_id ?? profile?.company_id;
+                            if (!companyId) {
+                              throw new Error("Company not found for marketing notification.");
+                            }
+                            const adminProfiles = await fetchProfilesByRole("admin", undefined, companyId);
+                            const recipients = [
+                              ...new Set(
+                                adminProfiles
+                                  .map((p: { email?: string | null }) => p.email?.trim())
+                                  .filter((e): e is string => Boolean(e))
+                              ),
+                            ];
+                            if (recipients.length === 0) {
+                              throw new Error("No company admin email found to notify.");
                             }
 
                             await fetch(webhook, {
