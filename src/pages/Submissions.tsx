@@ -1195,7 +1195,7 @@ export default function Submissions() {
                 return;
               }
 
-              await createSubmissionFn({
+              const created = await createSubmissionFn({
                 candidate_id: newCandidateId,
                 recruiter_id: user!.id,
                 client_name: newClientName,
@@ -1205,9 +1205,14 @@ export default function Submissions() {
                 status: "Applied",
               });
               toast.success("Application added");
+              if (created?.isFirstApplication) {
+                toast.info("Welcome email sent to the candidate (first application).");
+              }
               queryClient.invalidateQueries({ queryKey: ["submissions"] });
               queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
               queryClient.invalidateQueries({ queryKey: ["submissions-pipeline"] });
+              queryClient.invalidateQueries({ queryKey: ["candidate-stats"] });
+              queryClient.invalidateQueries({ queryKey: ["candidates"] });
               setAddDialogOpen(false);
               // reset form
               setNewCandidateId(null);

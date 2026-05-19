@@ -257,6 +257,8 @@ export default function SubmissionDetail() {
         queryClient.invalidateQueries({ queryKey: ["submissions-assessments"] });
         queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
         queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-submissions"] });
       } catch (err) {
         // ignore but notify
         toast.error("Offer saved but couldn't update submission status");
@@ -290,6 +292,8 @@ export default function SubmissionDetail() {
       queryClient.invalidateQueries({ queryKey: ["submissions-assessments"] });
       queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
       queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-submissions"] });
       toast.success("Status updated");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -437,6 +441,8 @@ export default function SubmissionDetail() {
       queryClient.invalidateQueries({ queryKey: ["submissions-assessments"] });
       queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
       queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-submissions"] });
       toast.success("Saved");
       setVendorDialogOpen(false);
       setVendorSubmission(null);

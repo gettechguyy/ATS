@@ -1,10 +1,12 @@
 import { formatInAppTimeZone, APP_TIME_ZONE } from "@/lib/appTimezone";
+import { getAppBaseUrl } from "@/lib/utils";
 
 export type SchedulingEmailType =
   | "screen_call_scheduled"
   | "screen_call_rescheduled"
   | "interview_scheduled"
-  | "interview_rescheduled";
+  | "interview_rescheduled"
+  | "first_application_started";
 
 /** Submission fields used for attachment links in scheduling emails. */
 export type SchedulingSubmissionSource = {
@@ -47,6 +49,8 @@ export interface SchedulingEmailPayload {
   rejectionNote: string;
   roundNumber?: number;
   recruiterName: string;
+  /** Sign-in link for first-application welcome email. */
+  appLink?: string;
 }
 
 export type SchedulingNotifyOpts = {
@@ -131,7 +135,72 @@ function eventCopy(type: SchedulingEmailType, jobTitle: string, clientName: stri
         eventLabel: `Interview rescheduled${round}`,
         subject: `Interview rescheduled${round}: ${jobTitle} at ${clientName}`,
       };
+    case "first_application_started":
+      return {
+        eventLabel: "Your marketing journey has started",
+        subject: `Congratulations! Your first application is live — ${jobTitle}`,
+      };
   }
+}
+
+const EMPTY_SCHEDULING_FIELDS = {
+  date: "",
+  time: "",
+  mode: "",
+  linkOrPhone: "",
+  resumeUrl: "",
+  interviewQuestionsUrl: "",
+  jobDescriptionUrl: "",
+  assessmentLink: "",
+  assessmentAttachmentUrl: "",
+  assessmentEndDate: "",
+  rejectionNote: "",
+} as const;
+
+export function buildFirstApplicationStartedPayload(opts: {
+  candidate: CandidateRow;
+  clientName: string;
+  jobTitle: string;
+  applicationStatus: string;
+  recruiterName: string;
+}): SchedulingEmailPayload | null {
+  const email = opts.candidate.email?.trim();
+  if (!email) return null;
+
+  const clientName = opts.clientName?.trim() || "Client";
+  const jobTitle = opts.jobTitle?.trim() || "Role";
+  const copy = eventCopy("first_application_started", jobTitle, clientName);
+  const appBase = getAppBaseUrl();
+  const appLink = appBase ? `${appBase}/login` : "/login";
+
+  return {
+    type: "first_application_started",
+    name: candidateDisplayName(opts.candidate),
+    email,
+    subject: copy.subject,
+    eventLabel: copy.eventLabel,
+    clientName,
+    jobTitle,
+    timeZone: APP_TIME_ZONE,
+    status: "Active",
+    applicationStatus: opts.applicationStatus?.trim() || "Applied",
+    recruiterName: opts.recruiterName?.trim() || "Recruiting Team",
+    appLink,
+    ...EMPTY_SCHEDULING_FIELDS,
+  };
+}
+
+export async function notifyFirstApplicationStarted(opts: {
+  candidate: CandidateRow;
+  clientName: string;
+  jobTitle: string;
+  applicationStatus: string;
+  recruiterName: string;
+}) {
+  const payload = buildFirstApplicationStartedPayload(opts);
+  if (!payload) return { sent: false as const, reason: "no_candidate_email" as const };
+  await postSchedulingEmailWebhook(payload);
+  return { sent: true as const };
 }
 
 function resolveEventStatus(

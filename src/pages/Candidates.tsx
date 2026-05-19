@@ -24,7 +24,7 @@ import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight, ArrowUp, ArrowDow
 import { toast } from "sonner";
 import { Link, Navigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchCandidatesPaginated, fetchCandidatesByRecruiterPaginated, fetchCandidateTechnologies, fetchCandidateStats, createCandidate as createCandidateFn, deleteCandidate as deleteCandidateFn, updateCandidate } from "../../dbscripts/functions/candidates";
+import { fetchCandidatesPaginated, fetchCandidatesByRecruiterPaginated, fetchCandidateTechnologies, fetchCandidateStats, createCandidate as createCandidateFn, deleteCandidate as deleteCandidateFn, updateCandidate, updateCandidateStatus } from "../../dbscripts/functions/candidates";
 import { fetchProfilesBySelect, fetchProfilesByRole, updateProfile } from "../../dbscripts/functions/profiles";
 import { fetchAgencies } from "../../dbscripts/functions/agencies";
 import { createAppUser } from "@/lib/authApi";
@@ -32,6 +32,10 @@ import { createInvite } from "../../dbscripts/functions/invites";
 import { getAppBaseUrl } from "@/lib/utils";
 
 const CANDIDATE_STATUSES = ["New", "Ready For Assign", "Ready For Marketing", "In Marketing", "Placed", "Backout", "On Bench", "In Training"] as const;
+
+function candidateSafeStatus(status: string | null | undefined) {
+  return status && (CANDIDATE_STATUSES as readonly string[]).includes(status) ? status : "New";
+}
 
 const PAGE_SIZE = 10;
 export default function Candidates() {
@@ -140,9 +144,13 @@ export default function Candidates() {
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
 
   const { data: candidateStats } = useQuery({
-    queryKey: ["candidate-stats", tableLayout2 ? candidates.map((c: any) => c.id).join(",") : ""],
-    queryFn: () => fetchCandidateStats(candidates.map((c: any) => c.id)),
-    enabled: tableLayout2 && candidates.length > 0,
+    queryKey: [
+      "candidate-stats",
+      profile?.company_id,
+      tableLayout2 ? candidates.map((c: any) => c.id).join(",") : "",
+    ],
+    queryFn: () => fetchCandidateStats(candidates.map((c: any) => c.id), profile!.company_id!),
+    enabled: tableLayout2 && candidates.length > 0 && !!profile?.company_id,
   });
 
   const createCandidate = useMutation({
@@ -210,6 +218,7 @@ export default function Candidates() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-stats"] });
       setDialogOpen(false);
       toast.success("Candidate created (invite sent if email provided)");
     },
@@ -220,6 +229,7 @@ export default function Candidates() {
     mutationFn: deleteCandidateFn,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-stats"] });
       toast.success("Candidate deleted");
     },
     onError: (err: Error) => toast.error(err.message),
@@ -236,9 +246,20 @@ export default function Candidates() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-stats"] });
       toast.success("Agency updated");
     },
     onError: (err: Error) => toast.error(err?.message ?? "Failed to update agency"),
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: ({ candidateId, status }: { candidateId: string; status: string }) =>
+      updateCandidateStatus(candidateId, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success("Status updated");
+    },
+    onError: (err: Error) => toast.error(err.message),
   });
 
   useEffect(() => setPage(1), [search, statusFilter, technologyFilter, agencyFilterKind, agencyFilterId, recruiterFilterKind, recruiterFilterId, sortBy, order]);
@@ -259,9 +280,10 @@ export default function Candidates() {
   const cannotSeePersonalContact = isRecruiter || isAgencyScope;
   const displayEmail = (c: any) => (cannotSeePersonalContact ? "—" : (c.email || "—"));
   const displayPhone = (c: any) => (cannotSeePersonalContact ? "—" : (c.phone || "—"));
-  // Main company (admin/manager/recruiter) sees "Name (Agency Name)" for agency-assigned candidates; agency viewer sees name only.
+  // Main company sees "Name (Agency)" only when Agency column is hidden; activity view has its own Agency column.
   const displayCandidateName = (c: any) => {
     const name = `${c.first_name || ""} ${(c.last_name || "").trim()}`.trim() || "—";
+    if (tableLayout2 && showAgencyColumn) return name;
     if (!isMasterCompany || isAgencyScope || !c?.agency_id || !agencies?.length) return name;
     const agency = (agencies as any[]).find((a: any) => a.id === c.agency_id);
     return agency ? `${name} (${agency.name})` : name;
@@ -458,7 +480,30 @@ export default function Candidates() {
                       <TableCell className="text-muted-foreground">{c.visa_status || "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{(c as any).gender || "—"}</TableCell>
                       <TableCell className="text-muted-foreground">{(c as any).technology || "—"}</TableCell>
-                      <TableCell><StatusBadge status={c.status} /></TableCell>
+                      <TableCell>
+                        {isAdmin ? (
+                          <Select
+                            value={candidateSafeStatus(c.status)}
+                            onValueChange={(v) =>
+                              updateStatusMutation.mutate({ candidateId: c.id, status: v })
+                            }
+                            disabled={updateStatusMutation.isPending}
+                          >
+                            <SelectTrigger className="h-auto w-auto border-0 bg-transparent p-0 shadow-none focus:ring-0 focus:ring-offset-0 [&>svg]:h-3.5 [&>svg]:w-3.5 [&>svg]:opacity-60">
+                              <StatusBadge status={candidateSafeStatus(c.status)} />
+                            </SelectTrigger>
+                            <SelectContent align="start">
+                              {CANDIDATE_STATUSES.map((s) => (
+                                <SelectItem key={s} value={s} className="cursor-pointer">
+                                  <StatusBadge status={s} />
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <StatusBadge status={candidateSafeStatus(c.status)} />
+                        )}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">{displayRecruiterName(c.recruiter_id)}</TableCell>
                       {showAgencyColumn && (
                         <TableCell>

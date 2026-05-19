@@ -229,8 +229,8 @@ export default function VendorSubmissions() {
         state: jobType === "Remote" ? null : stateValue,
       });
       // 2) If a file was chosen, upload it and persist URL
-      if (jobDescFile && created && (created as any).id) {
-        const submissionId = (created as any).id as string;
+      if (jobDescFile && created?.id) {
+        const submissionId = created.id;
         setJobDescUploading(true);
         try {
           const publicUrl = await uploadVendorJobDescription(submissionId, jobDescFile);
@@ -239,9 +239,13 @@ export default function VendorSubmissions() {
           setJobDescUploading(false);
         }
       }
+      return created;
     },
-    onSuccess: () => {
+    onSuccess: (created) => {
       toast.success("Submission created with Vendor Responded status");
+      if (created?.isFirstApplication) {
+        toast.info("Welcome email sent to the candidate (first application).");
+      }
       setAddDialogOpen(false);
       setNewCandidateId(null);
       setNewClientName("");
@@ -252,6 +256,8 @@ export default function VendorSubmissions() {
       setCity("");
       setStateValue("");
       queryClient.invalidateQueries({ queryKey: ["submissions-vendor-responded"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["candidates"] });
     },
     onError: (err: Error) => toast.error(err.message),
   });

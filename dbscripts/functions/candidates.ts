@@ -1,7 +1,10 @@
 import { supabase } from "../../src/integrations/supabase/client";
 
+/** Avoids Supabase client "excessively deep" generic inference on chained builders. */
+const db = supabase as any;
+
 export async function fetchCandidates(companyId: string) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("candidates")
     .select("*")
     .eq("company_id", companyId)
@@ -12,7 +15,7 @@ export async function fetchCandidates(companyId: string) {
 
 /** Only candidates assigned to this recruiter (recruiter_id = recruiterId). */
 export async function fetchCandidatesByRecruiter(recruiterId: string, companyId: string) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("candidates")
     .select("*")
     .eq("recruiter_id", recruiterId)
@@ -59,7 +62,7 @@ function buildCandidatesQuery(
   const rawCol = sortBy && CANDIDATES_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
   const col = candidateOrderColumn(rawCol);
   const asc = order === "asc";
-  let q = supabase.from("candidates").select("*", { count: "exact" }).order(col, { ascending: asc });
+  let q: any = db.from("candidates").select("*", { count: "exact" }).order(col, { ascending: asc });
   if (companyId) q = q.eq("company_id", companyId);
   if (recruiterId !== undefined && recruiterId !== null) q = q.eq("recruiter_id", recruiterId);
   else if (recruiterId === null) q = q.is("recruiter_id", null);
@@ -77,7 +80,7 @@ export async function fetchCandidatesPaginated(opts: CandidatesPageOpts) {
   const { page, pageSize, search, status, sortBy, order, agencyId, agencyNotNullOnly, recruiterId, technology, companyId } = opts;
   if (!companyId) throw new Error("companyId is required");
   let q = buildCandidatesQuery(recruiterId, agencyId, agencyNotNullOnly, sortBy, order, technology ?? undefined, companyId);
-  if (status && status !== "all") q = q.eq("status", status);
+  if (status && status !== "all") q = q.eq("status", status as any);
   if (search && search.trim()) {
     const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
     const term = `%${safe}%`;
@@ -94,7 +97,7 @@ export async function fetchCandidatesByRecruiterPaginated(recruiterId: string, o
   const { page, pageSize, search, status, sortBy, order, agencyId, agencyNotNullOnly, technology, companyId } = opts;
   if (!companyId) throw new Error("companyId is required");
   let q = buildCandidatesQuery(recruiterId, agencyId ?? undefined, agencyNotNullOnly, sortBy, order, technology ?? undefined, companyId);
-  if (status && status !== "all") q = q.eq("status", status);
+  if (status && status !== "all") q = q.eq("status", status as any);
   if (search && search.trim()) {
     const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
     const term = `%${safe}%`;
@@ -108,7 +111,7 @@ export async function fetchCandidatesByRecruiterPaginated(recruiterId: string, o
 }
 
 export async function fetchCandidateById(id: string, companyId?: string) {
-  let q = supabase.from("candidates").select("*").eq("id", id);
+  let q = db.from("candidates").select("*").eq("id", id);
   if (companyId) q = q.eq("company_id", companyId);
   const { data, error } = await q.maybeSingle();
   if (error) throw error;
@@ -116,7 +119,7 @@ export async function fetchCandidateById(id: string, companyId?: string) {
 }
 
 export async function fetchCandidatesBasic(agencyId?: string | null, companyId?: string | null) {
-  let q = supabase
+  let q: any = db
     .from("candidates")
     .select("id, first_name, last_name, email, recruiter_id, team_lead_id, agency_id, technology");
   if (companyId != null) q = q.eq("company_id", companyId);
@@ -133,7 +136,7 @@ export async function fetchCandidateTechnologies(
   recruiterId?: string | null,
   companyId?: string | null
 ): Promise<string[]> {
-  let q = supabase.from("candidates").select("technology");
+  let q = db.from("candidates").select("technology");
   if (companyId != null) q = q.eq("company_id", companyId);
   if (agencyId != null) q = q.eq("agency_id", agencyId);
   if (recruiterId !== undefined) {
@@ -151,7 +154,7 @@ export async function fetchCandidateTechnologies(
 
 /** Candidates assigned to this team lead (team_lead_id = profile id). */
 export async function fetchCandidatesByTeamLead(teamLeadProfileId: string, companyId?: string) {
-  let q = supabase
+  let q: any = db
     .from("candidates")
     .select("id, first_name, last_name, email, recruiter_id, team_lead_id, agency_id")
     .eq("team_lead_id", teamLeadProfileId);
@@ -174,7 +177,7 @@ export async function createCandidate(candidate: {
   visa_status?: string | null;
   agency_id?: string | null;
 }) {
-  const { data, error } = await supabase.from("candidates").insert({
+  const { data, error } = await db.from("candidates").insert({
     first_name: candidate.first_name,
     last_name: candidate.last_name || null,
     email: candidate.email || null,
@@ -190,12 +193,12 @@ export async function createCandidate(candidate: {
 }
 
 export async function updateCandidate(id: string, updates: Record<string, any>) {
-  const { error } = await supabase.from("candidates").update(updates).eq("id", id);
+  const { error } = await db.from("candidates").update(updates).eq("id", id);
   if (error) throw error;
 }
 
 export async function updateCandidateStatus(id: string, status: string) {
-  const { error } = await supabase
+  const { error } = await db
     .from("candidates")
     .update({ status: status as any })
     .eq("id", id);
@@ -203,13 +206,13 @@ export async function updateCandidateStatus(id: string, status: string) {
 }
 
 export async function deleteCandidate(id: string) {
-  const { error } = await supabase.from("candidates").delete().eq("id", id);
+  const { error } = await db.from("candidates").delete().eq("id", id);
   if (error) throw error;
 }
 
 export async function updateCandidateResumeUrl(id: string, resumeUrl: string | null) {
   const updateObj: Record<string, any> = { resume_url: resumeUrl };
-  const { error } = await supabase
+  const { error } = await db
     .from("candidates")
     .update(updateObj)
     .eq("id", id);
@@ -218,7 +221,7 @@ export async function updateCandidateResumeUrl(id: string, resumeUrl: string | n
 
 export async function updateCandidateCoverLetterUrl(id: string, coverLetterUrl: string | null) {
   const updateObj: Record<string, any> = { cover_letter_url: coverLetterUrl };
-  const { error } = await supabase
+  const { error } = await db
     .from("candidates")
     .update(updateObj)
     .eq("id", id);
@@ -227,7 +230,7 @@ export async function updateCandidateCoverLetterUrl(id: string, coverLetterUrl: 
 
 export async function updateCandidateIdUrl(id: string, idUrl: string) {
   const updateObj: Record<string, any> = { id_copy_url: idUrl };
-  const { error } = await supabase
+  const { error } = await db
     .from("candidates")
     .update(updateObj)
     .eq("id", id);
@@ -236,7 +239,7 @@ export async function updateCandidateIdUrl(id: string, idUrl: string) {
 
 export async function updateCandidateVisaUrl(id: string, visaUrl: string) {
   const updateObj: Record<string, any> = { visa_copy_url: visaUrl };
-  const { error } = await supabase
+  const { error } = await db
     .from("candidates")
     .update(updateObj)
     .eq("id", id);
@@ -250,33 +253,62 @@ export type CandidateStats = {
   lastApplicationAt: string | null;
 };
 
-/** Get applications count, screen count, interview count, and last application date for each candidate id. */
-export async function fetchCandidateStats(candidateIds: string[]): Promise<Record<string, CandidateStats>> {
+/**
+ * Per-candidate counts for the Candidates Activity table.
+ * Head counts per candidate match detail/Applications totals (same company_id + candidate_id filters).
+ */
+export async function fetchCandidateStats(
+  candidateIds: string[],
+  companyId: string
+): Promise<Record<string, CandidateStats>> {
   const result: Record<string, CandidateStats> = {};
   candidateIds.forEach((id) => {
     result[id] = { applicationsCount: 0, screenCount: 0, interviewCount: 0, lastApplicationAt: null };
   });
-  if (candidateIds.length === 0) return result;
+  if (candidateIds.length === 0 || !companyId) return result;
 
-  const [subsRes, intRes] = await Promise.all([
-    supabase.from("submissions").select("id, candidate_id, status, screen_scheduled_at, created_at").in("candidate_id", candidateIds),
-    supabase.from("interviews").select("id, candidate_id").in("candidate_id", candidateIds),
-  ]);
-  const subs = subsRes.data || [];
-  const interviews = intRes.data || [];
+  await Promise.all(
+    candidateIds.map(async (candidateId) => {
+      const [appsRes, screensRes, interviewsRes, latestRes] = await Promise.all([
+        db
+          .from("submissions")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("candidate_id", candidateId),
+        db
+          .from("submissions")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("candidate_id", candidateId)
+          .or("status.eq.Screen Call,screen_scheduled_at.not.is.null"),
+        db
+          .from("interviews")
+          .select("id", { count: "exact", head: true })
+          .eq("company_id", companyId)
+          .eq("candidate_id", candidateId),
+        db
+          .from("submissions")
+          .select("created_at")
+          .eq("company_id", companyId)
+          .eq("candidate_id", candidateId)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
 
-  subs.forEach((s: any) => {
-    const cid = s.candidate_id;
-    if (!result[cid]) return;
-    result[cid].applicationsCount += 1;
-    if (s.status === "Screen Call" || s.screen_scheduled_at) result[cid].screenCount += 1;
-    if (!result[cid].lastApplicationAt || (s.created_at && s.created_at > result[cid].lastApplicationAt!)) {
-      result[cid].lastApplicationAt = s.created_at || null;
-    }
-  });
-  interviews.forEach((i: any) => {
-    const cid = i.candidate_id;
-    if (result[cid]) result[cid].interviewCount += 1;
-  });
+      if (appsRes.error) throw appsRes.error;
+      if (screensRes.error) throw screensRes.error;
+      if (interviewsRes.error) throw interviewsRes.error;
+      if (latestRes.error) throw latestRes.error;
+
+      result[candidateId].applicationsCount = appsRes.count ?? 0;
+      result[candidateId].screenCount = screensRes.count ?? 0;
+      result[candidateId].interviewCount = interviewsRes.count ?? 0;
+      if (latestRes.data?.created_at) {
+        result[candidateId].lastApplicationAt = latestRes.data.created_at;
+      }
+    })
+  );
+
   return result;
 }

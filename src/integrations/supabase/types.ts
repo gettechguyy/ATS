@@ -149,6 +149,7 @@ export type Database = {
           created_by: string | null
           feedback: string | null
           id: string
+          interview_questions_url: string | null
           mode: Database["public"]["Enums"]["interview_mode"] | null
           round_number: number | null
           scheduled_at: string | null
@@ -162,6 +163,7 @@ export type Database = {
           created_by?: string | null
           feedback?: string | null
           id?: string
+          interview_questions_url?: string | null
           mode?: Database["public"]["Enums"]["interview_mode"] | null
           round_number?: number | null
           scheduled_at?: string | null
@@ -175,6 +177,7 @@ export type Database = {
           created_by?: string | null
           feedback?: string | null
           id?: string
+          interview_questions_url?: string | null
           mode?: Database["public"]["Enums"]["interview_mode"] | null
           round_number?: number | null
           scheduled_at?: string | null

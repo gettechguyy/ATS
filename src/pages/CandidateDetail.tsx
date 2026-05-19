@@ -266,7 +266,7 @@ export default function CandidateDetail() {
 
   const createSubmission = useMutation({
     mutationFn: async (fd: FormData) => {
-      await createSubmissionFn({
+      return createSubmissionFn({
         candidate_id: id!,
         recruiter_id: user!.id,
         client_name: fd.get("client_name") as string,
@@ -276,10 +276,16 @@ export default function CandidateDetail() {
         status: "Applied",
       });
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["candidate-submissions", id] });
+      queryClient.invalidateQueries({ queryKey: ["candidate", id] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["candidates"] });
       setSubDialogOpen(false);
       toast.success("Submission added");
+      if (result?.isFirstApplication) {
+        toast.info("Welcome email sent to the candidate (first application).");
+      }
     },
     onError: (err: Error) => toast.error(err.message),
   });

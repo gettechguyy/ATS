@@ -1,4 +1,8 @@
 import { supabase } from "../../src/integrations/supabase/client";
+import { notifyFirstApplicationStarted } from "../../src/lib/schedulingEmail";
+
+/** Avoids Supabase client "excessively deep" generic inference on chained builders. */
+const db = supabase as any;
 
 /** Matches DB enum submission_status for type-safe .eq("status", ...) */
 type SubmissionStatusFilter =
@@ -129,7 +133,7 @@ async function candidateIdsMatchingNameSearch(term: string, companyId: string): 
   if (!safe) return [];
   const t = `%${safe}%`;
   const rows = await fetchAllRowsForQuery(() =>
-    supabase
+    db
       .from("candidates")
       .select("id")
       .eq("company_id", companyId)
@@ -210,7 +214,7 @@ export async function fetchCandidateApplicationSummaries(
 
   if (ctx.mode === "admin") {
     const createQuery = () => {
-      let q = supabase
+      let q = db
         .from("submissions")
         .select("candidate_id")
         .eq("company_id", companyId)
@@ -220,7 +224,7 @@ export async function fetchCandidateApplicationSummaries(
     minimalRows = await fetchAllRowsForQuery(createQuery);
   } else if (ctx.mode === "recruiter") {
     minimalRows = await fetchAllRowsForQuery(() => {
-      const inner = supabase
+      const inner = db
         .from("submissions")
         .select("candidate_id, candidates!inner(recruiter_id, company_id)")
         .eq("candidates.recruiter_id", ctx.recruiterId)
@@ -229,7 +233,7 @@ export async function fetchCandidateApplicationSummaries(
       return applySubmissionFiltersMinimal(inner, filterOpts);
     });
   } else if (ctx.mode === "agency") {
-    const { data: candidateRows } = await supabase
+    const { data: candidateRows } = await db
       .from("candidates")
       .select("id")
       .eq("agency_id", ctx.agencyId)
@@ -240,7 +244,7 @@ export async function fetchCandidateApplicationSummaries(
       candidateId && allIds.includes(candidateId) ? candidateId : null;
     const idsToUse = filterId ? [filterId] : allIds;
     const createQuery = () => {
-      let q = supabase
+      let q = db
         .from("submissions")
         .select("candidate_id")
         .eq("company_id", companyId)
@@ -251,13 +255,13 @@ export async function fetchCandidateApplicationSummaries(
     minimalRows = await fetchAllRowsForQuery(createQuery);
   } else {
     const tl = ctx.teamLeadProfileId;
-    const candRes: any = await (supabase as any)
+    const candRes: any = await db
       .from("candidates")
       .select("id")
       .eq("team_lead_id", tl)
       .eq("company_id", companyId);
     const tlCandidateIds = (candRes.data || []).map((r: any) => r.id);
-    const recruiterRes: any = await (supabase as any)
+    const recruiterRes: any = await db
       .from("candidates")
       .select("recruiter_id")
       .eq("team_lead_id", tl)
@@ -269,7 +273,7 @@ export async function fetchCandidateApplicationSummaries(
     let b: { id?: string; candidate_id: string }[] = [];
     if (tlCandidateIds.length) {
       a = await run(() => {
-        let q = (supabase as any)
+        let q = db
           .from("submissions")
           .select("id, candidate_id")
           .eq("company_id", companyId)
@@ -280,7 +284,7 @@ export async function fetchCandidateApplicationSummaries(
     }
     if (recruiterIds.length) {
       b = await run(() => {
-        let q = (supabase as any)
+        let q = db
           .from("submissions")
           .select("id, candidate_id")
           .eq("company_id", companyId)
@@ -308,7 +312,7 @@ export async function fetchCandidateApplicationSummaries(
   const chunkSize = 500;
   for (let i = 0; i < candidateKeys.length; i += chunkSize) {
     const slice = candidateKeys.slice(i, i + chunkSize);
-    const { data, error } = await supabase
+    const { data, error } = await db
       .from("candidates")
       .select("id, first_name, last_name, first_name_sort, last_name_sort, recruiter_id, agency_id")
       .in("id", slice)
@@ -349,7 +353,7 @@ export async function fetchSubmissionsByCandidateWithDetails(
     nameIds = await candidateIdsMatchingNameSearch(search, companyId);
   }
   const createQuery = () => {
-    let q = supabase
+    let q = db
       .from("submissions")
       .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)")
       .eq("candidate_id", candidateId)
@@ -360,7 +364,7 @@ export async function fetchSubmissionsByCandidateWithDetails(
 }
 
 export async function fetchSubmissions(companyId: string) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("submissions")
     .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)")
     .eq("company_id", companyId)
@@ -371,7 +375,7 @@ export async function fetchSubmissions(companyId: string) {
 
 /** Submissions created by / assigned to this recruiter. */
 export async function fetchSubmissionsByRecruiter(recruiterId: string, companyId: string) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("submissions")
     .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)")
     .eq("recruiter_id", recruiterId)
@@ -382,7 +386,7 @@ export async function fetchSubmissionsByRecruiter(recruiterId: string, companyId
 }
 
 export async function fetchSubmissionById(id: string) {
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("submissions")
     .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)")
     .eq("id", id)
@@ -392,7 +396,7 @@ export async function fetchSubmissionById(id: string) {
 }
 
 export async function fetchSubmissionsByCandidate(candidateId: string) {
-  const { data } = await supabase
+  const { data } = await db
     .from("submissions")
     .select("*")
     .eq("candidate_id", candidateId)
@@ -426,7 +430,7 @@ function buildSubmissionsQuery(
   const rawCol = sortBy && SUBMISSIONS_SORT_COLUMNS.includes(sortBy as any) ? sortBy : "created_at";
   const col = submissionOrderColumn(rawCol);
   const asc = order === "asc";
-  let q = supabase
+  let q = db
     .from("submissions")
     .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
     .order(col, { ascending: asc });
@@ -483,7 +487,7 @@ export async function fetchSubmissionsForRecruiterCandidatesPaginated(recruiterI
   const col = submissionOrderColumn(rawCol);
   const asc = order === "asc";
   const createQuery = () => {
-    let q = supabase
+    let q = db
       .from("submissions")
       .select("*, candidates!inner(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
       .eq("company_id", companyId)
@@ -603,13 +607,13 @@ export async function fetchSpecialSubmissionsPage(
 
   const mergeTeamLeadRows = async (buildFiltered: (q: any) => any) => {
     const tl = (ctx as { role: "team_lead"; teamLeadProfileId: string }).teamLeadProfileId;
-    const candRes: any = await (supabase as any)
+    const candRes: any = await db
       .from("candidates")
       .select("id")
       .eq("team_lead_id", tl)
       .eq("company_id", companyId);
     const tlCandidateIds = (candRes.data || []).map((r: any) => r.id);
-    const recruiterRes: any = await (supabase as any)
+    const recruiterRes: any = await db
       .from("candidates")
       .select("recruiter_id")
       .eq("team_lead_id", tl)
@@ -619,7 +623,7 @@ export async function fetchSpecialSubmissionsPage(
     const run = (inCol: "candidate_id" | "recruiter_id", ids: string[]) => {
       if (!ids.length) return Promise.resolve([] as any[]);
       return fetchAllRowsForQuery(() => {
-        let q = supabase
+        let q = db
           .from("submissions")
           .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, team_lead_id, recruiter_id, agency_id)")
           .eq("company_id", companyId)
@@ -663,7 +667,7 @@ export async function fetchSpecialSubmissionsPage(
 
   if (ctx.role === "admin") {
     const createQuery = () => {
-      let q = supabase
+      let q = db
         .from("submissions")
         .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
         .eq("company_id", companyId);
@@ -681,7 +685,7 @@ export async function fetchSpecialSubmissionsPage(
 
   if (ctx.role === "recruiter") {
     const createQuery = () => {
-      let q = supabase
+      let q = db
         .from("submissions")
         .select("*, candidates!inner(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
         .eq("company_id", companyId)
@@ -700,7 +704,7 @@ export async function fetchSpecialSubmissionsPage(
   }
 
   if (ctx.role === "agency") {
-    const { data: candidateRows } = await supabase
+    const { data: candidateRows } = await db
       .from("candidates")
       .select("id")
       .eq("agency_id", ctx.agencyId)
@@ -709,7 +713,7 @@ export async function fetchSpecialSubmissionsPage(
     if (allIds.length === 0) return { data: [], total: 0 };
     const idsToUse = candidateId && allIds.includes(candidateId) ? [candidateId] : allIds;
     const createQuery = () => {
-      let q = supabase
+      let q = db
         .from("submissions")
         .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
         .eq("company_id", companyId)
@@ -726,7 +730,7 @@ export async function fetchSpecialSubmissionsPage(
   }
 
   const createQuery = () => {
-    let q = supabase
+    let q = db
       .from("submissions")
       .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
       .eq("company_id", companyId)
@@ -744,14 +748,14 @@ export async function fetchSpecialSubmissionsPage(
 
 /** All submissions whose candidate is assigned to this agency (e.g. for Screens). */
 export async function fetchSubmissionsByAgency(agencyId: string, companyId: string) {
-  const { data: candidateRows } = await supabase
+  const { data: candidateRows } = await db
     .from("candidates")
     .select("id")
     .eq("agency_id", agencyId)
     .eq("company_id", companyId);
   const candidateIds = (candidateRows || []).map((c: any) => c.id);
   if (candidateIds.length === 0) return [];
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("submissions")
     .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)")
     .eq("company_id", companyId)
@@ -763,7 +767,7 @@ export async function fetchSubmissionsByAgency(agencyId: string, companyId: stri
 
 /** Submissions for an agency: only submissions whose candidate is assigned to this agency. Optional candidateId filter. */
 export async function fetchSubmissionsByAgencyPaginated(agencyId: string, companyId: string, opts: SubmissionsPageOpts) {
-  const { data: candidateRows } = await supabase
+  const { data: candidateRows } = await db
     .from("candidates")
     .select("id")
     .eq("agency_id", agencyId)
@@ -776,7 +780,7 @@ export async function fetchSubmissionsByAgencyPaginated(agencyId: string, compan
   const asc = order === "asc";
   const idsToUse = filterCandidateId && candidateIds.includes(filterCandidateId) ? [filterCandidateId] : candidateIds;
   const createQuery = () => {
-    let q = supabase
+    let q = db
       .from("submissions")
       .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, recruiter_id, agency_id)", { count: "exact" })
       .eq("company_id", companyId)
@@ -802,36 +806,36 @@ export async function fetchSubmissionsByAgencyPaginated(agencyId: string, compan
  */
 export async function fetchSubmissionsByTeamLead(teamLeadProfileId: string, companyId: string) {
   // select submissions where candidate has team_lead_id = teamLeadProfileId
-  const { data, error } = await supabase
+  const { data, error } = await db
     .from("submissions")
     .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, team_lead_id, recruiter_id, agency_id)")
     .eq("company_id", companyId)
     .or(`candidate_id.in.(select id from candidates where team_lead_id.eq.${teamLeadProfileId}),recruiter_id.in.(select recruiter_id from candidates where team_lead_id.eq.${teamLeadProfileId})`)
     .order("created_at", { ascending: false });
-  // Fallback: if supabase does not support subqueries in .or, run two queries and merge
+  // Fallback: if db does not support subqueries in .or, run two queries and merge
   if (error) {
     // Fetch candidate IDs for the team lead first to avoid complex nested type inference
-    const candRes: any = await (supabase as any)
+    const candRes: any = await db
       .from("candidates")
       .select("id")
       .eq("team_lead_id", teamLeadProfileId)
       .eq("company_id", companyId);
     const candidateIds = (candRes.data || []).map((r: any) => r.id);
 
-    const byCandidate: any = await (supabase as any)
+    const byCandidate: any = await db
       .from("submissions")
       .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, team_lead_id, recruiter_id, agency_id)")
       .eq("company_id", companyId)
       .in("candidate_id", candidateIds.length ? candidateIds : []);
 
-    const recruiterRes: any = await (supabase as any)
+    const recruiterRes: any = await db
       .from("candidates")
       .select("recruiter_id")
       .eq("team_lead_id", teamLeadProfileId)
       .eq("company_id", companyId);
     const recruiterIds = (recruiterRes.data || []).map((r: any) => r.recruiter_id).filter(Boolean);
 
-    const byRecruiter: any = await (supabase as any)
+    const byRecruiter: any = await db
       .from("submissions")
       .select("*, candidates(first_name, last_name, first_name_sort, last_name_sort, email, team_lead_id, recruiter_id, agency_id)")
       .eq("company_id", companyId)
@@ -861,7 +865,7 @@ export async function createSubmission(submission: {
   job_type?: string | null;
   city?: string | null;
   state?: string | null;
-}): Promise<{ id: string } | void> {
+}): Promise<{ id: string; isFirstApplication?: boolean }> {
   const insertObj: Record<string, any> = {
     candidate_id: submission.candidate_id,
     recruiter_id: submission.recruiter_id,
@@ -879,18 +883,47 @@ export async function createSubmission(submission: {
   if (submission.city !== undefined) insertObj.city = submission.city;
   if (submission.state !== undefined) insertObj.state = submission.state;
 
-  const { data, error } = await supabase.from("submissions").insert(insertObj as any).select("id").single();
+  const { data, error } = await db.from("submissions").insert(insertObj as any).select("id").single();
   if (error) throw error;
 
-  const { count } = await supabase.from("submissions").select("id", { count: "exact", head: true }).eq("candidate_id", submission.candidate_id);
-  if (count === 1) {
-    await supabase.from("candidates").update({ status: "In Marketing" as any }).eq("id", submission.candidate_id);
+  const { count } = await db
+    .from("submissions")
+    .select("id", { count: "exact", head: true })
+    .eq("candidate_id", submission.candidate_id);
+
+  const isFirstApplication = count === 1;
+  if (isFirstApplication) {
+    await db.from("candidates").update({ status: "In Marketing" as any }).eq("id", submission.candidate_id);
+
+    const [{ data: candidate }, { data: recruiter }] = await Promise.all([
+      db
+        .from("candidates")
+        .select("first_name, last_name, email")
+        .eq("id", submission.candidate_id)
+        .maybeSingle(),
+      db.from("profiles").select("full_name").eq("user_id", submission.recruiter_id).maybeSingle(),
+    ]);
+
+    if (candidate?.email?.trim()) {
+      try {
+        await notifyFirstApplicationStarted({
+          candidate,
+          clientName: submission.client_name,
+          jobTitle: submission.position,
+          applicationStatus: (submission.status || "Applied") as string,
+          recruiterName: recruiter?.full_name || "Recruiting Team",
+        });
+      } catch (emailErr) {
+        console.error("First application welcome email failed:", emailErr);
+      }
+    }
   }
-  return data as { id: string };
+
+  return { ...(data as { id: string }), isFirstApplication };
 }
 
 export async function updateSubmissionStatus(id: string, status: string) {
-  const { error } = await supabase
+  const { error } = await db
     .from("submissions")
     .update({ status: status as any })
     .eq("id", id);
@@ -908,7 +941,7 @@ export async function updateSubmission(id: string, fields: Record<string, any>) 
 
   if (Object.keys(updateObj).length === 0) return;
 
-  const { error } = await supabase
+  const { error } = await db
     .from("submissions")
     .update(updateObj)
     .eq("id", id);
