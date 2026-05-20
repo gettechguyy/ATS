@@ -98,13 +98,30 @@ export function addTestCandidate(
   return row;
 }
 
+function syncCachedTeamLeadManager(
+  store: TestCacheStore,
+  teamLeadProfileId: string | null | undefined,
+  managerProfileId: string | null | undefined
+): void {
+  if (!teamLeadProfileId || teamLeadProfileId === "none") return;
+  const tl = store.users.find((u) => u.id === teamLeadProfileId);
+  if (tl) tl.manager_profile_id = managerProfileId ?? null;
+}
+
 export function addTestUser(
   companyId: string,
-  input: { full_name: string; email: string; role?: string }
+  input: {
+    full_name: string;
+    email: string;
+    role?: string;
+    manager_profile_id?: string | null;
+    team_lead_profile_id?: string | null;
+  }
 ): Record<string, any> {
   const store = getTestCacheForCompany(companyId);
   const now = new Date().toISOString();
   const userId = newTestId("user");
+  const role = input.role || "recruiter";
   const row = {
     id: newTestId("user"),
     user_id: userId,
@@ -115,12 +132,49 @@ export function addTestUser(
     is_active: true,
     created_at: now,
     updated_at: now,
-    role: input.role || "recruiter",
+    role,
+    manager_profile_id:
+      role === "team_lead" ? input.manager_profile_id ?? null : null,
+    team_lead_profile_id:
+      role === "recruiter" ? input.team_lead_profile_id ?? null : null,
+    team_id: null as string | null,
     __testCache: true,
   };
   store.users.unshift(row);
   saveTestCache(store);
   return row;
+}
+
+export type TestCacheCreatorRef =
+  | { kind: "session"; userId: string; profileId?: string; fullName?: string; role?: string }
+  | { kind: "cached_user"; profileId: string };
+
+/** Resolve app user id + metadata for submission attribution. */
+export function resolveTestCacheCreator(
+  companyId: string,
+  ref: TestCacheCreatorRef
+): {
+  userId: string;
+  profileId: string | null;
+  role: string;
+  fullName: string;
+} | null {
+  if (ref.kind === "session") {
+    return {
+      userId: ref.userId,
+      profileId: ref.profileId ?? null,
+      role: ref.role ?? "recruiter",
+      fullName: ref.fullName ?? "You",
+    };
+  }
+  const u = getTestCacheForCompany(companyId).users.find((x) => x.id === ref.profileId);
+  if (!u) return null;
+  return {
+    userId: u.user_id,
+    profileId: u.id,
+    role: u.role || "recruiter",
+    fullName: u.full_name || "User",
+  };
 }
 
 export function addTestApplication(
@@ -130,19 +184,28 @@ export function addTestApplication(
     client_name: string;
     position?: string;
     status?: string;
-    recruiter_id?: string | null;
+    /** Who created this application (recruiter, team lead, or manager). */
+    createdBy: TestCacheCreatorRef;
   }
 ): Record<string, any> {
   const store = getTestCacheForCompany(companyId);
   const now = new Date().toISOString();
+  const creator = resolveTestCacheCreator(companyId, input.createdBy);
+  if (!creator) throw new Error("Created-by user not found in cache");
+
   const candidate =
     store.candidates.find((c) => c.id === input.candidate_id) ||
     loadTestCache()?.candidates.find((c) => c.id === input.candidate_id);
+
   const row = {
     id: newTestId("application"),
     company_id: companyId,
     candidate_id: input.candidate_id,
-    recruiter_id: input.recruiter_id ?? candidate?.recruiter_id ?? null,
+    recruiter_id: creator.userId,
+    created_by_user_id: creator.userId,
+    created_by_profile_id: creator.profileId,
+    created_by_role: creator.role,
+    created_by_name: creator.fullName,
     client_name: input.client_name.trim(),
     position: input.position?.trim() || "Test Role",
     status: input.status || "Applied",
@@ -155,7 +218,7 @@ export function addTestApplication(
           first_name: candidate.first_name,
           last_name: candidate.last_name,
           email: candidate.email,
-          recruiter_id: candidate.recruiter_id,
+          recruiter_id: creator.userId,
           agency_id: candidate.agency_id ?? null,
         }
       : null,
@@ -164,6 +227,121 @@ export function addTestApplication(
   store.applications.unshift(row);
   saveTestCache(store);
   return row;
+}
+
+/** Build hierarchy forest from cache only (when DB has no managers/TLs yet). */
+export function buildTestCacheHierarchyForest(
+  companyId: string,
+  counts: Map<string, number>,
+  teamNameByTl: Map<string, string>
+): import("../../dbscripts/functions/teams").TeamHierarchyNode[] {
+  if (!isTestCacheOwner()) return [];
+  const store = getTestCacheForCompany(companyId);
+  for (const t of store.teams) {
+    syncCachedTeamLeadManager(store, t.team_lead_profile_id, t.manager_profile_id);
+  }
+  const teamLeads = store.users.filter((u) => u.role === "team_lead");
+  const recruiters = store.users.filter((u) => u.role === "recruiter");
+  const managers = store.users.filter((u) => u.role === "manager");
+  if (!teamLeads.length && !recruiters.length && !managers.length) return [];
+
+  const recruitersByTl = new Map<string, Set<string>>();
+  for (const r of recruiters) {
+    const tlId = r.team_lead_profile_id;
+    if (!tlId) continue;
+    if (!recruitersByTl.has(tlId)) recruitersByTl.set(tlId, new Set());
+    recruitersByTl.get(tlId)!.add(r.user_id);
+  }
+  for (const t of store.teams) {
+    if (!t.team_lead_profile_id) continue;
+    if (t.team_lead_profile_id && t.name) teamNameByTl.set(t.team_lead_profile_id, t.name);
+  }
+
+  const sum = (ids: string[]) => ids.reduce((s, id) => s + (counts.get(id) ?? 0), 0);
+
+  const buildRec = (u: Record<string, any>) => ({
+    key: `recruiter-${u.id}`,
+    profileId: u.id,
+    userId: u.user_id,
+    name: u.full_name || "Recruiter",
+    role: "recruiter" as const,
+    value: counts.get(u.user_id) ?? 0,
+    teamLeadProfileId: u.team_lead_profile_id,
+    children: [] as import("../../dbscripts/functions/teams").TeamHierarchyNode[],
+  });
+
+  const buildTl = (tl: Record<string, any>) => {
+    const recs = recruiters.filter((r) => r.team_lead_profile_id === tl.id);
+    const recIds = [...recs.map((r) => r.user_id), tl.user_id];
+    const label = teamNameByTl.get(tl.id);
+    return {
+      key: `tl-${tl.id}`,
+      profileId: tl.id,
+      userId: tl.user_id,
+      name: label ? `${label} (${tl.full_name || "Team Lead"})` : tl.full_name || "Team Lead",
+      role: "team_lead" as const,
+      managerProfileId: tl.manager_profile_id,
+      value: sum(recIds),
+      children: recs.map(buildRec),
+    };
+  };
+
+  const nodes: import("../../dbscripts/functions/teams").TeamHierarchyNode[] = [];
+
+  for (const m of managers) {
+    const tls = teamLeads.filter((tl) => tl.manager_profile_id === m.id);
+    const children = tls.map(buildTl);
+    const allIds = [m.user_id, ...children.flatMap((c) => [c.userId, ...c.children.map((ch) => ch.userId)])];
+    nodes.push({
+      key: `mgr-${m.id}`,
+      profileId: m.id,
+      userId: m.user_id,
+      name: m.full_name || "Manager",
+      role: "manager",
+      value: sum(allIds),
+      children,
+    });
+  }
+
+  const orphanTls = teamLeads.filter((tl) => !tl.manager_profile_id);
+  if (orphanTls.length) {
+    const children = orphanTls.map(buildTl);
+    nodes.push({
+      key: "mgr-unassigned",
+      profileId: "unassigned",
+      userId: "",
+      name: "Test / unassigned teams",
+      role: "manager",
+      value: sum(children.flatMap((c) => [c.userId, ...c.children.map((ch) => ch.userId)])),
+      children,
+    });
+  }
+
+  return nodes;
+}
+
+/** Include cached hierarchy users so Teams charts can attribute test applications. */
+export function mergeCachedHierarchyPeople<T extends Record<string, any>>(
+  people: T[],
+  companyId: string
+): T[] {
+  if (!isTestCacheOwner() || !companyId) return people;
+  const cached = getTestCacheForCompany(companyId).users
+    .filter((u) => ["recruiter", "team_lead", "manager"].includes(u.role))
+    .map(
+      (u) =>
+        ({
+          id: u.id,
+          user_id: u.user_id,
+          full_name: u.full_name,
+          manager_profile_id: u.manager_profile_id ?? null,
+          team_lead_profile_id: u.team_lead_profile_id ?? null,
+          role: u.role,
+          __testCache: true,
+        }) as T
+    );
+  const ids = new Set(people.map((p) => p.id));
+  return [...cached.filter((c) => !ids.has(c.id)), ...people];
 }
 
 export function addTestTeam(
@@ -188,6 +366,7 @@ export function addTestTeam(
     __testCache: true,
   };
   store.teams.unshift(row);
+  syncCachedTeamLeadManager(store, row.team_lead_profile_id, row.manager_profile_id);
   saveTestCache(store);
   return row;
 }

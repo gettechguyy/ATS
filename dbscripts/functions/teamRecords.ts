@@ -1,5 +1,5 @@
 import { supabase } from "../../src/integrations/supabase/client";
-import { mergeCachedTeamRecords } from "../../src/lib/testDataCache";
+import { getTestCacheForCompany, isTestCacheOwner, mergeCachedTeamRecords } from "../../src/lib/testDataCache";
 
 const db = supabase as any;
 
@@ -23,7 +23,17 @@ export async function fetchTeamRecords(
   if (opts?.activeOnly !== false) q = q.eq("is_active", true);
   if (opts?.managerProfileId) q = q.eq("manager_profile_id", opts.managerProfileId);
   const { data, error } = await q;
-  if (error) throw error;
+  if (error) {
+    const msg = String((error as { message?: string }).message ?? "");
+    const missingTable =
+      (error as { code?: string }).code === "42P01" ||
+      msg.includes("teams") ||
+      msg.includes("schema cache");
+    if (missingTable) {
+      return mergeCachedTeamRecords([], companyId);
+    }
+    throw error;
+  }
   return mergeCachedTeamRecords((data || []) as TeamRecord[], companyId);
 }
 
@@ -167,9 +177,22 @@ export async function deleteTeamRecord(teamId: string, companyId: string): Promi
 export async function loadTeamNamesByTeamLeadProfileId(
   companyId: string
 ): Promise<Map<string, string>> {
-  const teams = await fetchTeamRecords(companyId, { activeOnly: false });
+  try {
+    const teams = await fetchTeamRecords(companyId, { activeOnly: false });
+    const map = new Map<string, string>();
+    for (const t of teams) {
+      if (t.team_lead_profile_id) map.set(t.team_lead_profile_id, t.name);
+    }
+    return map;
+  } catch {
+    return teamNamesFromCacheOnly(companyId);
+  }
+}
+
+function teamNamesFromCacheOnly(companyId: string): Map<string, string> {
   const map = new Map<string, string>();
-  for (const t of teams) {
+  if (!isTestCacheOwner()) return map;
+  for (const t of getTestCacheForCompany(companyId).teams) {
     if (t.team_lead_profile_id) map.set(t.team_lead_profile_id, t.name);
   }
   return map;

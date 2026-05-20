@@ -158,7 +158,7 @@ export default function Teams() {
     return null;
   }, [profile, isAdmin, isManager, isTeamLead, isRecruiter, user?.id]);
 
-  const { data: forest = [], isLoading } = useQuery({
+  const { data: forest = [], isLoading, isError, error } = useQuery({
     queryKey: [
       "team-hierarchy",
       viewer?.role,
@@ -199,6 +199,10 @@ export default function Teams() {
       })),
     [chartNodes]
   );
+
+  const hasDateFilter = !!(dashboardDateFilter.start || dashboardDateFilter.end);
+  const allCountsZero =
+    chartNodes.length > 0 && chartNodes.every((n) => n.value === 0);
 
   const toggleManager = (key: string) => {
     setExpandedManagers((prev) => {
@@ -280,6 +284,14 @@ export default function Teams() {
                   : "Last Week"}
           </Button>
         ))}
+        <Button
+          variant={!hasDateFilter ? "secondary" : "ghost"}
+          size="sm"
+          className="rounded-lg"
+          onClick={() => setDateRange(undefined)}
+        >
+          All time
+        </Button>
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="ghost" size="sm" className="rounded-lg text-muted-foreground">
@@ -298,6 +310,24 @@ export default function Teams() {
 
       <p className="text-sm text-muted-foreground">{drillHint}</p>
 
+      {isError ? (
+        <p className="rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          Could not load team stats: {(error as Error)?.message ?? "Unknown error"}. Apply Supabase
+          migrations{" "}
+          <code className="text-xs">20260519120000_user_hierarchy_profiles.sql</code> and{" "}
+          <code className="text-xs">20260519140000_teams_table.sql</code>, or use test cache (refresh
+          after adding manager → team lead → team).
+        </p>
+      ) : null}
+
+      {allCountsZero && hasDateFilter ? (
+        <p className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-900 dark:text-amber-100">
+          Organization is listed below, but counts are 0 for {rangeLabel}. Click{" "}
+          <strong>All time</strong> (clear the date by opening the calendar and clearing the range)
+          or widen the range — cached test applications use the time you created them.
+        </p>
+      ) : null}
+
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="border-border/60 shadow-sm">
           <CardHeader>
@@ -311,7 +341,11 @@ export default function Teams() {
           </CardHeader>
           <CardContent>
             {chartData.length === 0 && !isLoading ? (
-              <p className="py-12 text-center text-sm text-muted-foreground">No data for this period.</p>
+              <p className="py-12 text-center text-sm text-muted-foreground">
+                {forest.length === 0
+                  ? "No teams to display. Add managers/team leads in User Management, or test cache users as team lead."
+                  : "No bars in this view — expand a row in Organization or clear the date filter."}
+              </p>
             ) : (
               <ChartContainer config={chartConfig} className="aspect-[4/3] min-h-[280px] w-full">
                 <BarChart data={chartData} layout="vertical" margin={{ left: 8, right: 16, top: 8, bottom: 8 }}>

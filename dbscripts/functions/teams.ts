@@ -1,5 +1,11 @@
 import { supabase } from "../../src/integrations/supabase/client";
-import { getCachedRecruiterMetricCounts } from "../../src/lib/testDataCache";
+import {
+  buildTestCacheHierarchyForest,
+  getCachedRecruiterMetricCounts,
+  isTestCacheOwner,
+  mergeCachedHierarchyPeople,
+} from "../../src/lib/testDataCache";
+import { fetchProfilesWithHierarchyFields } from "./profileHierarchy";
 import { loadTeamNamesByTeamLeadProfileId } from "./teamRecords";
 
 const db = supabase as any;
@@ -87,17 +93,13 @@ function recruitersForTeamLead(
 }
 
 async function loadCompanyProfiles(companyId: string): Promise<(ProfileRow & { role: string })[]> {
-  const { data: profiles, error: pErr } = await db
-    .from("profiles")
-    .select("id, user_id, full_name, manager_profile_id, team_lead_profile_id, is_active")
-    .eq("company_id", companyId);
-  if (pErr) throw pErr;
+  const profiles = await fetchProfilesWithHierarchyFields(companyId);
   const { data: roles, error: rErr } = await db.from("user_roles").select("user_id, role");
   if (rErr) throw rErr;
   const roleByUser = new Map((roles || []).map((r: any) => [r.user_id, r.role as string]));
-  return (profiles || [])
-    .filter((p: any) => p.is_active !== false)
-    .map((p: any) => ({
+  return profiles
+    .filter((p) => p.is_active !== false)
+    .map((p) => ({
       ...p,
       role: roleByUser.get(p.user_id) || "recruiter",
     }))
@@ -134,10 +136,7 @@ async function countByRecruiterUserId(
       )
     );
     rows.forEach((r) => bump(r.recruiter_id));
-    return counts;
-  }
-
-  if (metric === "screen_calls") {
+  } else if (metric === "screen_calls") {
     const rows = await fetchAllRows<any>(() =>
       applyDateRange(
         db
@@ -151,10 +150,8 @@ async function countByRecruiterUserId(
       )
     );
     rows.forEach((r) => bump(r.recruiter_id));
-    return counts;
-  }
+  } else if (metric === "interviews") {
 
-  if (metric === "interviews") {
     const rows = await fetchAllRows<any>(() =>
       applyDateRange(
         db.from("interviews").select("created_by, scheduled_at").eq("company_id", companyId),
@@ -164,18 +161,18 @@ async function countByRecruiterUserId(
       )
     );
     rows.forEach((r) => bump(r.created_by));
-    return counts;
+  } else {
+    const rows = await fetchAllRows<any>(() =>
+      applyDateRange(
+        db.from("offers").select("created_by, offered_at").eq("company_id", companyId),
+        "offered_at",
+        startISO,
+        endISO
+      )
+    );
+    rows.forEach((r) => bump(r.created_by));
   }
 
-  const rows = await fetchAllRows<any>(() =>
-    applyDateRange(
-      db.from("offers").select("created_by, offered_at").eq("company_id", companyId),
-      "offered_at",
-      startISO,
-      endISO
-    )
-  );
-  rows.forEach((r) => bump(r.created_by));
   const cached = getCachedRecruiterMetricCounts(companyId, metric, startISO, endISO);
   cached.forEach((n, uid) => counts.set(uid, (counts.get(uid) ?? 0) + n));
   return counts;
@@ -207,7 +204,7 @@ function buildTeamLeadNode(
   teamNameByTl?: Map<string, string>
 ): TeamHierarchyNode {
   const children = recruiters.map((r) => buildRecruiterNode(r, counts));
-  const recruiterIds = recruiters.map((r) => r.user_id);
+  const recruiterIds = [...recruiters.map((r) => r.user_id), tl.user_id];
   const teamLabel = teamNameByTl?.get(tl.id);
   const displayName = teamLabel
     ? `${teamLabel} (${tl.full_name || "Team Lead"})`
@@ -237,9 +234,10 @@ function buildManagerNode(
     const recsForTl = recruitersForTeamLead(tl.id, allRecruiters, recruitersByTl);
     return buildTeamLeadNode(tl, recsForTl, counts, teamNameByTl);
   });
-  const allRecruiterIdsUnder = children.flatMap((c) => [
-    ...c.children.map((ch) => ch.userId),
-  ]);
+  const allRecruiterIdsUnder = [
+    mgr.user_id,
+    ...children.flatMap((c) => [c.userId, ...c.children.map((ch) => ch.userId)]),
+  ];
   return {
     key: `mgr-${mgr.id}`,
     profileId: mgr.id,
@@ -318,13 +316,24 @@ export async function fetchTeamHierarchyStats(
 ): Promise<TeamHierarchyNode[]> {
   const startISO = startDate ? startDate.toISOString() : null;
   const endISO = endDate ? endDate.toISOString() : null;
-  const people = await loadCompanyProfiles(viewer.companyId);
+  let people: (ProfileRow & { role: string })[] = [];
+  try {
+    people = await loadCompanyProfiles(viewer.companyId);
+  } catch {
+    people = [];
+  }
+  people = mergeCachedHierarchyPeople(people, viewer.companyId);
   const recruitersByTl = await loadRecruiterUserIdsByTeamLead(viewer.companyId);
   const teamNameByTl = await loadTeamNamesByTeamLeadProfileId(viewer.companyId);
   const counts = await countByRecruiterUserId(viewer.companyId, metric, startISO, endISO);
 
   if (viewer.role === "admin") {
-    return buildAdminForest(people, counts, recruitersByTl, teamNameByTl);
+    let forest = buildAdminForest(people, counts, recruitersByTl, teamNameByTl);
+    if (isTestCacheOwner()) {
+      const cacheForest = buildTestCacheHierarchyForest(viewer.companyId, counts, teamNameByTl);
+      if (cacheForest.length > 0) forest = cacheForest;
+    }
+    return forest;
   }
 
   const recruiters = people.filter((p) => p.role === "recruiter");
