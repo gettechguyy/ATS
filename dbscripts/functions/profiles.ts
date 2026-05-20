@@ -1,4 +1,5 @@
 import { supabase } from "../../src/integrations/supabase/client";
+import { mergeCachedProfiles } from "../../src/lib/testDataCache";
 
 const PROFILES_LIST_SORT = ["full_name", "email", "created_at"] as const;
 export type ProfilesListSortOpts = {
@@ -23,7 +24,7 @@ export async function fetchAllProfiles(companyId: string, opts?: ProfilesListSor
   let q = supabase.from("profiles").select("*").eq("company_id", companyId);
   q = applyProfilesListOrder(q, sortBy, ascending);
   const { data } = await q;
-  return data || [];
+  return mergeCachedProfiles(data || [], companyId);
 }
 
 export async function fetchProfilesBySelect(fields: string) {

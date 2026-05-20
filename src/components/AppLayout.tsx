@@ -6,6 +6,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import {
   LayoutDashboard,
   Users,
+  UsersRound,
   User,
   FileText,
   Calendar,
@@ -44,6 +45,7 @@ import { spring } from "@/lib/motion";
 const allNavItems: (CommandNavItem & { roles: string[]; masterOnly?: boolean })[] = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },
   { to: "/candidates", icon: Users, label: "Candidates", roles: ["admin", "recruiter", "manager", "team_lead", "agency_admin"], keywords: "people talent" },
+  { to: "/teams", icon: UsersRound, label: "Teams", roles: ["admin", "manager", "team_lead", "recruiter"], keywords: "hierarchy progress chart" },
   { to: "/my-profile", icon: User, label: "My Profile", roles: ["candidate"] },
   { to: "/submissions", icon: FileText, label: "Applications", roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] },
   { to: "/submissions-vendor", icon: FileText, label: "Submission", roles: ["admin", "recruiter", "manager", "team_lead", "agency_admin"] },

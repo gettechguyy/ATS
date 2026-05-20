@@ -1,4 +1,9 @@
 import { supabase } from "../../src/integrations/supabase/client";
+import { applyCachedDashboardStats } from "../../src/lib/testDataCache";
+import { resolveManagerScope, resolveTeamLeadScope } from "./hierarchy";
+
+/** Avoids Supabase client "excessively deep" generic inference on chained builders. */
+const db = supabase as any;
 
 /** PostgREST/Supabase caps each response at ~1000 rows by default; paginate to aggregate full totals. */
 async function fetchAllRows<T>(createQuery: () => any, pageSize = 1000): Promise<T[]> {
@@ -39,6 +44,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
   const isRecruiterScoped = role === "recruiter" && recruiterId;
   const isCandidateScoped = role === "candidate" && candidateId;
   const isTeamLeadScoped = role === "team_lead" && options?.userId;
+  const isManagerScoped = role === "manager" && options?.userId;
   const isAgencyScoped = role === "agency_admin" && agencyId;
 
   const emptyStats = () => ({
@@ -76,7 +82,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
 
   /** Fresh builder each call so we can paginate with `.range` (avoids the default ~1000 row cap). */
   const buildCandidatesQuery = () => {
-    let q = supabase.from("candidates").select("id, status, recruiter_id").eq("company_id", companyId);
+    let q: any = db.from("candidates").select("id, status, recruiter_id").eq("company_id", companyId);
     if (isRecruiterScoped) q = q.eq("recruiter_id", recruiterId!);
     if (isAgencyScoped) q = q.eq("agency_id", agencyId!);
     if (filterCandidateId) q = q.eq("id", filterCandidateId);
@@ -86,7 +92,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
   };
 
   const buildSubmissionsQuery = () => {
-    let q = supabase
+    let q: any = db
       .from("submissions")
       .select("id, status, candidate_id, recruiter_id, screen_scheduled_at, created_at")
       .eq("company_id", companyId);
@@ -98,7 +104,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
   };
 
   const buildInterviewsQuery = () => {
-    let q = supabase
+    let q: any = db
       .from("interviews")
       .select("id, scheduled_at, status, created_by, candidate_id, submission_id")
       .eq("company_id", companyId);
@@ -110,7 +116,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
   };
 
   const buildOffersQuery = () => {
-    let q = supabase
+    let q: any = db
       .from("offers")
       .select("id, status, created_by, candidate_id, submission_id")
       .eq("company_id", companyId);
@@ -138,7 +144,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
       o = [];
     } else {
       const buildAgencySubmissions = () => {
-        let subQ = supabase
+        let subQ = db
           .from("submissions")
           .select("id, status, candidate_id, recruiter_id, screen_scheduled_at, created_at")
           .eq("company_id", companyId)
@@ -153,7 +159,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
       if (submissionIds.length > 0 && recruiterIds.length > 0) {
         const subSet = new Set(submissionIds);
         const intRows = await fetchAllRows(() => {
-          let intQ = supabase
+          let intQ = db
             .from("interviews")
             .select("id, scheduled_at, status, submission_id, created_by")
             .eq("company_id", companyId)
@@ -163,7 +169,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
           return intQ;
         });
         const offRows = await fetchAllRows(() => {
-          let offQ = supabase
+          let offQ = db
             .from("offers")
             .select("id, status, submission_id, created_by")
             .eq("company_id", companyId)
@@ -176,7 +182,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
         o = offRows.filter((x: any) => subSet.has(x.submission_id));
       } else if (submissionIds.length > 0) {
         i = await fetchAllRows(() => {
-          let intQ = supabase
+          let intQ = db
             .from("interviews")
             .select("id, scheduled_at, status, submission_id")
             .eq("company_id", companyId)
@@ -186,7 +192,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
           return intQ;
         });
         o = await fetchAllRows(() => {
-          let offQ = supabase
+          let offQ = db
             .from("offers")
             .select("id, status, submission_id")
             .eq("company_id", companyId)
@@ -217,8 +223,7 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
     // matches the Applications page logic. Only when no date range or technology/recruiter
     // filters are applied, to avoid mismatches.
     if (!startISO && !endISO && !filterTechnology && !filterRecruiterId) {
-      const anySupabase = supabase as any;
-      const { data, error } = await anySupabase.rpc("get_candidate_application_counts", {
+      const { data, error } = await db.rpc("get_candidate_application_counts", {
         p_recruiter_id: recruiterId,
         p_agency_id: null,
         p_status: null,
@@ -235,56 +240,39 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
         );
       }
     }
-  } else {
-  if (isTeamLeadScoped) {
-    // Limit candidates to those owned by team lead (team_lead_id = recruiterId (profile id)). Use created_by for interviews/offers to avoid long submission_id lists.
-    const teamLeadId = options?.userId!;
-    const teamLeadCandidateRows = await fetchAllRows(() =>
-      (supabase as any)
-        .from("candidates")
-        .select("id")
-        .eq("team_lead_id", teamLeadId)
-        .eq("company_id", companyId)
-    );
-    const candidateIds = teamLeadCandidateRows.map((r: any) => r.id);
-    if (candidateIds.length === 0) {
+  } else if (isManagerScoped || isTeamLeadScoped) {
+    const scope = isManagerScoped
+      ? await resolveManagerScope(options!.userId!, companyId)
+      : await resolveTeamLeadScope(options!.userId!, companyId);
+    const candidateIds = scope.candidateIds;
+    const recruiterIds = scope.recruiterUserIds;
+    if (candidateIds.length === 0 && recruiterIds.length === 0) {
       c = [];
       s = [];
       i = [];
       o = [];
     } else {
-      const recruiterRows = await fetchAllRows(() =>
-        (supabase as any)
-          .from("candidates")
-          .select("distinct recruiter_id")
-          .in("id", candidateIds)
-          .eq("company_id", companyId)
-          .neq("recruiter_id", null)
-      );
-      const recruiterIds = recruiterRows.map((r: any) => r.recruiter_id).filter(Boolean);
-      const orParts = [
-        `candidate_id.in.(${candidateIds.join(",")})`,
-        ...(recruiterIds.length ? [`recruiter_id.in.(${recruiterIds.join(",")})`] : []),
-      ];
-      s = await fetchAllRows(() =>
-        (supabase as any)
-          .from("submissions")
-          .select("*")
-          .eq("company_id", companyId)
-          .or(orParts.join(","))
-      );
+      const orParts: string[] = [];
+      if (candidateIds.length) orParts.push(`candidate_id.in.(${candidateIds.join(",")})`);
+      if (recruiterIds.length) orParts.push(`recruiter_id.in.(${recruiterIds.join(",")})`);
+      s = await fetchAllRows(() => {
+        let q = db.from("submissions").select("*").eq("company_id", companyId);
+        if (orParts.length === 1) q = q.or(orParts[0]);
+        else if (orParts.length > 1) q = q.or(orParts.join(","));
+        return q;
+      });
       const submissionIds = s.map((x: any) => x.id);
       const subSet = new Set(submissionIds);
       if (submissionIds.length > 0 && recruiterIds.length > 0) {
         const intRows = await fetchAllRows(() =>
-          supabase
+          db
             .from("interviews")
             .select("id, scheduled_at, status, submission_id")
             .eq("company_id", companyId)
             .in("created_by", recruiterIds)
         );
         const offRows = await fetchAllRows(() =>
-          supabase
+          db
             .from("offers")
             .select("id, status, submission_id")
             .eq("company_id", companyId)
@@ -294,14 +282,14 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
         o = offRows.filter((x: any) => subSet.has(x.submission_id));
       } else if (submissionIds.length > 0) {
         i = await fetchAllRows(() =>
-          supabase
+          db
             .from("interviews")
             .select("id, scheduled_at, status")
             .eq("company_id", companyId)
             .in("submission_id", submissionIds)
         );
         o = await fetchAllRows(() =>
-          supabase
+          db
             .from("offers")
             .select("id, status")
             .eq("company_id", companyId)
@@ -311,13 +299,17 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
         i = [];
         o = [];
       }
-      c = await fetchAllRows(() =>
-        supabase
-          .from("candidates")
-          .select("id, status, recruiter_id")
-          .eq("company_id", companyId)
-          .in("id", candidateIds)
-      );
+      if (candidateIds.length) {
+        c = await fetchAllRows(() =>
+          db
+            .from("candidates")
+            .select("id, status, recruiter_id")
+            .eq("company_id", companyId)
+            .in("id", candidateIds)
+        );
+      } else {
+        c = [];
+      }
     }
   } else {
     if (hasFilter) {
@@ -370,9 +362,8 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
       o = oRows;
     }
   }
-  }
 
-  return {
+  const stats = {
     totalCandidates: c.length,
     candidatesByStatus: {
       New: c.filter((x: any) => x.status === "New").length,
@@ -396,4 +387,10 @@ export async function fetchDashboardStats(options?: DashboardStatsOptions) {
     pendingOffers: o.filter((x: any) => x.status === "Pending").length,
     acceptedOffers: o.filter((x: any) => x.status === "Accepted").length,
   };
+  return applyCachedDashboardStats(
+    stats,
+    companyId,
+    startISO ? new Date(startISO) : null,
+    endISO ? new Date(endISO) : null
+  );
 }

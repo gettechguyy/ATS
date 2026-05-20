@@ -37,7 +37,8 @@ import {
   type SpecialSubmissionsRoleContext,
 } from "../../dbscripts/functions/submissions";
 import { formatInAppDateTime } from "@/lib/appTimezone";
-import { fetchCandidates, fetchCandidatesByRecruiter, fetchCandidatesBasic, fetchCandidatesByTeamLead } from "../../dbscripts/functions/candidates";
+import { fetchCandidates, fetchCandidatesByRecruiter, fetchCandidatesBasic, fetchCandidatesBasicForScope } from "../../dbscripts/functions/candidates";
+import { resolveManagerScope, resolveTeamLeadScope } from "../../dbscripts/functions/hierarchy";
 import { fetchAgencies } from "../../dbscripts/functions/agencies";
 import { fetchProfilesByRole } from "../../dbscripts/functions/profiles";
 import { uploadAssessmentAttachment, uploadScreenCallFile, uploadVendorJobDescription } from "../../dbscripts/functions/storage";
@@ -122,7 +123,8 @@ export default function Submissions() {
     if (isAgencyScope && profile?.agency_id) return { mode: "agency", agencyId: profile.agency_id, companyId };
     if (isRecruiter && user?.id) return { mode: "recruiter", recruiterId: user.id, companyId };
     if (isTeamLead && profile?.id) return { mode: "team_lead", teamLeadProfileId: profile.id, companyId };
-    if (isAdmin || isManager) return { mode: "admin", companyId };
+    if (isManager && profile?.id) return { mode: "manager", managerProfileId: profile.id, companyId };
+    if (isAdmin) return { mode: "admin", companyId };
     return null;
   }, [isCandidate, isAgencyScope, profile?.agency_id, profile?.id, companyId, isRecruiter, user?.id, isTeamLead, isAdmin, isManager]);
 
@@ -134,7 +136,8 @@ export default function Submissions() {
     if (isAgencyScope && profile?.agency_id) return { role: "agency", agencyId: profile.agency_id, companyId };
     if (isRecruiter && user?.id) return { role: "recruiter", recruiterId: user.id, companyId };
     if (isTeamLead && profile?.id) return { role: "team_lead", teamLeadProfileId: profile.id, companyId };
-    if (isAdmin || isManager) return { role: "admin", companyId };
+    if (isManager && profile?.id) return { role: "manager", managerProfileId: profile.id, companyId };
+    if (isAdmin) return { role: "admin", companyId };
     return null;
   }, [
     isCandidate,
@@ -312,10 +315,17 @@ export default function Submissions() {
   const candidatesQueryFn = async () => {
     const cid = profile?.company_id;
     if (!cid) return [];
-    if (isAdmin || isManager) return fetchCandidates(cid);
+    if (isAdmin) return fetchCandidates(cid);
+    if (isManager && profile?.id) {
+      const scope = await resolveManagerScope(profile.id, cid);
+      return fetchCandidatesBasicForScope(scope, cid);
+    }
     if (isAgencyScope && profile?.agency_id) return fetchCandidatesBasic(profile.agency_id, cid);
     if (isRecruiter && user?.id) return fetchCandidatesByRecruiter(user.id, cid);
-    if (isTeamLead && profile?.id) return fetchCandidatesByTeamLead(profile.id, cid);
+    if (isTeamLead && profile?.id) {
+      const scope = await resolveTeamLeadScope(profile.id, cid);
+      return fetchCandidatesBasicForScope(scope, cid);
+    }
     return [];
   };
 

@@ -52,7 +52,7 @@ export default function Dashboard() {
 
   const effectiveRole = (typeof role === "string" ? role.toLowerCase() : role) ?? "recruiter";
   const dashboardUserId =
-    effectiveRole === "team_lead"
+    effectiveRole === "team_lead" || effectiveRole === "manager"
       ? profile?.id
       : effectiveRole === "recruiter"
         ? user?.id

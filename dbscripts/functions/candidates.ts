@@ -1,4 +1,14 @@
 import { supabase } from "../../src/integrations/supabase/client";
+import {
+  getCachedCandidateById,
+  isTestCacheId,
+  mergeCachedCandidateStats,
+  mergeCachedCandidatesBasic,
+  mergeCachedCandidatesList,
+  removeTestCacheItem,
+  loadTestCache,
+} from "../../src/lib/testDataCache";
+import { applyHierarchyScopeToCandidatesQuery, type HierarchyScope } from "./hierarchy";
 
 /** Avoids Supabase client "excessively deep" generic inference on chained builders. */
 const db = supabase as any;
@@ -90,7 +100,7 @@ export async function fetchCandidatesPaginated(opts: CandidatesPageOpts) {
   const to = from + pageSize - 1;
   const { data, error, count } = await q.range(from, to);
   if (error) throw error;
-  return { data: data ?? [], total: count ?? 0 };
+  return mergeCachedCandidatesList(data ?? [], count ?? 0, companyId, { search, status });
 }
 
 export async function fetchCandidatesByRecruiterPaginated(recruiterId: string, opts: CandidatesPageOpts) {
@@ -107,15 +117,49 @@ export async function fetchCandidatesByRecruiterPaginated(recruiterId: string, o
   const to = from + pageSize - 1;
   const { data, error, count } = await q.range(from, to);
   if (error) throw error;
-  return { data: data ?? [], total: count ?? 0 };
+  return mergeCachedCandidatesList(data ?? [], count ?? 0, companyId, { search, status });
+}
+
+/** Team lead or manager: candidates for assigned TLs and their recruiters. */
+export async function fetchCandidatesPaginatedForScope(scope: HierarchyScope, opts: CandidatesPageOpts) {
+  const { page, pageSize, search, status, sortBy, order, agencyId, agencyNotNullOnly, technology, companyId } = opts;
+  if (!companyId) throw new Error("companyId is required");
+  let q = buildCandidatesQuery(undefined, agencyId ?? undefined, agencyNotNullOnly, sortBy, order, technology ?? undefined, companyId);
+  q = applyHierarchyScopeToCandidatesQuery(q, scope);
+  if (status && status !== "all") q = q.eq("status", status as any);
+  if (search && search.trim()) {
+    const safe = search.trim().replace(/[%_\\]/g, "\\$&").replace(/,/g, " ");
+    const term = `%${safe}%`;
+    q = q.or(`first_name.ilike.${term},last_name.ilike.${term},email.ilike.${term}`);
+  }
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const { data, error, count } = await q.range(from, to);
+  if (error) throw error;
+  return mergeCachedCandidatesList(data ?? [], count ?? 0, companyId, { search, status });
 }
 
 export async function fetchCandidateById(id: string, companyId?: string) {
+  if (isTestCacheId(id)) {
+    return getCachedCandidateById(id, companyId);
+  }
   let q = db.from("candidates").select("*").eq("id", id);
   if (companyId) q = q.eq("company_id", companyId);
   const { data, error } = await q.maybeSingle();
   if (error) throw error;
   return data;
+}
+
+/** Candidates visible to a manager or team lead (for dropdowns). */
+export async function fetchCandidatesBasicForScope(scope: HierarchyScope, companyId: string) {
+  if (!scope.candidateIds.length && !scope.recruiterUserIds.length) return [];
+  let q: any = db
+    .from("candidates")
+    .select("id, first_name, last_name, email, recruiter_id, team_lead_id, agency_id, technology");
+  q = q.eq("company_id", companyId);
+  q = applyHierarchyScopeToCandidatesQuery(q, scope);
+  const { data } = await q;
+  return data || [];
 }
 
 export async function fetchCandidatesBasic(agencyId?: string | null, companyId?: string | null) {
@@ -125,7 +169,7 @@ export async function fetchCandidatesBasic(agencyId?: string | null, companyId?:
   if (companyId != null) q = q.eq("company_id", companyId);
   if (agencyId != null) q = q.eq("agency_id", agencyId);
   const { data } = await q;
-  return data || [];
+  return mergeCachedCandidatesBasic(data || [], companyId ?? "");
 }
 
 /** Distinct technology values for filter dropdown.
@@ -206,6 +250,11 @@ export async function updateCandidateStatus(id: string, status: string) {
 }
 
 export async function deleteCandidate(id: string) {
+  if (isTestCacheId(id)) {
+    const store = loadTestCache();
+    if (store?.companyId) removeTestCacheItem(store.companyId, "candidate", id);
+    return;
+  }
   const { error } = await db.from("candidates").delete().eq("id", id);
   if (error) throw error;
 }
@@ -310,5 +359,5 @@ export async function fetchCandidateStats(
     })
   );
 
-  return result;
+  return mergeCachedCandidateStats(result, companyId);
 }

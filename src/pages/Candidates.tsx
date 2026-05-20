@@ -24,7 +24,8 @@ import { Plus, Search, Eye, Trash2, ChevronLeft, ChevronRight, ArrowUp, ArrowDow
 import { toast } from "sonner";
 import { Link, Navigate } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchCandidatesPaginated, fetchCandidatesByRecruiterPaginated, fetchCandidateTechnologies, fetchCandidateStats, createCandidate as createCandidateFn, deleteCandidate as deleteCandidateFn, updateCandidate, updateCandidateStatus } from "../../dbscripts/functions/candidates";
+import { fetchCandidatesPaginated, fetchCandidatesByRecruiterPaginated, fetchCandidatesPaginatedForScope, fetchCandidateTechnologies, fetchCandidateStats, createCandidate as createCandidateFn, deleteCandidate as deleteCandidateFn, updateCandidate, updateCandidateStatus } from "../../dbscripts/functions/candidates";
+import { resolveManagerScope, resolveTeamLeadScope } from "../../dbscripts/functions/hierarchy";
 import { fetchProfilesBySelect, fetchProfilesByRole, updateProfile } from "../../dbscripts/functions/profiles";
 import { fetchAgencies } from "../../dbscripts/functions/agencies";
 import { createAppUser } from "@/lib/authApi";
@@ -39,7 +40,7 @@ function candidateSafeStatus(status: string | null | undefined) {
 
 const PAGE_SIZE = 10;
 export default function Candidates() {
-  const { user, profile, isAdmin, isRecruiter, isManager, isCandidate, isAgencyAdmin, isMasterCompany } = useAuth();
+  const { user, profile, isAdmin, isRecruiter, isManager, isTeamLead, isCandidate, isAgencyAdmin, isMasterCompany } = useAuth();
   const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -57,7 +58,7 @@ export default function Candidates() {
 
   if (isCandidate) return <Navigate to="/" replace />;
 
-  const canSeeAllCandidates = isAdmin || isManager;
+  const canSeeAllCandidates = isAdmin;
   const showAgencyColumn = isAdmin && !isAgencyScope && isMasterCompany;
   const { data: recruiters } = useQuery({
     queryKey: ["recruiters", isAgencyScope ? profile?.agency_id : "master", profile?.company_id],
@@ -113,7 +114,7 @@ export default function Candidates() {
       sortBy,
       order,
     ],
-    queryFn: () => {
+    queryFn: async () => {
       const companyId = profile!.company_id!;
       const opts = {
         page,
@@ -134,6 +135,14 @@ export default function Candidates() {
       }
       if (canSeeAllCandidates) {
         return fetchCandidatesPaginated(opts);
+      }
+      if (isManager && profile?.id) {
+        const scope = await resolveManagerScope(profile.id, companyId);
+        return fetchCandidatesPaginatedForScope(scope, opts);
+      }
+      if (isTeamLead && profile?.id) {
+        const scope = await resolveTeamLeadScope(profile.id, companyId);
+        return fetchCandidatesPaginatedForScope(scope, opts);
       }
       return fetchCandidatesByRecruiterPaginated(user!.id, opts);
     },

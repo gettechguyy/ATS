@@ -1,4 +1,7 @@
 import { supabase } from "../../src/integrations/supabase/client";
+import type { HierarchyScope } from "./hierarchy";
+
+const db = supabase as any;
 
 export async function fetchAllInterviews(companyId: string) {
   const { data, error } = await supabase
@@ -85,6 +88,41 @@ export async function fetchInterviewsByCandidatePaginated(candidateId: string, o
     .from("interviews")
     .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", { count: "exact" })
     .eq("candidate_id", candidateId);
+  q = applyInterviewsOrder(q, column, ascending);
+  const { data, error, count } = await q.range(from, to);
+  if (error) throw error;
+  return { data: data ?? [], total: count ?? 0 };
+}
+
+/** Team lead / manager: interviews for recruiters and candidates in scope. */
+export async function fetchInterviewsForScopePaginated(
+  scope: HierarchyScope,
+  companyId: string,
+  opts: InterviewsPageOpts
+) {
+  const { page, pageSize, sortBy, order } = opts;
+  if (!scope.recruiterUserIds.length && !scope.candidateIds.length) {
+    return { data: [], total: 0 };
+  }
+  const column = resolveInterviewsSortColumn(sortBy);
+  const ascending = order === "asc";
+  const from = (page - 1) * pageSize;
+  const to = from + pageSize - 1;
+  const orParts: string[] = [];
+  if (scope.recruiterUserIds.length) {
+    orParts.push(`created_by.in.(${scope.recruiterUserIds.join(",")})`);
+  }
+  if (scope.candidateIds.length) {
+    orParts.push(`candidate_id.in.(${scope.candidateIds.join(",")})`);
+  }
+  let q = db
+    .from("interviews")
+    .select("*, submissions(id, client_name, position, recruiter_id, candidates(first_name, last_name))", {
+      count: "exact",
+    })
+    .eq("company_id", companyId);
+  if (orParts.length === 1) q = q.or(orParts[0]);
+  else q = q.or(orParts.join(","));
   q = applyInterviewsOrder(q, column, ascending);
   const { data, error, count } = await q.range(from, to);
   if (error) throw error;

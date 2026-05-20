@@ -24,6 +24,7 @@ import InvitesPage from "@/pages/Invites";
 import SetPasswordPage from "@/pages/SetPassword";
 import MyProfile from "@/pages/MyProfile";
 import Notifications from "@/pages/Notifications";
+import Teams from "@/pages/Teams";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -73,6 +74,7 @@ const App = () => (
                 }
               />
               <Route path="/admin/invites" element={<InvitesPage />} />
+              <Route path="/teams" element={<Teams />} />
               <Route path="/activity" element={<Notifications />} />
               <Route path="/notifications" element={<Navigate to="/activity" replace />} />
               <Route path="/set-password" element={<SetPasswordPage />} />

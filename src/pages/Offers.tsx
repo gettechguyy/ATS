@@ -14,7 +14,8 @@ import { Eye, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from "lucide-react
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
-import { fetchAllOffersPaginated, fetchOffersByCandidatePaginated, fetchOffersByRecruiterPaginated, fetchOffersByAgencyPaginated, updateOfferStatus } from "../../dbscripts/functions/offers";
+import { fetchAllOffersPaginated, fetchOffersByCandidatePaginated, fetchOffersByRecruiterPaginated, fetchOffersByAgencyPaginated, fetchOffersForScopePaginated, updateOfferStatus } from "../../dbscripts/functions/offers";
+import { resolveManagerScope, resolveTeamLeadScope } from "../../dbscripts/functions/hierarchy";
 
 const PAGE_SIZE = 10;
 const OFFER_STATUSES = ["Pending", "Accepted", "Declined"] as const;
@@ -28,7 +29,7 @@ type OfferSortKey =
   | "offered_at";
 
 export default function Offers() {
-  const { user, profile, role, isCandidate, isRecruiter, isAgencyAdmin, isMasterCompany } = useAuth();
+  const { user, profile, role, isCandidate, isRecruiter, isManager, isTeamLead, isAgencyAdmin, isMasterCompany } = useAuth();
   const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
@@ -68,6 +69,14 @@ export default function Offers() {
       }
       if (isRecruiter && user?.id) {
         return fetchOffersByRecruiterPaginated(user.id, companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
+      }
+      if (isManager && profile?.id) {
+        const scope = await resolveManagerScope(profile.id, companyId);
+        return fetchOffersForScopePaginated(scope, companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
+      }
+      if (isTeamLead && profile?.id) {
+        const scope = await resolveTeamLeadScope(profile.id, companyId);
+        return fetchOffersForScopePaginated(scope, companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
       }
       return fetchAllOffersPaginated(companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
     },

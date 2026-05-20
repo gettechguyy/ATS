@@ -34,7 +34,10 @@ import {
 import { fetchAllUserRoles, updateUserRole, insertUserRole } from "../../dbscripts/functions/userRoles";
 import { fetchCandidatesBasic, updateCandidate } from "../../dbscripts/functions/candidates";
 import { fetchAgencies } from "../../dbscripts/functions/agencies";
-import { updateAppUserPassword, updateAppUserDetails } from "@/lib/authApi";
+import { createAppUser, updateAppUserPassword, updateAppUserDetails } from "@/lib/authApi";
+import { canManageTeamUser } from "../../dbscripts/functions/hierarchy";
+import { fetchTeamRecords } from "../../dbscripts/functions/teamRecords";
+import { TeamsManagement } from "@/components/TeamsManagement";
 
 const ROLES = ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"] as const;
 
@@ -42,7 +45,8 @@ export default function UserManagement() {
   const { isAdmin, createUser, user, isManager, isTeamLead, isAgencyAdmin, isMasterCompany, profile } = useAuth();
   const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<"team" | "candidates">("team");
+  const [activeTab, setActiveTab] = useState<"team" | "teams" | "candidates">("team");
+  const [createTeamId, setCreateTeamId] = useState("none");
   type UserTableSortKey = "name" | "email" | "joined";
   const [userTableSort, setUserTableSort] = useState<{ key: UserTableSortKey; order: "asc" | "desc" }>({
     key: "name",
@@ -83,6 +87,12 @@ export default function UserManagement() {
     enabled: !isAgencyScope && isMasterCompany && !!profile?.company_id,
   });
 
+  const { data: companyTeams } = useQuery({
+    queryKey: ["company-teams", profile?.company_id],
+    queryFn: () => fetchTeamRecords(profile!.company_id!),
+    enabled: (isAdmin || isManager) && !!profile?.company_id,
+  });
+
   const { data: candidates } = useQuery({
     queryKey: ["all-candidates-for-linking", isAgencyScope ? profile?.agency_id : "all", profile?.company_id],
     queryFn: () =>
@@ -92,17 +102,54 @@ export default function UserManagement() {
       ),
     enabled: (isAdmin || isManager || isTeamLead) && !!profile?.company_id,
   });
-  // recruiter ids under this team lead (may be app_user ids or profile ids depending on schema)
-  const recruiterIdsUnderTL = new Set<string>();
-  (candidates || []).forEach((c: any) => {
-    if (!profile || c.team_lead_id !== profile.id) return;
-    const rid = c.recruiter_id;
-    if (!rid) return;
-    recruiterIdsUnderTL.add(rid);
-    // Also map recruiter profile.id -> app_user id if we have users loaded
-    const matched = (users || []).find((u: any) => u.id === rid || u.user_id === rid);
-    if (matched && matched.user_id) recruiterIdsUnderTL.add(matched.user_id);
-  });
+  const teamLeadProfileIdsUnderManager = useMemo(() => {
+    if (!isManager || !profile?.id) return new Set<string>();
+    return new Set(
+      (users || [])
+        .filter((u: any) => u.role === "team_lead" && u.manager_profile_id === profile.id)
+        .map((u: any) => u.id)
+    );
+  }, [users, isManager, profile?.id]);
+
+  const recruiterUserIdsUnderManager = useMemo(() => {
+    const ids = new Set<string>();
+    if (!isManager || !profile?.id) return ids;
+    (users || []).forEach((u: any) => {
+      if (u.role === "recruiter" && u.team_lead_profile_id && teamLeadProfileIdsUnderManager.has(u.team_lead_profile_id)) {
+        if (u.user_id) ids.add(u.user_id);
+      }
+    });
+    (candidates || []).forEach((c: any) => {
+      if (!c.team_lead_id || !teamLeadProfileIdsUnderManager.has(c.team_lead_id) || !c.recruiter_id) return;
+      ids.add(c.recruiter_id);
+      const matched = (users || []).find((u: any) => u.id === c.recruiter_id || u.user_id === c.recruiter_id);
+      if (matched?.user_id) ids.add(matched.user_id);
+    });
+    return ids;
+  }, [users, candidates, isManager, profile?.id, teamLeadProfileIdsUnderManager]);
+
+  // Recruiter user ids under this team lead (candidates + profile.team_lead_profile_id)
+  const recruiterIdsUnderTL = useMemo(() => {
+    const ids = new Set<string>();
+    if (!profile) return ids;
+    const tlProfileId = isTeamLead ? profile.id : null;
+    (candidates || []).forEach((c: any) => {
+      if (tlProfileId && c.team_lead_id !== tlProfileId) return;
+      const rid = c.recruiter_id;
+      if (!rid) return;
+      ids.add(rid);
+      const matched = (users || []).find((u: any) => u.id === rid || u.user_id === rid);
+      if (matched?.user_id) ids.add(matched.user_id);
+    });
+    if (tlProfileId) {
+      (users || []).forEach((u: any) => {
+        if (u.role === "recruiter" && u.team_lead_profile_id === tlProfileId && u.user_id) {
+          ids.add(u.user_id);
+        }
+      });
+    }
+    return ids;
+  }, [candidates, users, profile, isTeamLead]);
   // build deduped candidate options keyed by email or id
   const candidateOptionsMap = new Map<string, any>();
   (candidates || []).forEach((c: any) => {
@@ -123,13 +170,36 @@ export default function UserManagement() {
     return (users || []).filter((u: any) => {
       if (activeTab === "team") {
         if (isTeamLead) {
-          return u.user_id === user?.id || (u.role === "recruiter" && recruiterIdsUnderTL.has(u.user_id));
+          return (
+            u.user_id === user?.id ||
+            (u.role === "recruiter" && recruiterIdsUnderTL.has(u.user_id)) ||
+            u.team_lead_profile_id === profile?.id
+          );
+        }
+        if (isManager) {
+          return (
+            u.user_id === user?.id ||
+            (u.role === "team_lead" && teamLeadProfileIdsUnderManager.has(u.id)) ||
+            (u.role === "recruiter" && recruiterUserIdsUnderManager.has(u.user_id))
+          );
         }
         return u.role !== "candidate";
       }
       return u.role === "candidate";
     });
-  }, [users, activeTab, isTeamLead, user?.id, recruiterIdsUnderTL]);
+  }, [users, activeTab, isTeamLead, isManager, user?.id, profile?.id, recruiterIdsUnderTL, teamLeadProfileIdsUnderManager, recruiterUserIdsUnderManager]);
+
+  const managerOptions = useMemo(
+    () => (users || []).filter((u: any) => u.role === "manager" && u.is_active !== false),
+    [users]
+  );
+  const teamLeadOptions = useMemo(() => {
+    let list = (users || []).filter((u: any) => u.role === "team_lead" && u.is_active !== false);
+    if (isManager && profile?.id) {
+      list = list.filter((u: any) => u.manager_profile_id === profile.id || u.user_id === user?.id);
+    }
+    return list;
+  }, [users, isManager, profile?.id, user?.id]);
 
   const toggleUserTableSort = (key: UserTableSortKey) => {
     setUserTableSort((prev) =>
@@ -146,8 +216,28 @@ export default function UserManagement() {
       )
     ) : null;
 
+  const canManageUser = (u: any) =>
+    !u?.__testCache &&
+    canManageTeamUser({
+      isAdmin,
+      isManager,
+      isTeamLead,
+      isAgencyScope,
+      callerProfileId: profile?.id,
+      teamLeadProfileIdsUnderManager,
+      recruiterUserIdsUnderManager,
+      recruiterIdsUnderTL,
+      target: u,
+    });
+
+  const showRoleAsReadOnly = (u: any) =>
+    isAgencyScope ||
+    isManager ||
+    (isTeamLead && (u.role === "candidate" || u.role === "recruiter"));
+
   const updateRoleMutation = useMutation({
     mutationFn: async ({ userId, roleId, newRole }: { userId: string; roleId?: string; newRole: string }) => {
+      if (!isAdmin) throw new Error("Only admins can change roles");
       if (roleId) {
         await updateUserRole(roleId, newRole);
       } else {
@@ -162,8 +252,10 @@ export default function UserManagement() {
   });
 
   const passwordMutation = useMutation({
-    mutationFn: async ({ targetUserId, password }: { targetUserId: string; password: string }) => {
+    mutationFn: async ({ targetUser, password }: { targetUser: any; password: string }) => {
       if (!user?.id) throw new Error("Not authenticated");
+      if (!canManageUser(targetUser)) throw new Error("You can only change passwords for users in your team");
+      const targetUserId = targetUser.user_id || targetUser.id;
       const { data, error } = await updateAppUserPassword(user.id, targetUserId, password);
       if (error) throw error;
       return data;
@@ -199,9 +291,17 @@ export default function UserManagement() {
   const [editDetailsTargetUser, setEditDetailsTargetUser] = useState<any | null>(null);
   const [editFullName, setEditFullName] = useState("");
   const [editEmail, setEditEmail] = useState("");
+  const [createManagerProfileId, setCreateManagerProfileId] = useState("none");
+  const [createTeamLeadProfileId, setCreateTeamLeadProfileId] = useState("none");
+  const [editManagerProfileId, setEditManagerProfileId] = useState("none");
+  const [editTeamLeadProfileId, setEditTeamLeadProfileId] = useState("none");
 
   const assignCandidatesMutation = useMutation({
-    mutationFn: async ({ userId, candidateIds }: { userId: string; candidateIds: string[] }) => {
+    mutationFn: async ({ userId, candidateIds, targetUser }: { userId: string; candidateIds: string[]; targetUser: any }) => {
+      if (!canManageUser(targetUser)) throw new Error("You can only manage teams for your team leads");
+      if (isManager && !teamLeadProfileIdsUnderManager.has(userId)) {
+        throw new Error("You can only manage teams for team leads in your organization");
+      }
       // set team_lead_id for provided candidate ids to userId; set null for others previously assigned to userId
       const prev = (candidates || []).filter((c: any) => c.team_lead_id === userId).map((c: any) => c.id);
       const toUnset = prev.filter((id) => !candidateIds.includes(id));
@@ -222,8 +322,9 @@ export default function UserManagement() {
   });
 
   const toggleActive = useMutation({
-    mutationFn: async ({ userId, isActive }: { userId: string; isActive: boolean }) => {
-      await updateProfile(userId, { is_active: isActive });
+    mutationFn: async ({ targetUser, isActive }: { targetUser: any; isActive: boolean }) => {
+      if (!canManageUser(targetUser)) throw new Error("You can only update users in your team");
+      await updateProfile(targetUser.user_id, { is_active: isActive });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-users"] });
@@ -233,8 +334,19 @@ export default function UserManagement() {
   });
 
   const updateDetailsMutation = useMutation({
-    mutationFn: async ({ targetUserId, fullName, email }: { targetUserId: string; fullName?: string; email?: string }) => {
+    mutationFn: async ({
+      targetUser,
+      targetUserId,
+      fullName,
+      email,
+    }: {
+      targetUser: any;
+      targetUserId: string;
+      fullName?: string;
+      email?: string;
+    }) => {
       if (!user?.id) throw new Error("Not authenticated");
+      if (!canManageUser(targetUser)) throw new Error("You can only edit users in your team");
       const { error } = await updateAppUserDetails(user.id, targetUserId, { fullName, email });
       if (error) throw error;
     },
@@ -256,6 +368,17 @@ export default function UserManagement() {
       if (!(isAdmin || isManager || isTeamLead || isAgencyScope)) throw new Error("Not authorized to create users");
       const role = (fd.get("role") as string) || selectedRole;
       if (isAgencyScope && role !== "recruiter" && role !== "agency_admin") throw new Error("Agency admin can only create recruiters or agency admins for their agency");
+      if (isManager && role !== "team_lead" && role !== "recruiter") {
+        throw new Error("Managers can only create team leads and recruiters");
+      }
+      if (
+        isManager &&
+        role === "recruiter" &&
+        createTeamLeadProfileId === "none" &&
+        createTeamId === "none"
+      ) {
+        throw new Error("Select a team or team lead for this recruiter");
+      }
       const email = fd.get("email") as string;
       const fullName = fd.get("full_name") as string;
       // Candidates should always be invited (invite token + webhook)
@@ -286,8 +409,46 @@ export default function UserManagement() {
       // Password must be provided by the creator (hidden for candidate creation)
       const password = fd.get("password") as string;
       if (!password) throw new Error("Password is required for non-candidate accounts");
-      const { error } = await createUser(email, password, fullName, role);
+      const { data: created, error } = await createAppUser(
+        user!.id,
+        email,
+        password,
+        fullName,
+        role,
+        isAgencyScope ? profile?.agency_id ?? undefined : undefined
+      );
       if (error) throw error;
+      const newUserId = created?.user_id;
+      if (newUserId) {
+        const hierarchyUpdates: Record<string, string | null> = {};
+        if (role === "team_lead") {
+          const mgr =
+            isManager && profile?.id
+              ? profile.id
+              : createManagerProfileId !== "none"
+                ? createManagerProfileId
+                : null;
+          if (mgr) hierarchyUpdates.manager_profile_id = mgr;
+        }
+        if (role === "recruiter") {
+          const team =
+            createTeamId !== "none"
+              ? (companyTeams || []).find((t: any) => t.id === createTeamId)
+              : null;
+          const tl =
+            team?.team_lead_profile_id ??
+            (isTeamLead && profile?.id
+              ? profile.id
+              : createTeamLeadProfileId !== "none"
+                ? createTeamLeadProfileId
+                : null);
+          if (tl) hierarchyUpdates.team_lead_profile_id = tl;
+          if (team?.id) hierarchyUpdates.team_id = team.id;
+        }
+        if (Object.keys(hierarchyUpdates).length) {
+          await updateProfile(newUserId, hierarchyUpdates);
+        }
+      }
       return { invited: false };
     },
     onSuccess: (res: any) => {
@@ -313,7 +474,11 @@ export default function UserManagement() {
           <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
             <Shield className="h-6 w-6" /> User Management
           </h1>
-          <p className="text-sm text-muted-foreground">Manage team members, roles, and candidate assignments</p>
+          <p className="text-sm text-muted-foreground">
+            {isManager
+              ? "Add and manage your team leads and recruiters — edit details, passwords, and candidate teams"
+              : "Manage team members, roles, and candidate assignments"}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           {!isAgencyScope && (
@@ -322,7 +487,13 @@ export default function UserManagement() {
               className={`px-3 py-1 rounded ${activeTab === "team" ? "bg-background font-medium" : "text-muted-foreground"}`}
               onClick={() => setActiveTab("team")}
             >
-              Team
+              Users
+            </button>
+            <button
+              className={`px-3 py-1 rounded ${activeTab === "teams" ? "bg-background font-medium" : "text-muted-foreground"}`}
+              onClick={() => setActiveTab("teams")}
+            >
+              Teams
             </button>
             <button
               className={`px-3 py-1 rounded ${activeTab === "candidates" ? "bg-background font-medium" : "text-muted-foreground"}`}
@@ -333,7 +504,7 @@ export default function UserManagement() {
           </div>
           )}
           <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-            {(isAdmin || isManager || isTeamLead || isAgencyScope) && (
+            {activeTab !== "teams" && (isAdmin || isManager || isTeamLead || isAgencyScope) && (
               <DialogTrigger asChild>
                 <Button><Plus className="mr-2 h-4 w-4" />Create User</Button>
               </DialogTrigger>
@@ -369,13 +540,71 @@ export default function UserManagement() {
                     <Select value={selectedRole} onValueChange={setSelectedRole}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                    { (isAgencyScope ? ["agency_admin", "recruiter"] : isTeamLead ? ["recruiter","candidate"] : ROLES.filter(r => r !== "candidate" && (isMasterCompany || r !== "agency_admin"))) .map((r) => {
+                    { (isAgencyScope
+                        ? ["agency_admin", "recruiter"]
+                        : isTeamLead
+                          ? ["recruiter", "candidate"]
+                          : isManager
+                            ? ["team_lead", "recruiter"]
+                            : ROLES.filter((r) => r !== "candidate" && (isMasterCompany || r !== "agency_admin"))
+                      ).map((r) => {
                           const label = r === "team_lead" ? "Team Lead" : r === "agency_admin" ? "Admin" : r.replace('_',' ').replace(/\b\w/g, c => c.toUpperCase());
                           return <SelectItem key={r} value={r}><Badge variant={r === "admin" || r === "agency_admin" ? "default" : "secondary"} className="capitalize">{label}</Badge></SelectItem>;
                         })}
                       </SelectContent>
                     </Select>
                   </div>
+                  {isAdmin && selectedRole === "team_lead" && (
+                    <div className="space-y-2">
+                      <Label>Reports to (Manager)</Label>
+                      <Select value={createManagerProfileId} onValueChange={setCreateManagerProfileId}>
+                        <SelectTrigger><SelectValue placeholder="Select manager" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">— Unassigned —</SelectItem>
+                          {managerOptions.map((m: any) => (
+                            <SelectItem key={m.id} value={m.id}>{m.full_name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  {(isAdmin || isManager) && selectedRole === "recruiter" && (
+                    <>
+                      <div className="space-y-2">
+                        <Label>Team</Label>
+                        <Select
+                          value={createTeamId}
+                          onValueChange={(v) => {
+                            setCreateTeamId(v);
+                            if (v !== "none") {
+                              const t = (companyTeams || []).find((x: any) => x.id === v);
+                              if (t?.team_lead_profile_id) setCreateTeamLeadProfileId(t.team_lead_profile_id);
+                            }
+                          }}
+                        >
+                          <SelectTrigger><SelectValue placeholder="Select team" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">— No team —</SelectItem>
+                            {(companyTeams || []).map((t: any) => (
+                              <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label>Team lead (if no team selected)</Label>
+                        <Select value={createTeamLeadProfileId} onValueChange={setCreateTeamLeadProfileId}>
+                          <SelectTrigger><SelectValue placeholder="Select team lead" /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">— Unassigned —</SelectItem>
+                            {teamLeadOptions.map((tl: any) => (
+                              <SelectItem key={tl.id} value={tl.id}>{tl.full_name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
               <Button type="submit" className="w-full" disabled={createUserMutation.isPending}>
@@ -387,10 +616,25 @@ export default function UserManagement() {
         </div>
       </div>
 
+      {activeTab === "teams" ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Named teams</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TeamsManagement
+              users={users || []}
+              isAdmin={isAdmin}
+              isManager={isManager}
+              managerProfileId={profile?.id}
+            />
+          </CardContent>
+        </Card>
+      ) : (
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-base">
-            <Users className="h-4 w-4" /> {isAgencyScope ? "Agency" : "Team"} Members ({users?.length || 0})
+            <Users className="h-4 w-4" /> {isAgencyScope ? "Agency" : "User"} Members ({filteredUsersForTable.length})
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -431,11 +675,18 @@ export default function UserManagement() {
                 ) : (
                   filteredUsersForTable.map((u: any) => (
                     <TableRow key={u.id}>
-                      <TableCell className="font-medium">{displayUserName(u)}</TableCell>
+                      <TableCell className="font-medium">
+                        {displayUserName(u)}
+                        {u.__testCache ? (
+                          <Badge variant="outline" className="ml-2 text-xs">
+                            Test cache
+                          </Badge>
+                        ) : null}
+                      </TableCell>
                       <TableCell className="text-muted-foreground">{u.email}</TableCell>
                       <TableCell>
-                      {(isTeamLead && (u.role === "candidate" || u.role === "recruiter")) || isAgencyScope ? (
-                        <Badge className="capitalize">{u.role === "agency_admin" ? "Admin" : u.role.replace('_',' ')}</Badge>
+                      {showRoleAsReadOnly(u) ? (
+                        <Badge className="capitalize">{u.role === "agency_admin" ? "Admin" : u.role === "team_lead" ? "Team Lead" : u.role.replace("_", " ")}</Badge>
                       ) : (
                         <Select
                           value={u.role}
@@ -459,7 +710,7 @@ export default function UserManagement() {
                           <>
                             <div className="text-sm">{new Set((candidates || []).filter((c:any) => c.team_lead_id === u.id).map((c:any) => c.email || c.id)).size} members</div>
                             <div className="mt-2">
-                              {(isAdmin || isManager) ? (
+                              {canManageUser(u) ? (
                                 <Button size="sm" onClick={() => {
                                   setAssignTargetUser(u);
                                   // prepare selected set (use deduped keys email||id)
@@ -479,12 +730,14 @@ export default function UserManagement() {
                         )}
                       </TableCell>
                       <TableCell>
-                        {(isAdmin || isManager || isTeamLead || isAgencyScope) && (
+                        {canManageUser(u) && (
                           <div className="flex flex-wrap gap-1">
                             <Button size="sm" variant="ghost" onClick={() => {
                               setEditDetailsTargetUser(u);
                               setEditFullName(u.full_name ?? "");
                               setEditEmail(u.email ?? "");
+                              setEditManagerProfileId(u.manager_profile_id ?? "none");
+                              setEditTeamLeadProfileId(u.team_lead_profile_id ?? "none");
                               setEditDetailsDialogOpen(true);
                             }}>
                               <Pencil className="h-4 w-4" />
@@ -496,10 +749,14 @@ export default function UserManagement() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Switch
-                          checked={u.is_active !== false}
-                          onCheckedChange={(checked) => toggleActive.mutate({ userId: u.user_id, isActive: checked })}
-                        />
+                        {canManageUser(u) ? (
+                          <Switch
+                            checked={u.is_active !== false}
+                            onCheckedChange={(checked) => toggleActive.mutate({ targetUser: u, isActive: checked })}
+                          />
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {new Date(u.created_at).toLocaleDateString()}
@@ -512,6 +769,7 @@ export default function UserManagement() {
           )}
         </CardContent>
       </Card>
+      )}
       {/* Assign team dialog */}
       <Dialog open={assignDialogOpen} onOpenChange={setAssignDialogOpen}>
         <DialogContent>
@@ -543,7 +801,11 @@ export default function UserManagement() {
                   if ((c.email || c.id) === key) candidateIdsToAssign.push(c.id);
                 });
               });
-              assignCandidatesMutation.mutate({ userId: assignTargetUser.id, candidateIds: candidateIdsToAssign });
+              assignCandidatesMutation.mutate({
+                userId: assignTargetUser.id,
+                candidateIds: candidateIdsToAssign,
+                targetUser: assignTargetUser,
+              });
             }}>Save</Button>
           </div>
         </DialogContent>
@@ -561,7 +823,7 @@ export default function UserManagement() {
               <Button variant="ghost" onClick={() => { setPasswordDialogOpen(false); setPasswordTargetUser(null); }}>Cancel</Button>
               <Button disabled={!newPassword || newPassword.length < 6} onClick={() => {
                 if (!passwordTargetUser) return;
-                passwordMutation.mutate({ targetUserId: passwordTargetUser.user_id || passwordTargetUser.id, password: newPassword });
+                passwordMutation.mutate({ targetUser: passwordTargetUser, password: newPassword });
               }}>{passwordMutation.isPending ? "Saving..." : "Save"}</Button>
             </div>
           </div>
@@ -583,16 +845,72 @@ export default function UserManagement() {
               <Label>Email</Label>
               <Input type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="Email" />
             </div>
+            {isAdmin && editDetailsTargetUser?.role === "team_lead" && (
+              <div className="space-y-2">
+                <Label>Reports to (Manager)</Label>
+                <Select value={editManagerProfileId} onValueChange={setEditManagerProfileId}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— Unassigned —</SelectItem>
+                    {managerOptions.map((m: any) => (
+                      <SelectItem key={m.id} value={m.id}>{m.full_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {isManager && editDetailsTargetUser?.role === "team_lead" && profile?.id && (
+              <p className="text-sm text-muted-foreground">
+                Reports to: {profile.full_name ?? "You"} (assigned automatically)
+              </p>
+            )}
+            {(isAdmin || isManager) && editDetailsTargetUser?.role === "recruiter" && (
+              <div className="space-y-2">
+                <Label>Team Lead</Label>
+                <Select value={editTeamLeadProfileId} onValueChange={setEditTeamLeadProfileId}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">— Unassigned —</SelectItem>
+                    {teamLeadOptions.map((tl: any) => (
+                      <SelectItem key={tl.id} value={tl.id}>{tl.full_name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => { setEditDetailsDialogOpen(false); setEditDetailsTargetUser(null); }}>Cancel</Button>
-              <Button disabled={updateDetailsMutation.isPending || (!editFullName.trim() && !editEmail.trim())} onClick={() => {
+              <Button disabled={updateDetailsMutation.isPending || (!editFullName.trim() && !editEmail.trim())} onClick={async () => {
                 if (!editDetailsTargetUser) return;
                 const targetUserId = editDetailsTargetUser.user_id || editDetailsTargetUser.id;
                 updateDetailsMutation.mutate({
+                  targetUser: editDetailsTargetUser,
                   targetUserId,
                   fullName: editFullName.trim() || undefined,
                   email: editEmail.trim() || undefined,
                 });
+                const hierarchyUpdates: Record<string, string | null> = {};
+                if (editDetailsTargetUser.role === "team_lead") {
+                  if (isAdmin) {
+                    hierarchyUpdates.manager_profile_id =
+                      editManagerProfileId === "none" ? null : editManagerProfileId;
+                  } else if (isManager && profile?.id) {
+                    hierarchyUpdates.manager_profile_id = profile.id;
+                  }
+                }
+                if (editDetailsTargetUser.role === "recruiter" && (isAdmin || isManager)) {
+                  const tlId =
+                    editTeamLeadProfileId === "none" ? null : editTeamLeadProfileId;
+                  if (isManager && tlId && !teamLeadProfileIdsUnderManager.has(tlId)) {
+                    toast.error("Recruiter must be assigned to one of your team leads");
+                    return;
+                  }
+                  hierarchyUpdates.team_lead_profile_id = tlId;
+                }
+                if (Object.keys(hierarchyUpdates).length) {
+                  await updateProfile(targetUserId, hierarchyUpdates);
+                  queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+                }
               }}>{updateDetailsMutation.isPending ? "Saving..." : "Save"}</Button>
             </div>
           </div>

@@ -253,9 +253,43 @@ export type Database = {
           },
         ]
       }
+      teams: {
+        Row: {
+          company_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          manager_profile_id: string | null
+          name: string
+          team_lead_profile_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          manager_profile_id?: string | null
+          name: string
+          team_lead_profile_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          manager_profile_id?: string | null
+          name?: string
+          team_lead_profile_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           agency_id: string | null
+          company_id: string | null
           created_at: string
           email: string
           full_name: string
@@ -263,28 +297,39 @@ export type Database = {
           id: string
           is_active: boolean | null
           linked_candidate_id: string | null
+          manager_profile_id: string | null
+          team_id: string | null
+          team_lead_profile_id: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           agency_id?: string | null
+          company_id?: string | null
           created_at?: string
           email: string
           full_name: string
           id?: string
           is_active?: boolean | null
           linked_candidate_id?: string | null
+          manager_profile_id?: string | null
+          team_id?: string | null
+          team_lead_profile_id?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           agency_id?: string | null
+          company_id?: string | null
           created_at?: string
           email?: string
           full_name?: string
           id?: string
           is_active?: boolean | null
           linked_candidate_id?: string | null
+          manager_profile_id?: string | null
+          team_id?: string | null
+          team_lead_profile_id?: string | null
           updated_at?: string
           user_id?: string
         }

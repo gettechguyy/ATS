@@ -34,6 +34,7 @@ import { fetchCandidateById, updateCandidateStatus, updateCandidate as updateCan
 import { fetchEducationsByCandidate, createEducation, deleteEducation } from "../../dbscripts/functions/educations";
 import { fetchExperiencesByCandidate, createExperience, deleteExperience } from "../../dbscripts/functions/experiences";
 import { fetchSubmissionsByCandidatePaginated, createSubmission as createSubmissionFn } from "../../dbscripts/functions/submissions";
+import { resolveManagerScope, resolveTeamLeadScope } from "../../dbscripts/functions/hierarchy";
 import { fetchProfileName, fetchProfilesByRole } from "../../dbscripts/functions/profiles";
 import { fetchAgencies } from "../../dbscripts/functions/agencies";
 
@@ -56,7 +57,7 @@ const pfInput = "h-9 px-2.5 py-1.5 w-full min-w-0";
 
 export default function CandidateDetail() {
   const { id } = useParams<{ id: string }>();
-  const { user, profile, isAdmin, isRecruiter, isCandidate, isManager, isAgencyAdmin, isMasterCompany } = useAuth();
+  const { user, profile, isAdmin, isRecruiter, isCandidate, isManager, isTeamLead, isAgencyAdmin, isMasterCompany } = useAuth();
   const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const queryClient = useQueryClient();
   const [subDialogOpen, setSubDialogOpen] = useState(false);
@@ -107,6 +108,24 @@ export default function CandidateDetail() {
   const [applicationsPage, setApplicationsPage] = useState(1);
 
   const isOwnProfile = isCandidate && profile?.linked_candidate_id === id;
+
+  const { data: inHierarchyScope = true } = useQuery({
+    queryKey: ["candidate-hierarchy-access", id, profile?.id, profile?.company_id, isManager, isTeamLead],
+    queryFn: async () => {
+      if (!id || !profile?.company_id) return false;
+      if (isAdmin || isRecruiter || isAgencyScope || isCandidate) return true;
+      if (isManager && profile?.id) {
+        const scope = await resolveManagerScope(profile.id, profile.company_id);
+        return scope.candidateIds.includes(id);
+      }
+      if (isTeamLead && profile?.id) {
+        const scope = await resolveTeamLeadScope(profile.id, profile.company_id);
+        return scope.candidateIds.includes(id);
+      }
+      return false;
+    },
+    enabled: !!id && !!profile?.company_id && (isManager || isTeamLead),
+  });
 
   const { data: candidate, isLoading, isError, error: candidateError, refetch: refetchCandidate } = useQuery({
     queryKey: ["candidate", id, profile?.company_id],
@@ -313,6 +332,7 @@ export default function CandidateDetail() {
   }, [id, candidate?.id, candidate?.status, canAddMarketingDetails]);
 
   if (isCandidate && !isOwnProfile) return <Navigate to="/" replace />;
+  if ((isManager || isTeamLead) && inHierarchyScope === false) return <Navigate to="/candidates" replace />;
 
   if (isLoading) {
     return (

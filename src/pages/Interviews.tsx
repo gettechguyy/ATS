@@ -14,7 +14,8 @@ import {
 import { Eye, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchAllInterviewsPaginated, fetchInterviewsByCandidatePaginated, fetchInterviewsByRecruiterPaginated, fetchInterviewsByAgencyPaginated } from "../../dbscripts/functions/interviews";
+import { fetchAllInterviewsPaginated, fetchInterviewsByCandidatePaginated, fetchInterviewsByRecruiterPaginated, fetchInterviewsByAgencyPaginated, fetchInterviewsForScopePaginated } from "../../dbscripts/functions/interviews";
+import { resolveManagerScope, resolveTeamLeadScope } from "../../dbscripts/functions/hierarchy";
 import { formatInAppDateTime } from "@/lib/appTimezone";
 
 const PAGE_SIZE = 10;
@@ -28,7 +29,7 @@ type InterviewSortKey =
   | "status";
 
 export default function Interviews() {
-  const { user, profile, role, isCandidate, isRecruiter, isAgencyAdmin, isMasterCompany } = useAuth();
+  const { user, profile, role, isCandidate, isRecruiter, isManager, isTeamLead, isAgencyAdmin, isMasterCompany } = useAuth();
   const isAgencyScope = isAgencyAdmin && isMasterCompany;
   const [page, setPage] = useState(1);
   const [sortBy, setSortBy] = useState<InterviewSortKey>("scheduled_at");
@@ -67,6 +68,14 @@ export default function Interviews() {
       }
       if (isRecruiter && user?.id) {
         return fetchInterviewsByRecruiterPaginated(user.id, companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
+      }
+      if (isManager && profile?.id) {
+        const scope = await resolveManagerScope(profile.id, companyId);
+        return fetchInterviewsForScopePaginated(scope, companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
+      }
+      if (isTeamLead && profile?.id) {
+        const scope = await resolveTeamLeadScope(profile.id, companyId);
+        return fetchInterviewsForScopePaginated(scope, companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
       }
       return fetchAllInterviewsPaginated(companyId, { page, pageSize: PAGE_SIZE, sortBy, order });
     },

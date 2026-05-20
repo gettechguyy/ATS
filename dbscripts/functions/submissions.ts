@@ -1,5 +1,17 @@
 import { supabase } from "../../src/integrations/supabase/client";
+import {
+  getTestCacheForCompany,
+  isTestCacheId,
+  isTestCacheOwner,
+  mergeCachedApplicationSummaries,
+  mergeCachedSubmissionsPaginated,
+} from "../../src/lib/testDataCache";
 import { notifyFirstApplicationStarted } from "../../src/lib/schedulingEmail";
+import {
+  resolveManagerScope,
+  resolveTeamLeadScope,
+  type HierarchyScope,
+} from "./hierarchy";
 
 /** Avoids Supabase client "excessively deep" generic inference on chained builders. */
 const db = supabase as any;
@@ -176,6 +188,7 @@ export type CandidateApplicationSummaryRow = {
 
 export type ApplicationSummariesContext =
   | { mode: "admin"; companyId: string }
+  | { mode: "manager"; managerProfileId: string; companyId: string }
   | { mode: "recruiter"; recruiterId: string; companyId: string }
   | { mode: "agency"; agencyId: string; companyId: string }
   | { mode: "team_lead"; teamLeadProfileId: string; companyId: string };
@@ -187,6 +200,49 @@ export type ApplicationSummariesOpts = {
   order?: "asc" | "desc";
   candidateId?: string | null;
 };
+
+async function fetchMinimalSubmissionRowsForScope(
+  scope: HierarchyScope,
+  companyId: string,
+  filterOpts: { status?: string; candidateId?: string; search?: string; nameCandidateIds?: string[] },
+  orderCol: string,
+  asc: boolean
+): Promise<{ candidate_id: string }[]> {
+  const run = async (builder: () => any) => fetchAllRowsForQuery(builder);
+  let a: { id?: string; candidate_id: string }[] = [];
+  let b: { id?: string; candidate_id: string }[] = [];
+  if (scope.candidateIds.length) {
+    a = await run(() => {
+      let q = db
+        .from("submissions")
+        .select("id, candidate_id")
+        .eq("company_id", companyId)
+        .in("candidate_id", scope.candidateIds)
+        .order(orderCol, { ascending: asc });
+      return applySubmissionFiltersMinimal(q, filterOpts);
+    });
+  }
+  if (scope.recruiterUserIds.length) {
+    b = await run(() => {
+      let q = db
+        .from("submissions")
+        .select("id, candidate_id")
+        .eq("company_id", companyId)
+        .in("recruiter_id", scope.recruiterUserIds)
+        .order(orderCol, { ascending: asc });
+      return applySubmissionFiltersMinimal(q, filterOpts);
+    });
+  }
+  const seen = new Set<string>();
+  const merged: { candidate_id: string }[] = [];
+  for (const row of [...a, ...b]) {
+    const sid = row.id;
+    if (sid && seen.has(sid)) continue;
+    if (sid) seen.add(sid);
+    merged.push({ candidate_id: row.candidate_id });
+  }
+  return merged;
+}
 
 /**
  * Count-only path for the Applications list: loads lightweight `candidate_id` rows (batched),
@@ -253,55 +309,12 @@ export async function fetchCandidateApplicationSummaries(
       return applySubmissionFiltersMinimal(q, { ...filterOpts, candidateId: filterId ?? undefined });
     };
     minimalRows = await fetchAllRowsForQuery(createQuery);
+  } else if (ctx.mode === "manager") {
+    const scope = await resolveManagerScope(ctx.managerProfileId, companyId);
+    minimalRows = await fetchMinimalSubmissionRowsForScope(scope, companyId, filterOpts, orderCol, asc);
   } else {
-    const tl = ctx.teamLeadProfileId;
-    const candRes: any = await db
-      .from("candidates")
-      .select("id")
-      .eq("team_lead_id", tl)
-      .eq("company_id", companyId);
-    const tlCandidateIds = (candRes.data || []).map((r: any) => r.id);
-    const recruiterRes: any = await db
-      .from("candidates")
-      .select("recruiter_id")
-      .eq("team_lead_id", tl)
-      .eq("company_id", companyId);
-    const recruiterIds = (recruiterRes.data || []).map((r: any) => r.recruiter_id).filter(Boolean);
-
-    const run = async (builder: () => any) => fetchAllRowsForQuery(builder);
-    let a: { id?: string; candidate_id: string }[] = [];
-    let b: { id?: string; candidate_id: string }[] = [];
-    if (tlCandidateIds.length) {
-      a = await run(() => {
-        let q = db
-          .from("submissions")
-          .select("id, candidate_id")
-          .eq("company_id", companyId)
-          .in("candidate_id", tlCandidateIds)
-          .order(orderCol, { ascending: asc });
-        return applySubmissionFiltersMinimal(q, filterOpts);
-      });
-    }
-    if (recruiterIds.length) {
-      b = await run(() => {
-        let q = db
-          .from("submissions")
-          .select("id, candidate_id")
-          .eq("company_id", companyId)
-          .in("recruiter_id", recruiterIds)
-          .order(orderCol, { ascending: asc });
-        return applySubmissionFiltersMinimal(q, filterOpts);
-      });
-    }
-    const seen = new Set<string>();
-    const merged: { candidate_id: string }[] = [];
-    for (const row of [...a, ...b]) {
-      const sid = row.id;
-      if (sid && seen.has(sid)) continue;
-      if (sid) seen.add(sid);
-      merged.push({ candidate_id: row.candidate_id });
-    }
-    minimalRows = merged;
+    const scope = await resolveTeamLeadScope(ctx.teamLeadProfileId, companyId);
+    minimalRows = await fetchMinimalSubmissionRowsForScope(scope, companyId, filterOpts, orderCol, asc);
   }
 
   const counts = aggregateCountsByCandidate(minimalRows);
@@ -337,7 +350,7 @@ export async function fetchCandidateApplicationSummaries(
     return b.applicationCount - a.applicationCount;
   });
 
-  return rows;
+  return mergeCachedApplicationSummaries(rows, companyId);
 }
 
 /** Full submission rows for one candidate (sheet / detail); batched to avoid row caps. */
@@ -345,6 +358,13 @@ export async function fetchSubmissionsByCandidateWithDetails(
   candidateId: string,
   opts?: { status?: string; search?: string; companyId?: string }
 ) {
+  if (isTestCacheId(candidateId) && opts?.companyId && isTestCacheOwner()) {
+    let apps = getTestCacheForCompany(opts.companyId).applications.filter(
+      (a) => a.candidate_id === candidateId
+    );
+    if (opts?.status && opts.status !== "all") apps = apps.filter((a) => a.status === opts.status);
+    return apps;
+  }
   const status = opts?.status;
   const search = opts?.search;
   const companyId = opts?.companyId;
@@ -457,7 +477,11 @@ export async function fetchSubmissionsPaginated(opts: SubmissionsPageOpts) {
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   const { data, count } = await fetchWithRangeBatched(createQuery, from, to);
-  return { data: data ?? [], total: count ?? 0 };
+  return mergeCachedSubmissionsPaginated(data ?? [], count ?? 0, companyId, {
+    search,
+    status,
+    candidateId: candidateId ?? undefined,
+  });
 }
 
 export async function fetchSubmissionsByRecruiterPaginated(recruiterId: string, opts: SubmissionsPageOpts) {
@@ -476,7 +500,11 @@ export async function fetchSubmissionsByRecruiterPaginated(recruiterId: string, 
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   const { data, count } = await fetchWithRangeBatched(createQuery, from, to);
-  return { data: data ?? [], total: count ?? 0 };
+  return mergeCachedSubmissionsPaginated(data ?? [], count ?? 0, companyId, {
+    search,
+    status,
+    candidateId: candidateId ?? undefined,
+  });
 }
 
 /** Paginated submissions for all candidates currently assigned to this recruiter (candidates.recruiter_id = recruiterId). */
@@ -508,12 +536,25 @@ export async function fetchSubmissionsForRecruiterCandidatesPaginated(recruiterI
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   const { data, count } = await fetchWithRangeBatched(createQuery, from, to);
-  return { data: data ?? [], total: count ?? 0 };
+  return mergeCachedSubmissionsPaginated(data ?? [], count ?? 0, companyId, {
+    search,
+    status,
+    candidateId: candidateId ?? undefined,
+  });
 }
 
 export async function fetchSubmissionsByCandidatePaginated(candidateId: string, opts: SubmissionsPageOpts) {
   const { page, pageSize, search, status, sortBy, order, companyId } = opts;
   if (!companyId) throw new Error("companyId is required");
+  if (isTestCacheId(candidateId) && isTestCacheOwner()) {
+    const merged = mergeCachedSubmissionsPaginated([], 0, companyId, {
+      search,
+      status,
+      candidateId,
+    });
+    const from = (page - 1) * pageSize;
+    return { data: merged.data.slice(from, from + pageSize), total: merged.total };
+  }
   const createQuery = () => {
     let q = buildSubmissionsQuery(undefined, candidateId, sortBy, order, companyId);
     if (status && status !== "all") q = q.eq("status", status as SubmissionStatusFilter);
@@ -527,7 +568,11 @@ export async function fetchSubmissionsByCandidatePaginated(candidateId: string, 
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
   const { data, count } = await fetchWithRangeBatched(createQuery, from, to);
-  return { data: data ?? [], total: count ?? 0 };
+  return mergeCachedSubmissionsPaginated(data ?? [], count ?? 0, companyId, {
+    search,
+    status,
+    candidateId,
+  });
 }
 
 /** Client/position ILIKE plus candidate name matches (batched ID lookup). */
@@ -547,6 +592,7 @@ export type SpecialSubmissionsKind = "vendor_responded" | "screen_call" | "asses
 
 export type SpecialSubmissionsRoleContext =
   | { role: "admin"; companyId: string }
+  | { role: "manager"; managerProfileId: string; companyId: string }
   | { role: "recruiter"; recruiterId: string; companyId: string }
   | { role: "agency"; agencyId: string; companyId: string }
   | { role: "team_lead"; teamLeadProfileId: string; companyId: string }
@@ -605,21 +651,7 @@ export async function fetchSpecialSubmissionsPage(
     return q.or('status.eq."Screen Call",screen_scheduled_at.not.is.null');
   };
 
-  const mergeTeamLeadRows = async (buildFiltered: (q: any) => any) => {
-    const tl = (ctx as { role: "team_lead"; teamLeadProfileId: string }).teamLeadProfileId;
-    const candRes: any = await db
-      .from("candidates")
-      .select("id")
-      .eq("team_lead_id", tl)
-      .eq("company_id", companyId);
-    const tlCandidateIds = (candRes.data || []).map((r: any) => r.id);
-    const recruiterRes: any = await db
-      .from("candidates")
-      .select("recruiter_id")
-      .eq("team_lead_id", tl)
-      .eq("company_id", companyId);
-    const recruiterIds = (recruiterRes.data || []).map((r: any) => r.recruiter_id).filter(Boolean);
-
+  const mergeScopeRows = async (scope: HierarchyScope, buildFiltered: (q: any) => any) => {
     const run = (inCol: "candidate_id" | "recruiter_id", ids: string[]) => {
       if (!ids.length) return Promise.resolve([] as any[]);
       return fetchAllRowsForQuery(() => {
@@ -634,7 +666,10 @@ export async function fetchSpecialSubmissionsPage(
       });
     };
 
-    const [a, b] = await Promise.all([run("candidate_id", tlCandidateIds), run("recruiter_id", recruiterIds)]);
+    const [a, b] = await Promise.all([
+      run("candidate_id", scope.candidateIds),
+      run("recruiter_id", scope.recruiterUserIds),
+    ]);
     const seen = new Set<string>();
     const merged: any[] = [];
     for (const s of [...a, ...b]) {
@@ -658,7 +693,17 @@ export async function fetchSpecialSubmissionsPage(
   };
 
   if (ctx.role === "team_lead") {
-    return mergeTeamLeadRows((q) => {
+    const scope = await resolveTeamLeadScope(ctx.teamLeadProfileId, companyId);
+    return mergeScopeRows(scope, (q) => {
+      let x = applyKindFilter(q);
+      if (searchOr) x = x.or(searchOr);
+      return x;
+    });
+  }
+
+  if (ctx.role === "manager") {
+    const scope = await resolveManagerScope(ctx.managerProfileId, companyId);
+    return mergeScopeRows(scope, (q) => {
       let x = applyKindFilter(q);
       if (searchOr) x = x.or(searchOr);
       return x;

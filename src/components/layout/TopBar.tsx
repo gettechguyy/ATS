@@ -12,6 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { NotificationBell } from "@/components/layout/NotificationBell";
 import { ThemeModeToggle } from "@/components/layout/ThemeModeToggle";
+import { TestDataCachePanel } from "@/components/TestDataCachePanel";
 
 type TopBarProps = {
   companyName?: string | null;
@@ -94,6 +95,8 @@ export function TopBar({
         </Button>
 
         {showNotifications ? <NotificationBell userId={userId} companyId={companyId} /> : null}
+
+        <TestDataCachePanel />
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
