@@ -46,7 +46,7 @@ import {
   submissionHasVendorDetails,
   submissionShouldPromptAssessmentBeforeScreen,
 } from "@/lib/submissionStatusWorkflow";
-import { notifySchedulingEmail } from "@/lib/schedulingEmail";
+import { notifyAssessmentAssignedEmail, notifySchedulingEmail } from "@/lib/schedulingEmail";
 
 const INTERVIEW_STATUSES = ["Scheduled", "Passed", "Rejected", "Rescheduled"] as const;
 const INTERVIEW_MODES = ["Virtual", "Onsite", "Phone"] as const;
@@ -158,7 +158,12 @@ export default function SubmissionDetail() {
       toast.success("Interview scheduled");
       if (submission && data) {
         try {
-          const result = await notifySchedulingEmail("interview_scheduled", submission, {
+          const result = await notifySchedulingEmail("interview_scheduled", {
+            ...submission,
+            id: submission.id,
+            company_id: submission.company_id ?? profile?.company_id ?? null,
+            recruiter_id: submission.recruiter_id ?? null,
+          }, {
             scheduledAtIso: data.scheduledAt,
             mode: data.mode,
             linkOrPhone: data.linkOrPhone,
@@ -211,7 +216,12 @@ export default function SubmissionDetail() {
       toast.success("Interview rescheduled");
       if (submission) {
         try {
-          const result = await notifySchedulingEmail("interview_rescheduled", submission, {
+          const result = await notifySchedulingEmail("interview_rescheduled", {
+            ...submission,
+            id: submission.id,
+            company_id: submission.company_id ?? profile?.company_id ?? null,
+            recruiter_id: submission.recruiter_id ?? null,
+          }, {
             scheduledAtIso: newDate,
             mode: interview.mode,
             linkOrPhone: interview.virtual_link,
@@ -916,7 +926,12 @@ export default function SubmissionDetail() {
                     setScreenRescheduleDate("");
                     setScreenRescheduleTime("");
                     try {
-                      const result = await notifySchedulingEmail("screen_call_rescheduled", submission, {
+                      const result = await notifySchedulingEmail("screen_call_rescheduled", {
+                        ...submission,
+                        id: submission.id,
+                        company_id: submission.company_id ?? profile?.company_id ?? null,
+                        recruiter_id: submission.recruiter_id ?? null,
+                      }, {
                         scheduledAtIso: scheduled_at,
                         mode: submission.screen_mode || "Virtual",
                         linkOrPhone: submission.screen_link_or_phone,
@@ -1266,6 +1281,24 @@ export default function SubmissionDetail() {
                     assessment_attachment_url: attachmentUrl || null,
                   },
                 });
+                try {
+                  const merged = {
+                    ...assessmentSubmission,
+                    id: assessmentSubmission.id,
+                    company_id: assessmentSubmission.company_id ?? submission?.company_id ?? profile?.company_id ?? null,
+                    recruiter_id: assessmentSubmission.recruiter_id ?? submission?.recruiter_id ?? null,
+                    status: "Assessment",
+                    assessment_end_date: assessmentEndDate,
+                    assessment_link: linkTrim || null,
+                    assessment_attachment_url: attachmentUrl || null,
+                    candidates: assessmentSubmission.candidates ?? submission?.candidates,
+                  };
+                  await notifyAssessmentAssignedEmail(merged, {
+                    recruiterName: profile?.full_name ?? null,
+                  });
+                } catch {
+                  toast.warning("Assessment saved, but notification email could not be sent.");
+                }
                 setAssessmentDialogOpen(false);
                 setAssessmentSubmission(null);
                 setAssessmentEndDate("");
@@ -1381,6 +1414,9 @@ export default function SubmissionDetail() {
                   "screen_call_scheduled",
                   {
                     ...screenSubmission,
+                    id: screenSubmission.id,
+                    company_id: screenSubmission.company_id ?? submission?.company_id ?? profile?.company_id ?? null,
+                    recruiter_id: screenSubmission.recruiter_id ?? submission?.recruiter_id ?? null,
                     screen_resume_url: screenResumeUrl,
                     screen_questions_url: screenQuestionsUrl,
                     screen_response_status: screenResponse === "None" ? null : screenResponse,

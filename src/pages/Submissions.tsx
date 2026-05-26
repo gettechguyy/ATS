@@ -49,7 +49,7 @@ import {
   submissionHasVendorDetails,
   submissionShouldPromptAssessmentBeforeScreen,
 } from "@/lib/submissionStatusWorkflow";
-import { notifySchedulingEmail } from "@/lib/schedulingEmail";
+import { notifyAssessmentAssignedEmail, notifySchedulingEmail } from "@/lib/schedulingEmail";
 
 const PAGE_SIZE = 10;
 const CANDIDATES_PAGE_SIZE = 10; // candidates per page in main table (non-candidate view)
@@ -1426,6 +1426,23 @@ export default function Submissions() {
                     assessment_attachment_url: attachmentUrl || null,
                   },
                 });
+                try {
+                  const merged = {
+                    ...assessmentSubmission,
+                    id: assessmentSubmission.id,
+                    company_id: assessmentSubmission.company_id ?? profile?.company_id ?? null,
+                    recruiter_id: assessmentSubmission.recruiter_id ?? null,
+                    status: "Assessment",
+                    assessment_end_date: assessmentEndDate,
+                    assessment_link: linkTrim || null,
+                    assessment_attachment_url: attachmentUrl || null,
+                  };
+                  await notifyAssessmentAssignedEmail(merged, {
+                    recruiterName: profile?.full_name ?? null,
+                  });
+                } catch {
+                  toast.warning("Assessment saved, but notification email could not be sent.");
+                }
                 setAssessmentDialogOpen(false);
                 setAssessmentSubmission(null);
                 setAssessmentEndDate("");
@@ -1554,6 +1571,9 @@ export default function Submissions() {
                 "screen_call_scheduled",
                 {
                   ...screenSubmission,
+                  id: screenSubmission.id,
+                  company_id: screenSubmission.company_id ?? profile?.company_id ?? null,
+                  recruiter_id: screenSubmission.recruiter_id ?? null,
                   screen_resume_url: screenResumeUrl,
                   screen_questions_url: screenQuestionsUrl,
                   screen_response_status: screenResponse === "None" ? null : screenResponse,
