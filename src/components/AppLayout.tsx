@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useLocation, Outlet, Navigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
@@ -18,7 +18,9 @@ import {
   Shield,
   Building2,
   Bell,
+  Settings,
 } from "lucide-react";
+import { useTenantBranding } from "@/hooks/useTenantBranding";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -54,6 +56,13 @@ const allNavItems: (CommandNavItem & { roles: string[]; masterOnly?: boolean })[
   { to: "/admin/agencies", icon: Building2, label: "Agencies", roles: ["admin"], masterOnly: true },
   { to: "/admin/users", icon: Shield, label: "User Management", roles: ["admin", "manager", "team_lead", "agency_admin"] },
   { to: "/activity", icon: Bell, label: "Activity", roles: ["admin"], keywords: "notifications alerts" },
+  {
+    to: "/settings",
+    icon: Settings,
+    label: "Settings",
+    roles: ["admin", "recruiter", "candidate", "manager", "team_lead", "agency_admin"],
+    keywords: "theme colors palette branding",
+  },
 ];
 
 function useCandidateProfileComplete(candidateId: string | null) {
@@ -95,8 +104,50 @@ function useCandidateProfileComplete(candidateId: string | null) {
   return { complete, loading: false };
 }
 
+function SidebarBrandMark({
+  logoUrl,
+  collapsed,
+}: {
+  logoUrl: string | null;
+  collapsed: boolean;
+}) {
+  const [imgFailed, setImgFailed] = useState(false);
+  useEffect(() => setImgFailed(false), [logoUrl]);
+  const showLogo = logoUrl && !imgFailed;
+
+  if (showLogo) {
+    return (
+      <motion.div
+        className={cn(
+          "flex shrink-0 items-center justify-center overflow-hidden rounded-xl bg-sidebar-accent shadow-brand",
+          collapsed ? "h-10 w-10" : "h-10 w-10"
+        )}
+        whileHover={{ scale: 1.05 }}
+        transition={spring}
+      >
+        <img
+          src={logoUrl}
+          alt=""
+          className="h-full w-full object-contain p-0.5"
+          onError={() => setImgFailed(true)}
+        />
+      </motion.div>
+    );
+  }
+  return (
+    <motion.div
+      className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white shadow-brand"
+      whileHover={{ scale: 1.05 }}
+      transition={spring}
+    >
+      <Briefcase className="h-5 w-5" />
+    </motion.div>
+  );
+}
+
 export default function AppLayout() {
   const { user, profile, role, loading, signOut, company, isMasterCompany, isAdmin } = useAuth();
+  const { branding } = useTenantBranding();
   const location = useLocation();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -163,21 +214,15 @@ export default function AppLayout() {
             collapsed ? "justify-center" : "gap-3"
           )}
         >
-          <motion.div
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand text-white shadow-brand"
-            whileHover={{ scale: 1.05 }}
-            transition={spring}
-          >
-            <Briefcase className="h-5 w-5" />
-          </motion.div>
+          <SidebarBrandMark logoUrl={branding.logoUrl} collapsed={collapsed} />
           {!collapsed && (
             <motion.div className="min-w-0 flex-1" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-              <span className="block text-base font-semibold tracking-tight text-sidebar-foreground">HireTrack</span>
-              {company?.name ? (
-                <span className="block truncate text-xs text-sidebar-foreground/60" title={company.name}>
-                  {company.name}
-                </span>
-              ) : null}
+              <span
+                className="block truncate text-base font-semibold tracking-tight text-sidebar-foreground"
+                title={branding.displayName}
+              >
+                {branding.displayName}
+              </span>
             </motion.div>
           )}
           <Button
@@ -284,7 +329,7 @@ export default function AppLayout() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBar
-          companyName={company?.name}
+          companyName={branding.displayName}
           userName={profile?.full_name}
           role={role}
           userId={user?.id}

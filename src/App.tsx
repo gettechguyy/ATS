@@ -6,6 +6,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
+import { ThemePaletteProvider } from "@/contexts/ThemePaletteContext";
 import { Skeleton } from "@/components/ui/skeleton";
 import AppLayout from "@/components/AppLayout";
 import Login from "@/pages/Login";
@@ -25,6 +26,7 @@ import SetPasswordPage from "@/pages/SetPassword";
 import MyProfile from "@/pages/MyProfile";
 import Notifications from "@/pages/Notifications";
 import Teams from "@/pages/Teams";
+import Settings from "@/pages/Settings";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -50,6 +52,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <ThemePaletteProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<RegisterCompany />} />
@@ -75,12 +78,14 @@ const App = () => (
               />
               <Route path="/admin/invites" element={<InvitesPage />} />
               <Route path="/teams" element={<Teams />} />
+              <Route path="/settings" element={<Settings />} />
               <Route path="/activity" element={<Notifications />} />
               <Route path="/notifications" element={<Navigate to="/activity" replace />} />
               <Route path="/set-password" element={<SetPasswordPage />} />
             </Route>
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </ThemePaletteProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

@@ -20,7 +20,9 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Search, Eye, ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from "lucide-react";
+import { Search, Eye, ChevronLeft, ChevronRight, ArrowUp, ArrowDown, Upload } from "lucide-react";
+import { ImportApplicationsDialog } from "@/components/ImportApplicationsDialog";
+import { getTestCacheForCompany, isTestCacheOwner } from "@/lib/testDataCache";
 import { Link } from "react-router-dom";
 import { Skeleton } from "@/components/ui/skeleton";
 import { toast } from "sonner";
@@ -104,6 +106,8 @@ export default function Submissions() {
   const [sortBy, setSortBy] = useState("created_at");
   const [order, setOrder] = useState<"asc" | "desc">("desc");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const isTestOwner = isTestCacheOwner(user?.email);
   const [newCandidateId, setNewCandidateId] = useState<string | null>(null);
   const [newClientName, setNewClientName] = useState("");
   const [newPosition, setNewPosition] = useState("");
@@ -336,6 +340,28 @@ export default function Submissions() {
       !!profile?.company_id &&
       (isAdmin || isManager || (isRecruiter && !!user?.id) || (isAgencyScope && !!profile?.agency_id) || (isTeamLead && !!profile?.id)),
   });
+
+  const importCandidates = useMemo(() => {
+    const base = (candidates as { id: string; first_name: string; last_name?: string | null }[]).map((c) => ({
+      id: c.id,
+      first_name: c.first_name,
+      last_name: c.last_name,
+    }));
+    if (!isTestOwner || !companyId) return base;
+    const store = getTestCacheForCompany(companyId);
+    const seen = new Set(base.map((c) => c.id));
+    for (const c of store.candidates) {
+      if (!seen.has(c.id)) {
+        base.push({
+          id: c.id,
+          first_name: c.first_name,
+          last_name: c.last_name,
+        });
+        seen.add(c.id);
+      }
+    }
+    return base;
+  }, [candidates, isTestOwner, companyId]);
 
   const { data: agencies = [] } = useQuery({
     queryKey: ["agencies-submissions", profile?.company_id],
@@ -678,6 +704,30 @@ export default function Submissions() {
           )}
           {(isAdmin || isRecruiter || isAgencyScope) && (
             <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  if (candidatesLoading) {
+                    toast.error("Loading candidates, please wait");
+                    return;
+                  }
+                  if (!user?.id) return;
+                  if (isRecruiter && (!candidates || candidates.length === 0)) {
+                    toast.error("No candidates assigned to you. Please create or assign a candidate first.");
+                    return;
+                  }
+                  if (isAgencyScope && (!candidates || candidates.length === 0)) {
+                    toast.error("No candidates assigned to your agency yet. Master admin must assign candidates to your agency first.");
+                    return;
+                  }
+                  setImportDialogOpen(true);
+                }}
+                disabled={candidatesLoading || !user?.id || (isRecruiter && (!candidates || candidates.length === 0)) || (isAgencyScope && (!candidates || candidates.length === 0))}
+              >
+                <Upload className="mr-2 h-4 w-4" />
+                Import
+              </Button>
               <Button
                 size="sm"
                 onClick={() => {
@@ -1184,6 +1234,24 @@ export default function Submissions() {
           </div>
         </SheetContent>
       </Sheet>
+
+      {user?.id && (
+        <ImportApplicationsDialog
+          open={importDialogOpen}
+          onOpenChange={setImportDialogOpen}
+          recruiterId={user.id}
+          candidates={importCandidates}
+          onSuccess={() => {
+            queryClient.invalidateQueries({ queryKey: ["submissions"] });
+            queryClient.invalidateQueries({ queryKey: ["application-summaries"] });
+            queryClient.invalidateQueries({ queryKey: ["submissions-pipeline"] });
+            queryClient.invalidateQueries({ queryKey: ["candidate-stats"] });
+            queryClient.invalidateQueries({ queryKey: ["candidates"] });
+            queryClient.invalidateQueries({ queryKey: ["submissions-assessments"] });
+            queryClient.invalidateQueries({ queryKey: ["candidate-submissions-sheet"] });
+          }}
+        />
+      )}
 
       {/* Add Application Dialog */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>

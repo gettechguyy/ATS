@@ -3,10 +3,10 @@ import {
   getStoredSession,
   setStoredSession,
   clearStoredSession,
+  type SessionCompany,
   loginWithEmailPassword,
   createAppUser,
   type SessionUser,
-  type SessionCompany,
 } from "@/lib/authApi";
 
 export type AppRole = "admin" | "recruiter" | "candidate" | "manager" | "team_lead" | "agency_admin";
@@ -55,6 +55,8 @@ interface AuthContextType {
     agencyId?: string | null
   ) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
+  /** Update company name in session after branding settings save */
+  updateSessionCompany: (partial: Partial<SessionCompany>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -150,6 +152,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setCompany(null);
   };
 
+  const updateSessionCompany = (partial: Partial<SessionCompany>) => {
+    setCompany((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...partial };
+      const session = getStoredSession();
+      if (session) {
+        setStoredSession({ ...session, company: next });
+      }
+      return next;
+    });
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -169,6 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         establishSession,
         createUser,
         signOut,
+        updateSessionCompany,
       }}
     >
       {children}
