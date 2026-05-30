@@ -42,10 +42,26 @@ import {
   submissionShouldPromptAssessmentBeforeScreen,
 } from "@/lib/submissionStatusWorkflow";
 import { notifyAssessmentAssignedEmail, notifySchedulingEmail } from "@/lib/schedulingEmail";
+import { formatInAppDateTime } from "@/lib/appTimezone";
 
 const PAGE_SIZE = 10;
 
-type VendorSortBy = "created_at" | "client_name" | "position" | "status" | "candidate_first_name";
+type VendorSortBy =
+  | "created_at"
+  | "client_name"
+  | "position"
+  | "status"
+  | "candidate_first_name"
+  | "screen_scheduled_at"
+  | "assessment_end_date";
+
+function formatAssessmentEndDate(val: string | null | undefined): string {
+  if (val == null || String(val).trim() === "") return "—";
+  const raw = String(val).trim();
+  const d = raw.includes("T") ? new Date(raw) : new Date(`${raw.slice(0, 10)}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString();
+}
 
 const SUBMISSION_STATUSES = ["Applied", "Vendor Responded", "Assessment", "Screen Call", "Interview", "Rejected", "Offered"] as const;
 
@@ -173,7 +189,11 @@ export default function VendorSubmissions() {
       setOrder((o) => (o === "asc" ? "desc" : "asc"));
     } else {
       setSortBy(field);
-      setOrder(field === "created_at" ? "desc" : "asc");
+      setOrder(
+        field === "created_at" || field === "screen_scheduled_at" || field === "assessment_end_date"
+          ? "desc"
+          : "asc"
+      );
     }
   };
 
@@ -186,7 +206,7 @@ export default function VendorSubmissions() {
       )
     ) : null;
 
-  const vendorTableColSpan = isCandidate ? 5 : 6;
+  const vendorTableColSpan = isCandidate ? 6 : 7;
 
   // Candidate dropdown for Add Vendor Submission (admin: all, recruiter: own)
   const candidatesQueryFn = async () => {
@@ -615,8 +635,21 @@ export default function VendorSubmissions() {
                   </button>
                 </TableHead>
                 <TableHead>
-                  <button type="button" className="flex items-center gap-1 font-medium hover:opacity-80" onClick={() => toggleVendorSort("created_at")}>
-                    Date {vendorSortArrow("created_at")}
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 font-medium hover:opacity-80"
+                    onClick={() => toggleVendorSort("assessment_end_date")}
+                  >
+                    Assessment date {vendorSortArrow("assessment_end_date")}
+                  </button>
+                </TableHead>
+                <TableHead>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 font-medium hover:opacity-80"
+                    onClick={() => toggleVendorSort("screen_scheduled_at")}
+                  >
+                    Screen call date {vendorSortArrow("screen_scheduled_at")}
                   </button>
                 </TableHead>
                 <TableHead className="w-12 text-right">Details</TableHead>
@@ -662,8 +695,15 @@ export default function VendorSubmissions() {
                         </SelectContent>
                       </Select>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {s.created_at ? new Date(s.created_at).toLocaleDateString() : "—"}
+                    <TableCell className="text-muted-foreground whitespace-nowrap">
+                      {s.status === "Assessment" || s.assessment_end_date
+                        ? formatAssessmentEndDate(s.assessment_end_date)
+                        : "—"}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground whitespace-nowrap">
+                      {s.status === "Screen Call" || s.screen_scheduled_at
+                        ? formatInAppDateTime(s.screen_scheduled_at)
+                        : "—"}
                     </TableCell>
                     <TableCell className="text-right">
                       <Button variant="ghost" size="icon" className="h-8 w-8" asChild>
