@@ -60,6 +60,8 @@ export default function SubmissionDetail() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [interviewDialogOpen, setInterviewDialogOpen] = useState(false);
+  const [interviewMode, setInterviewMode] = useState<(typeof INTERVIEW_MODES)[number]>("Virtual");
+  const [interviewLinkOrPhone, setInterviewLinkOrPhone] = useState("");
   const [offerDialogOpen, setOfferDialogOpen] = useState(false);
   const [rescheduleDialogOpen, setRescheduleDialogOpen] = useState(false);
   const [rescheduleInterviewId, setRescheduleInterviewId] = useState<string | null>(null);
@@ -130,27 +132,27 @@ export default function SubmissionDetail() {
     return <Navigate to="/submissions" replace />;
 
   const createInterview = useMutation({
-    mutationFn: async (fd: FormData) => {
-      const mode = fd.get("mode") as string;
-      const file = fd.get("interview_questions") as File | null;
-      if (!file || (file as any).size === 0) {
+    mutationFn: async (input: { date: string; time: string; file: File; mode: string; linkOrPhone: string }) => {
+      const { date, time, file, mode, linkOrPhone } = input;
+      if (!file || file.size === 0) {
         throw new Error("Interview questions file is required");
       }
-      const scheduledAt = `${fd.get("date")}T${fd.get("time")}:00`;
-      const virtualLink = (fd.get("virtual_link") as string) || null;
-      // upload file to storage
-      const url = await uploadInterviewQuestions(id!, file as File);
+      const scheduledAt = `${date}T${time}:00`;
+      const link =
+        mode === "Virtual" || mode === "Phone" ? linkOrPhone.trim() || null : null;
+      const url = await uploadInterviewQuestions(id!, file);
       await createInterviewFn({
         submission_id: id!,
         candidate_id: submission!.candidate_id,
-        created_by: submission!.recruiter_id ?? null,
+        company_id: submission!.company_id ?? profile?.company_id ?? null,
+        created_by: user?.id ?? submission!.recruiter_id ?? null,
         round_number: nextRound,
         mode,
         scheduled_at: scheduledAt,
-        virtual_link: mode === "Virtual" ? virtualLink : null,
+        virtual_link: link,
         interview_questions_url: url,
       });
-      return { scheduledAt, mode, linkOrPhone: virtualLink, interviewQuestionsUrl: url };
+      return { scheduledAt, mode, linkOrPhone: link, interviewQuestionsUrl: url };
     },
     onSuccess: async (data) => {
       queryClient.invalidateQueries({ queryKey: ["submission-interviews", id] });
@@ -707,7 +709,16 @@ export default function SubmissionDetail() {
               </CardTitle>
               {/* Only allow non-candidate users to schedule interviews */}
               { !isCandidate ? (
-                <Dialog open={interviewDialogOpen} onOpenChange={setInterviewDialogOpen}>
+                <Dialog
+                  open={interviewDialogOpen}
+                  onOpenChange={(open) => {
+                    setInterviewDialogOpen(open);
+                    if (open) {
+                      setInterviewMode("Virtual");
+                      setInterviewLinkOrPhone("");
+                    }
+                  }}
+                >
                   <DialogTrigger asChild>
                     <Button size="sm" disabled={!canCreateInterview}>
                       <Plus className="mr-1 h-3 w-3" />Schedule Round {nextRound}
@@ -720,37 +731,45 @@ export default function SubmissionDetail() {
                       const fd = new FormData(e.currentTarget);
                       const date = fd.get("date") as string | null;
                       const time = fd.get("time") as string | null;
-                      const mode = fd.get("mode") as string | null;
-                      const link = (fd.get("virtual_link") as string) || "";
                       const file = fd.get("interview_questions") as File | null;
                       if (!date || !time) {
                         toast.error("Date and time are required");
                         return;
                       }
-                      if (!mode) {
-                        toast.error("Mode is required");
-                        return;
-                      }
-                      if (!file || (file as any).size === 0) {
+                      if (!file || file.size === 0) {
                         toast.error("Interview questions file is required");
                         return;
                       }
-                      if (mode === "Virtual") {
+                      if (interviewMode === "Virtual") {
+                        if (!interviewLinkOrPhone.trim()) {
+                          toast.error("Please provide a meeting link for Virtual mode");
+                          return;
+                        }
                         try {
-                          new URL(link);
+                          new URL(interviewLinkOrPhone);
                         } catch {
                           toast.error("Please enter a valid meeting link for Virtual mode");
                           return;
                         }
-                      } else if (mode === "Phone") {
-                        const phone = link.trim();
+                      } else if (interviewMode === "Phone") {
+                        const phone = interviewLinkOrPhone.trim();
+                        if (!phone) {
+                          toast.error("Please provide a phone number for Phone mode");
+                          return;
+                        }
                         const phoneRe = /^\+?[0-9\-\s()]{7,}$/;
                         if (!phoneRe.test(phone)) {
                           toast.error("Please enter a valid phone number for Phone mode");
                           return;
                         }
                       }
-                      createInterview.mutate(new FormData(e.currentTarget));
+                      createInterview.mutate({
+                        date,
+                        time,
+                        file,
+                        mode: interviewMode,
+                        linkOrPhone: interviewLinkOrPhone,
+                      });
                     }} className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
@@ -764,7 +783,7 @@ export default function SubmissionDetail() {
                     </div>
                     <div className="space-y-2">
                       <Label>Mode</Label>
-                      <Select name="mode" defaultValue="Virtual">
+                      <Select value={interviewMode} onValueChange={(v) => setInterviewMode(v as (typeof INTERVIEW_MODES)[number])}>
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {INTERVIEW_MODES.map((m) => (
@@ -773,10 +792,17 @@ export default function SubmissionDetail() {
                         </SelectContent>
                       </Select>
                     </div>
-                    <div className="space-y-2">
-                      <Label>Virtual Link (if Virtual mode)</Label>
-                      <Input name="virtual_link" type="url" />
-                    </div>
+                    {interviewMode !== "Onsite" && (
+                      <div className="space-y-2">
+                        <Label>{interviewMode === "Virtual" ? "Meeting Link *" : "Phone Number *"}</Label>
+                        <Input
+                          value={interviewLinkOrPhone}
+                          onChange={(e) => setInterviewLinkOrPhone(e.target.value)}
+                          type={interviewMode === "Virtual" ? "url" : "tel"}
+                          placeholder={interviewMode === "Virtual" ? "https://..." : "+1 555 123 4567"}
+                        />
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <Label>Interview Questions (upload) *</Label>
                       <Input name="interview_questions" type="file" accept=".pdf,.doc,.docx,.txt" required />

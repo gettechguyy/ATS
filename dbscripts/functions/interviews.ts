@@ -196,17 +196,19 @@ export async function fetchInterviewsByAgencyPaginated(agencyId: string, company
 }
 
 export async function fetchInterviewsBySubmission(submissionId: string) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("interviews")
     .select("*")
     .eq("submission_id", submissionId)
     .order("round_number", { ascending: true });
+  if (error) throw error;
   return data || [];
 }
 
 export async function createInterview(interview: {
   submission_id: string;
   candidate_id: string;
+  company_id?: string | null;
   created_by: string | null;
   round_number: number;
   mode: string;
@@ -214,19 +216,24 @@ export async function createInterview(interview: {
   virtual_link?: string | null;
   interview_questions_url?: string | null;
 }) {
-  const { error } = await supabase.from("interviews").insert({
+  const row: Record<string, unknown> = {
     submission_id: interview.submission_id,
     candidate_id: interview.candidate_id,
     created_by: interview.created_by ?? null,
     round_number: interview.round_number,
-    status: "Scheduled" as any,
-    mode: interview.mode as any,
+    status: "Scheduled",
+    mode: interview.mode,
     scheduled_at: interview.scheduled_at,
     virtual_link: interview.virtual_link || null,
     interview_questions_url: interview.interview_questions_url ?? null,
     feedback: null,
-  });
+  };
+  if (interview.company_id) row.company_id = interview.company_id;
+
+  const { data, error } = await supabase.from("interviews").insert(row).select("id").single();
   if (error) throw error;
+  if (!data?.id) throw new Error("Interview could not be saved. Please try again.");
+  return data;
 }
 
 export async function updateInterviewStatus(interviewId: string, status: string) {
